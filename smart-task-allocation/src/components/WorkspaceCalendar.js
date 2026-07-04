@@ -32,6 +32,115 @@ function isSameDay(a, b) {
   );
 }
 
+function getDisplayName(employee) {
+  return employee?.full_name || employee?.username || employee?.email || "Employee";
+}
+
+function getInitials(employee) {
+  const name = getDisplayName(employee);
+  const parts = name.split(/[\s._-]+/).filter(Boolean);
+
+  if (!parts.length) return "?";
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function formatTime(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatDate(value) {
+  if (!value) return "No date";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No date";
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function getTaskDate(task) {
+  const value = task.start_datetime || task.end_datetime;
+  if (!value) return null;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getPriorityClasses(priority) {
+  const normalized = String(priority || "Medium").toLowerCase();
+
+  if (normalized === "low") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  if (normalized === "urgent" || normalized === "high") {
+    return "border-red-200 bg-red-50 text-red-800";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-800";
+}
+
+function TaskListItem({ employeesById, task }) {
+  const assignee = employeesById.get(task.assigned_to);
+
+  return (
+    <div className="rounded-2xl border border-[#e6ebf2] bg-white/80 px-4 py-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-[#0D1E4C]">{task.title || "Untitled task"}</p>
+          <p className="mt-1 text-xs font-semibold text-[#667085]">
+            {task.status || "Open"} · {formatDate(task.end_datetime || task.start_datetime)}
+          </p>
+        </div>
+        <span
+          className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black ${getPriorityClasses(task.priority)}`}
+        >
+          {task.priority || "Medium"}
+        </span>
+      </div>
+      <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#667085]">
+        {task.description || "No description added."}
+      </p>
+      <p className="mt-3 text-xs font-bold text-[#52627a]">
+        {assignee ? `Assigned to ${getDisplayName(assignee)}` : "Unassigned"}
+      </p>
+    </div>
+  );
+}
+
+function EmployeeListItem({ employee }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-[#e6ebf2] bg-white/80 px-4 py-3 shadow-sm">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1E40AF] text-xs font-black text-white">
+        {getInitials(employee)}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-black text-[#0D1E4C]">
+          {getDisplayName(employee)}
+        </span>
+        <span className="block truncate text-xs font-semibold text-[#667085]">
+          {employee?.job_title || employee?.department?.department_name || employee?.email || "Employee"}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 // A half-width overlay panel that grows out of its trigger button. Its outer
 // edge sits flush with the calendar's left/right border. Closed via the
 // trigger pill (which becomes a × while open).
@@ -69,7 +178,14 @@ function CloseIcon() {
   );
 }
 
-export default function WorkspaceCalendar() {
+export default function WorkspaceCalendar({
+  currentWorkspace,
+  employees = [],
+  error = "",
+  groups = [],
+  isLoading = false,
+  tasks = [],
+}) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   // Independent — both panels can be open at the same time.
   const [isTasksOpen, setIsTasksOpen] = useState(false);
@@ -87,6 +203,21 @@ export default function WorkspaceCalendar() {
   );
 
   const today = useMemo(() => new Date(), []);
+  const employeesById = useMemo(
+    () => new Map(employees.map((employee) => [employee.user_id, employee])),
+    [employees],
+  );
+  const groupsById = useMemo(
+    () => new Map(groups.map((group) => [group.group_id, group])),
+    [groups],
+  );
+  const scheduledTasks = useMemo(
+    () =>
+      tasks
+        .map((task) => ({ ...task, calendarDate: getTaskDate(task) }))
+        .filter((task) => task.calendarDate),
+    [tasks],
+  );
 
   function goToPreviousWeek() {
     setWeekStart((current) => addDays(current, -7));
@@ -94,6 +225,30 @@ export default function WorkspaceCalendar() {
 
   function goToNextWeek() {
     setWeekStart((current) => addDays(current, 7));
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
+        Loading workspace calendar...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center rounded-2xl border border-red-200 bg-red-50/80 px-4 text-sm font-bold text-red-700">
+        {error}
+      </div>
+    );
+  }
+
+  if (!currentWorkspace) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
+        No workspace found.
+      </div>
+    );
   }
 
   return (
@@ -194,10 +349,44 @@ export default function WorkspaceCalendar() {
                 {days.map((day) => (
                   <div
                     key={`${day.toISOString()}-${hour}`}
-                    className={`h-14 border-l border-[#E0E5E9] ${
+                    className={`min-h-14 border-l border-[#E0E5E9] p-1 ${
                       hour > 0 ? "border-t" : ""
                     }`}
-                  />
+                  >
+                    <div className="space-y-1">
+                      {scheduledTasks
+                        .filter(
+                          (task) =>
+                            isSameDay(task.calendarDate, day) &&
+                            task.calendarDate.getHours() === hour,
+                        )
+                        .map((task) => {
+                          const assignee = employeesById.get(task.assigned_to);
+                          const group = groupsById.get(task.group_id);
+
+                          return (
+                            <div
+                              key={task.task_id}
+                              className={`rounded-lg border px-2 py-1 shadow-sm ${getPriorityClasses(task.priority)}`}
+                              title={task.title}
+                            >
+                              <p className="truncate text-[11px] font-black">
+                                {task.title || "Untitled task"}
+                              </p>
+                              <p className="truncate text-[10px] font-semibold opacity-80">
+                                {formatTime(task.start_datetime || task.end_datetime)}
+                                {assignee ? ` · ${getDisplayName(assignee)}` : ""}
+                              </p>
+                              {group ? (
+                                <p className="truncate text-[10px] font-semibold opacity-70">
+                                  {group.group_name}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
                 ))}
               </div>
             ))}
@@ -207,14 +396,28 @@ export default function WorkspaceCalendar() {
 
       {/* Tasks overlay — left half, grows from the Tasks button */}
       <OverlayPanel open={isTasksOpen} align="left">
-        {/* Task list content goes here */}
-        <p className="px-1 py-2 text-sm text-[#52627a]">No tasks yet.</p>
+        <div className="space-y-3">
+          {tasks.length ? (
+            tasks.map((task) => (
+              <TaskListItem key={task.task_id} employeesById={employeesById} task={task} />
+            ))
+          ) : (
+            <p className="px-1 py-2 text-sm text-[#52627a]">No tasks yet.</p>
+          )}
+        </div>
       </OverlayPanel>
 
       {/* Employee overlay — right half, grows from the Employee button */}
       <OverlayPanel open={isEmployeesOpen} align="right">
-        {/* Employee list content goes here */}
-        <p className="px-1 py-2 text-sm text-[#52627a]">No employees yet.</p>
+        <div className="space-y-3">
+          {employees.length ? (
+            employees.map((employee) => (
+              <EmployeeListItem key={employee.user_id} employee={employee} />
+            ))
+          ) : (
+            <p className="px-1 py-2 text-sm text-[#52627a]">No employees yet.</p>
+          )}
+        </div>
       </OverlayPanel>
     </div>
   );

@@ -100,7 +100,38 @@ export async function GET(request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ tasks: data ?? [] });
+    const taskIds = (data ?? []).map((task) => task.task_id).filter(Boolean);
+    let latestAssignmentByTaskId = new Map();
+
+    if (taskIds.length) {
+      const { data: assignments, error: assignmentError } = await supabase
+        .from("task_assignment")
+        .select("task_id, assigned_by, assigned_at")
+        .in("task_id", taskIds)
+        .order("assigned_at", { ascending: false });
+
+      if (assignmentError) {
+        return NextResponse.json({ error: assignmentError.message }, { status: 400 });
+      }
+
+      for (const assignment of assignments ?? []) {
+        if (!latestAssignmentByTaskId.has(assignment.task_id)) {
+          latestAssignmentByTaskId.set(assignment.task_id, assignment);
+        }
+      }
+    }
+
+    const tasks = (data ?? []).map((task) => {
+      const latestAssignment = latestAssignmentByTaskId.get(task.task_id);
+
+      return {
+        ...task,
+        latest_assigned_by: latestAssignment?.assigned_by ?? null,
+        latest_assigned_at: latestAssignment?.assigned_at ?? null,
+      };
+    });
+
+    return NextResponse.json({ tasks });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

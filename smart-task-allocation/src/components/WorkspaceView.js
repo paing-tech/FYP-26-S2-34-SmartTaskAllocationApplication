@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import WorkspaceCalendar from "@/components/WorkspaceCalendar";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 const VIEWS = [
   { id: "calendar", label: "Calendar" },
@@ -11,6 +12,164 @@ const VIEWS = [
 
 export default function WorkspaceView() {
   const [view, setView] = useState("calendar");
+  const [workspaces, setWorkspaces] = useState([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
+  const [tasks, setTasks] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+
+  async function authHeaders() {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+    return {
+      Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+    };
+  }
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    async function loadInitialData() {
+      setError("");
+      setIsLoading(true);
+
+      try {
+        const headers = await authHeaders();
+        const [workspacesResponse, employeesResponse] = await Promise.all([
+          fetch("/api/workspaces", { headers }),
+          fetch("/api/employees", { headers }),
+        ]);
+        const [workspacesResult, employeesResult] = await Promise.all([
+          workspacesResponse.json(),
+          employeesResponse.json(),
+        ]);
+
+        if (!workspacesResponse.ok) {
+          throw new Error(workspacesResult.error || "Could not load workspaces.");
+        }
+
+        if (!employeesResponse.ok) {
+          throw new Error(employeesResult.error || "Could not load employees.");
+        }
+
+        if (!isCurrent) return;
+
+        const nextWorkspaces = workspacesResult.workspaces ?? [];
+        const nextWorkspaceId = selectedWorkspaceId || nextWorkspaces[0]?.workspace_id || "";
+
+        setWorkspaces(nextWorkspaces);
+        setSelectedWorkspaceId(nextWorkspaceId);
+        setEmployees(employeesResult.employees ?? []);
+
+        if (!nextWorkspaceId) {
+          setIsLoading(false);
+        }
+      } catch (loadError) {
+        if (isCurrent) {
+          setError(loadError.message);
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadInitialData();
+
+    return () => {
+      isCurrent = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    async function loadWorkspaceData() {
+      if (!selectedWorkspaceId) {
+        setTasks([]);
+        setGroups([]);
+        setIsLoading(false);
+        return;
+      }
+
+      setError("");
+      setIsLoading(true);
+
+      try {
+        const headers = await authHeaders();
+        const [tasksResponse, groupsResponse] = await Promise.all([
+          fetch(`/api/tasks?workspaceId=${selectedWorkspaceId}`, { headers }),
+          fetch(`/api/task-groups?workspaceId=${selectedWorkspaceId}`, { headers }),
+        ]);
+        const [tasksResult, groupsResult] = await Promise.all([
+          tasksResponse.json(),
+          groupsResponse.json(),
+        ]);
+
+        if (!tasksResponse.ok) {
+          throw new Error(tasksResult.error || "Could not load tasks.");
+        }
+
+        if (!groupsResponse.ok) {
+          throw new Error(groupsResult.error || "Could not load task groups.");
+        }
+
+        if (!isCurrent) return;
+
+        setTasks(tasksResult.tasks ?? []);
+        setGroups(groupsResult.groups ?? []);
+        setIsLoading(false);
+      } catch (loadError) {
+        if (isCurrent) {
+          setError(loadError.message);
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadWorkspaceData();
+
+    return () => {
+      isCurrent = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkspaceId]);
+
+  const selectedWorkspace =
+    workspaces.find((workspace) => workspace.workspace_id === selectedWorkspaceId) ?? null;
+
+  async function renameGroup(groupId, groupName) {
+    const cleanName = groupName.trim();
+
+    if (!groupId || !cleanName) {
+      return;
+    }
+
+    const previousGroups = groups;
+    setGroups((current) =>
+      current.map((group) =>
+        group.group_id === groupId ? { ...group, group_name: cleanName } : group,
+      ),
+    );
+    setError("");
+
+    try {
+      const response = await fetch("/api/task-groups", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ groupId, groupName: cleanName }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not rename task group.");
+      }
+    } catch (renameError) {
+      setGroups(previousGroups);
+      setError(renameError.message);
+    }
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -35,7 +194,26 @@ export default function WorkspaceView() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {view === "calendar" ? <WorkspaceCalendar /> : <WorkspaceBoard />}
+        {view === "calendar" ? (
+          <WorkspaceCalendar
+            currentWorkspace={selectedWorkspace}
+            employees={employees}
+            error={error}
+            groups={groups}
+            isLoading={isLoading}
+            tasks={tasks}
+          />
+        ) : (
+          <WorkspaceBoard
+            currentWorkspace={selectedWorkspace}
+            employees={employees}
+            error={error}
+            groups={groups}
+            isLoading={isLoading}
+            onGroupRename={renameGroup}
+            tasks={tasks}
+          />
+        )}
       </div>
     </div>
   );
