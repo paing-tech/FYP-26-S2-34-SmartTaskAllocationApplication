@@ -171,20 +171,12 @@ function TimelineRail({ end, start }) {
 function TaskCard({ task }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
-  const isAi = /optimus|ai/i.test(task.owner);
   const actionLabels = getTaskActionLabels(task);
 
   return (
     <div className="group relative z-0 pt-11 hover:z-20">
-      <div className="absolute inset-x-0 top-0 bottom-0 z-0 translate-y-0 rounded-3xl border border-white/60 bg-white/10 px-4 pt-3 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out group-hover:-bottom-4 group-hover:-translate-y-4">
+      <div className="absolute inset-x-0 top-2 bottom-0 z-0 translate-y-0 rounded-3xl border border-white/60 bg-white/10 px-4 pt-3 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out group-hover:-bottom-4 group-hover:-translate-y-4">
         <div className="flex items-center gap-1.5">
-          <span
-            className={`h-4 w-4 rounded-full text-center text-[9px] font-black leading-4 text-white ${
-              isAi ? "bg-[#7C3AED]" : "bg-[#1E40AF]"
-            }`}
-          >
-            {isAi ? "*" : initials(task.owner)[0]}
-          </span>
           <span className="text-[11px] font-bold text-[#0D1E4C]">{task.owner}</span>
         </div>
         <p className="mt-1 text-[11px] font-semibold leading-4 text-[#2563EB] opacity-0 transition-opacity duration-200 group-hover:opacity-100">
@@ -343,7 +335,7 @@ export default function WorkspaceBoard({
             onRename={onGroupRename}
           />
 
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1 pb-4 pt-6">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-4 pt-6">
             {column.tasks.map((task) => (
               <TaskCard key={task.task_id} task={task} />
             ))}
