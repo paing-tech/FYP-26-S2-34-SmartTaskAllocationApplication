@@ -3,9 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 
 const PRIORITY_TONES = {
-  low: { label: "LOW PRIORITY", chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#22c55e]" },
-  moderate: { label: "MODERATE PRIORITY", chip: "bg-[#fff7ed] text-[#b45309]", dot: "bg-[#f59e0b]" },
-  urgent: { label: "URGENT PRIORITY", chip: "bg-[#fef2f2] text-[#b91c1c]", dot: "bg-[#ef4444]" },
+  low: { chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#22c55e]" },
+  medium: { chip: "bg-[#fff7ed] text-[#b45309]", dot: "bg-[#f59e0b]" },
+  high: { chip: "bg-[#fef2f2] text-[#b91c1c]", dot: "bg-[#ef4444]" },
+  urgent: { chip: "bg-[#fef2f2] text-[#b91c1c]", dot: "bg-[#ef4444]" },
+};
+
+const STATUS_TONES = {
+  open: { chip: "bg-[#eff6ff] text-[#1d4ed8]", dot: "bg-[#579BFC]" },
+  "in progress": { chip: "bg-[#fff7ed] text-[#b45309]", dot: "bg-[#FDAB3D]" },
+  completed: { chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#00C875]" },
+  cancelled: { chip: "bg-[#fef2f2] text-[#b91c1c]", dot: "bg-[#DF2F4A]" },
 };
 
 const AVATAR_COLORS = ["#1E40AF", "#0F766E", "#7C3AED", "#B45309", "#BE185D"];
@@ -30,20 +38,18 @@ function getPriorityKey(priority) {
   const normalized = String(priority || "Medium").toLowerCase();
 
   if (normalized === "low") return "low";
-  if (normalized === "urgent" || normalized === "high") return "urgent";
+  if (normalized === "high") return "high";
+  if (normalized === "urgent") return "urgent";
 
-  return "moderate";
+  return "medium";
 }
 
-function getTaskProgress(status) {
-  const normalized = String(status || "Open").toLowerCase();
+function getStatusKey(status) {
+  return String(status || "Open").toLowerCase();
+}
 
-  if (normalized === "completed" || normalized === "done") return 100;
-  if (normalized.includes("review")) return 75;
-  if (normalized.includes("progress")) return 50;
-  if (normalized === "cancelled") return 0;
-
-  return 15;
+function formatPillLabel(value, fallback) {
+  return String(value || fallback).trim().toUpperCase();
 }
 
 function formatDate(value) {
@@ -111,9 +117,9 @@ function Avatars({ names }) {
 }
 
 function TaskCard({ task }) {
-  const tone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.moderate;
+  const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
+  const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const isAi = /optimus|ai/i.test(task.owner);
-  const progress = getTaskProgress(task.status);
   const actionLabels = getTaskActionLabels(task);
 
   return (
@@ -137,10 +143,16 @@ function TaskCard({ task }) {
       <div className="relative z-10 rounded-2xl border border-[#e6ebf2] bg-white p-4 shadow-sm transition duration-200 group-hover:shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${tone.chip}`}
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-            {tone.label}
+            <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
+            {formatPillLabel(task.status, "Open")}
+          </span>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${priorityTone.chip}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
+            {formatPillLabel(task.priority, "Medium")} PRIORITY
           </span>
         </div>
 
@@ -148,19 +160,6 @@ function TaskCard({ task }) {
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#667085]">
           {task.description || "No description added."}
         </p>
-
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-[#52627a]">
-            <span>Progress</span>
-            <span>{progress}%</span>
-          </div>
-          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#eef2f8]">
-            <div
-              className="h-full rounded-full bg-[#1E40AF]"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div className="min-w-0 text-[11px] font-semibold text-[#94a3b8]">
