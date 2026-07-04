@@ -17,6 +17,8 @@ const STATUS_TONES = {
 };
 
 const AVATAR_COLORS = ["#1E40AF", "#0F766E", "#7C3AED", "#B45309", "#BE185D"];
+const STATUS_OPTIONS = ["Open", "In Progress", "Completed", "Cancelled"];
+const PRIORITY_OPTIONS = ["Low", "Medium", "High", "Urgent"];
 
 function initials(name) {
   if (!name) return "?";
@@ -62,6 +64,16 @@ function formatDate(value) {
     month: "short",
     day: "numeric",
   }).format(date);
+}
+
+function toDateTimeInputValue(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
 }
 
 function getTaskActionLabels(task) {
@@ -168,7 +180,7 @@ function TimelineRail({ end, start }) {
   );
 }
 
-function TaskCard({ task }) {
+function TaskCard({ onOpen, task }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
@@ -184,7 +196,18 @@ function TaskCard({ task }) {
         </p>
       </div>
 
-      <div className="relative z-10 rounded-3xl border border-[#e6ebf2] bg-white/40 backdrop-blur-2xl p-4 shadow-sm transition duration-200 group-hover:shadow-lg">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen?.(task)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpen?.(task);
+          }
+        }}
+        className="relative z-10 cursor-pointer rounded-3xl border border-[#e6ebf2] bg-white/40 p-4 shadow-sm backdrop-blur-2xl transition duration-200 group-hover:shadow-lg"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
@@ -209,6 +232,7 @@ function TaskCard({ task }) {
         <div className="mt-4 flex items-center justify-between gap-3">
           <button
             type="button"
+            onClick={(event) => event.stopPropagation()}
             className="shrink-0 rounded-full border border-white/60 bg-white/60 px-3 py-2 text-[11px] font-black text-slate-800 transition hover:border-slate-300 hover:bg-slate-200 hover:scale-110"
           >
             Assign
@@ -216,6 +240,211 @@ function TaskCard({ task }) {
           <Avatars names={task.assignees} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function TaskEditPanel({ employees, onClose, onSave, task }) {
+  const [form, setForm] = useState(() => ({
+    title: task?.title ?? "",
+    description: task?.description ?? "",
+    status: task?.status ?? "Open",
+    priority: task?.priority ?? "Medium",
+    assignedTo: task?.assigned_to ?? "",
+    startDatetime: toDateTimeInputValue(task?.start_datetime),
+    endDatetime: toDateTimeInputValue(task?.end_datetime),
+  }));
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setForm({
+      title: task?.title ?? "",
+      description: task?.description ?? "",
+      status: task?.status ?? "Open",
+      priority: task?.priority ?? "Medium",
+      assignedTo: task?.assigned_to ?? "",
+      startDatetime: toDateTimeInputValue(task?.start_datetime),
+      endDatetime: toDateTimeInputValue(task?.end_datetime),
+    });
+    setError("");
+  }, [task]);
+
+  function updateField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleSave(event) {
+    event.preventDefault();
+    const cleanTitle = form.title.trim();
+
+    if (!cleanTitle) {
+      setError("Task name is required.");
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+
+    try {
+      await onSave?.(task, { ...form, title: cleanTitle });
+      onClose?.();
+    } catch (saveError) {
+      setError(saveError.message || "Could not save task.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex justify-end bg-[#0D1E4C]/30 backdrop-blur-sm">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+        aria-label="Close task editor"
+      />
+      <form
+        onSubmit={handleSave}
+        className="relative z-10 flex h-full w-full max-w-xl flex-col border-l border-white/60 bg-white/90 shadow-[0_24px_80px_rgba(13,30,76,0.25)] backdrop-blur-2xl"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[#e6ebf2] px-6 py-5">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Task details</p>
+            <h3 className="text-xl font-black text-[#0D1E4C]">Edit task</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dbe4f0] bg-white text-xl font-black text-[#0D1E4C] transition hover:bg-[#eef2f8]"
+            aria-label="Close task editor"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <label className="block">
+            <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Task name</span>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(event) => updateField("title", event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Description</span>
+            <textarea
+              value={form.description}
+              onChange={(event) => updateField("description", event.target.value)}
+              rows={4}
+              className="mt-2 w-full resize-none rounded-xl border border-[#dbe4f0] bg-white/80 px-3 py-3 text-sm font-semibold leading-6 text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+            />
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Status</span>
+              <select
+                value={form.status}
+                onChange={(event) => updateField("status", event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+              >
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Priority</span>
+              <select
+                value={form.priority}
+                onChange={(event) => updateField("priority", event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+              >
+                {PRIORITY_OPTIONS.map((priority) => (
+                  <option key={priority}>{priority}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Start date</span>
+              <input
+                type="datetime-local"
+                value={form.startDatetime}
+                onChange={(event) => updateField("startDatetime", event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">End date</span>
+              <input
+                type="datetime-local"
+                value={form.endDatetime}
+                onChange={(event) => updateField("endDatetime", event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+              />
+            </label>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Assignee</span>
+              {form.assignedTo ? (
+                <button
+                  type="button"
+                  onClick={() => updateField("assignedTo", "")}
+                  className="text-xs font-black text-[#DF2F4A] transition hover:text-[#b91c1c]"
+                >
+                  Remove assignee
+                </button>
+              ) : null}
+            </div>
+            <select
+              value={form.assignedTo}
+              onChange={(event) => updateField("assignedTo", event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+            >
+              <option value="">Unassigned</option>
+              {employees.map((employee) => (
+                <option key={employee.user_id} value={employee.user_id}>
+                  {getDisplayName(employee)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {error ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+              {error}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 justify-end gap-3 border-t border-[#e6ebf2] px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-[#dbe4f0] bg-white px-5 py-2 text-sm font-black text-[#52627a] transition hover:bg-[#eef2f8]"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="rounded-full bg-[#2563EB] px-5 py-2 text-sm font-black text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? "Saving..." : "Save changes"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -275,8 +504,10 @@ export default function WorkspaceBoard({
   groups = [],
   isLoading = false,
   onGroupRename,
+  onTaskUpdate,
   tasks = [],
 }) {
+  const [editingTask, setEditingTask] = useState(null);
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
     [employees],
@@ -324,6 +555,10 @@ export default function WorkspaceBoard({
     );
   }
 
+  const currentEditingTask = editingTask
+    ? tasks.find((task) => task.task_id === editingTask.task_id) ?? editingTask
+    : null;
+
   return (
     <div className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2">
       {columns.map((column) => (
@@ -337,7 +572,7 @@ export default function WorkspaceBoard({
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-4 pt-6">
             {column.tasks.map((task) => (
-              <TaskCard key={task.task_id} task={task} />
+              <TaskCard key={task.task_id} task={task} onOpen={setEditingTask} />
             ))}
 
             {!column.tasks.length ? (
@@ -348,6 +583,14 @@ export default function WorkspaceBoard({
           </div>
         </div>
       ))}
+      {currentEditingTask ? (
+        <TaskEditPanel
+          employees={employees}
+          task={currentEditingTask}
+          onClose={() => setEditingTask(null)}
+          onSave={onTaskUpdate}
+        />
+      ) : null}
     </div>
   );
 }

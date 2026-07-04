@@ -171,6 +171,58 @@ export default function WorkspaceView() {
     }
   }
 
+  async function updateTask(task, updates) {
+    if (!task?.task_id) {
+      return;
+    }
+
+    const nextTask = {
+      ...task,
+      title: updates.title,
+      description: updates.description || null,
+      status: updates.status || "Open",
+      priority: updates.priority || "Medium",
+      assigned_to: updates.assignedTo || null,
+      start_datetime: updates.startDatetime || null,
+      end_datetime: updates.endDatetime || null,
+      updated_at: new Date().toISOString(),
+    };
+    const previousTasks = tasks;
+
+    setTasks((current) =>
+      current.map((currentTask) =>
+        currentTask.task_id === task.task_id ? { ...currentTask, ...nextTask } : currentTask,
+      ),
+    );
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({
+          taskId: task.task_id,
+          title: updates.title,
+          description: updates.description,
+          assignedTo: updates.assignedTo,
+          status: updates.status,
+          priority: updates.priority,
+          startDatetime: updates.startDatetime,
+          endDatetime: updates.endDatetime,
+        }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not update task.");
+      }
+    } catch (updateError) {
+      setTasks(previousTasks);
+      setError(updateError.message);
+      throw updateError;
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* View switcher */}
@@ -211,6 +263,7 @@ export default function WorkspaceView() {
             groups={groups}
             isLoading={isLoading}
             onGroupRename={renameGroup}
+            onTaskUpdate={updateTask}
             tasks={tasks}
           />
         )}
