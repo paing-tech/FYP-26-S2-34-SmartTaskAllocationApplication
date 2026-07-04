@@ -53,10 +53,10 @@ function formatPillLabel(value, fallback) {
 }
 
 function formatDate(value) {
-  if (!value) return "No due date";
+  if (!value) return "";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "No due date";
+  if (Number.isNaN(date.getTime())) return "";
 
   return new Intl.DateTimeFormat("en", {
     month: "short",
@@ -116,6 +116,58 @@ function Avatars({ names }) {
   );
 }
 
+function TimelineRail({ end, start }) {
+  const startLabel = formatDate(start);
+  const endLabel = formatDate(end);
+  const startDate = start ? new Date(start) : null;
+  const endDate = end ? new Date(end) : null;
+  const hasValidRange =
+    startDate &&
+    endDate &&
+    !Number.isNaN(startDate.getTime()) &&
+    !Number.isNaN(endDate.getTime()) &&
+    endDate.getTime() > startDate.getTime();
+
+  const currentPosition = hasValidRange
+    ? Math.min(
+        100,
+        Math.max(
+          0,
+          ((Date.now() - startDate.getTime()) / (endDate.getTime() - startDate.getTime())) * 100,
+        ),
+      )
+    : null;
+
+  if (!startLabel && !endLabel) {
+    return (
+      <div className="mt-3 rounded-xl bg-[#f8fafc] px-3 py-2 text-[11px] font-black uppercase tracking-wide text-[#94a3b8]">
+        No timeline
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between gap-3 text-[11px] font-black tracking-wide text-[#94a3b8]">
+        <span className="truncate">{startLabel || "No start"}</span>
+        <span className="truncate text-right">{endLabel ? `Due ${endLabel}` : "No end"}</span>
+      </div>
+      <div className="relative mt-2 h-4">
+        <div className="absolute left-1.5 right-1.5 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-[#dbe4f0]" />
+        <span className="absolute left-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#94a3b8] shadow-sm" />
+        <span className="absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#94a3b8] shadow-sm" />
+        {currentPosition !== null ? (
+          <span
+            className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#2563EB] shadow-[0_0_0_3px_rgba(37,99,235,0.18)]"
+            style={{ left: `${currentPosition}%` }}
+            title="Today"
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function TaskCard({ task }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
@@ -124,7 +176,7 @@ function TaskCard({ task }) {
 
   return (
     <div className="group relative z-0 pt-11 hover:z-20">
-      <div className="absolute inset-x-0 top-0 bottom-0 z-0 translate-y-0 rounded-2xl border border-[#e6ebf2] bg-[#eef2f8] px-4 pt-3 shadow-sm transition-transform duration-200 ease-out group-hover:-translate-y-4">
+      <div className="absolute inset-x-0 top-0 bottom-0 z-0 translate-y-0 rounded-3xl border border-white/60 bg-white/10 px-4 pt-3 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out group-hover:-bottom-4 group-hover:-translate-y-4">
         <div className="flex items-center gap-1.5">
           <span
             className={`h-4 w-4 rounded-full text-center text-[9px] font-black leading-4 text-white ${
@@ -140,7 +192,7 @@ function TaskCard({ task }) {
         </p>
       </div>
 
-      <div className="relative z-10 rounded-2xl border border-[#e6ebf2] bg-white p-4 shadow-sm transition duration-200 group-hover:shadow-lg">
+      <div className="relative z-10 rounded-3xl border border-[#e6ebf2] bg-white/40 backdrop-blur-2xl p-4 shadow-sm transition duration-200 group-hover:shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
@@ -160,11 +212,15 @@ function TaskCard({ task }) {
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#667085]">
           {task.description || "No description added."}
         </p>
+        <TimelineRail start={task.start_datetime} end={task.end_datetime} />
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <div className="min-w-0 text-[11px] font-semibold text-[#94a3b8]">
-            <span className="truncate">{formatDate(task.end_datetime)}</span>
-          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded-full border border-white/60 bg-white/60 px-3 py-2 text-[11px] font-black text-slate-800 transition hover:border-slate-300 hover:bg-slate-200 hover:scale-110"
+          >
+            Assign
+          </button>
           <Avatars names={task.assignees} />
         </div>
       </div>
@@ -287,7 +343,7 @@ export default function WorkspaceBoard({
             onRename={onGroupRename}
           />
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-4">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1 pb-4 pt-6">
             {column.tasks.map((task) => (
               <TaskCard key={task.task_id} task={task} />
             ))}

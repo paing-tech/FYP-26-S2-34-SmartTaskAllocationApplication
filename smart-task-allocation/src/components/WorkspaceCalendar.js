@@ -61,18 +61,6 @@ function formatTime(value) {
   }).format(date);
 }
 
-function formatDate(value) {
-  if (!value) return "No date";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "No date";
-
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
 function getTaskDate(task) {
   const value = task.start_datetime || task.end_datetime;
   if (!value) return null;
@@ -93,34 +81,6 @@ function getPriorityClasses(priority) {
   }
 
   return "border-amber-200 bg-amber-50 text-amber-800";
-}
-
-function TaskListItem({ employeesById, task }) {
-  const assignee = employeesById.get(task.assigned_to);
-
-  return (
-    <div className="rounded-2xl border border-[#e6ebf2] bg-white/80 px-4 py-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-black text-[#0D1E4C]">{task.title || "Untitled task"}</p>
-          <p className="mt-1 text-xs font-semibold text-[#667085]">
-            {task.status || "Open"} · {formatDate(task.end_datetime || task.start_datetime)}
-          </p>
-        </div>
-        <span
-          className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black ${getPriorityClasses(task.priority)}`}
-        >
-          {task.priority || "Medium"}
-        </span>
-      </div>
-      <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#667085]">
-        {task.description || "No description added."}
-      </p>
-      <p className="mt-3 text-xs font-bold text-[#52627a]">
-        {assignee ? `Assigned to ${getDisplayName(assignee)}` : "Unassigned"}
-      </p>
-    </div>
-  );
 }
 
 function EmployeeListItem({ employee }) {
@@ -187,8 +147,6 @@ export default function WorkspaceCalendar({
   tasks = [],
 }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
-  // Independent — both panels can be open at the same time.
-  const [isTasksOpen, setIsTasksOpen] = useState(false);
   const [isEmployeesOpen, setIsEmployeesOpen] = useState(false);
 
   const days = useMemo(
@@ -253,20 +211,9 @@ export default function WorkspaceCalendar({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {/* Header: Tasks · month nav · Employee (3-col grid keeps the nav centered) */}
+      {/* Header: spacer · month nav · Employee (3-col grid keeps the nav centered) */}
       <div className="relative z-40 grid shrink-0 grid-cols-3 items-center px-2 pb-5">
-        <button
-          type="button"
-          onClick={() => setIsTasksOpen((current) => !current)}
-          aria-label={isTasksOpen ? "Close tasks" : "Open tasks"}
-          className={`flex items-center justify-center justify-self-start rounded-full border text-sm font-bold transition ${
-            isTasksOpen
-              ? "h-11 w-11 border-white bg-slate-200 text-[#0D1E4C]"
-              : "border-white/60 bg-white/20 px-6 py-3 text-[#0D1E4C] hover:bg-white/70"
-          }`}
-        >
-          {isTasksOpen ? <CloseIcon /> : "Tasks"}
-        </button>
+        <div aria-hidden="true" />
 
         <div className="flex items-center justify-self-center gap-3 text-lg font-bold text-[#0D1E4C]">
           <button
@@ -393,19 +340,6 @@ export default function WorkspaceCalendar({
           </div>
         </div>
       </div>
-
-      {/* Tasks overlay — left half, grows from the Tasks button */}
-      <OverlayPanel open={isTasksOpen} align="left">
-        <div className="space-y-3">
-          {tasks.length ? (
-            tasks.map((task) => (
-              <TaskListItem key={task.task_id} employeesById={employeesById} task={task} />
-            ))
-          ) : (
-            <p className="px-1 py-2 text-sm text-[#52627a]">No tasks yet.</p>
-          )}
-        </div>
-      </OverlayPanel>
 
       {/* Employee overlay — right half, grows from the Employee button */}
       <OverlayPanel open={isEmployeesOpen} align="right">
