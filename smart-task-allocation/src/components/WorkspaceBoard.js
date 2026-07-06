@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 const PRIORITY_TONES = {
   low: { chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#22c55e]" },
@@ -19,6 +20,7 @@ const STATUS_TONES = {
 const AVATAR_COLORS = ["#1E40AF", "#0F766E", "#7C3AED", "#B45309", "#BE185D"];
 const STATUS_OPTIONS = ["Open", "In Progress", "Completed", "Cancelled"];
 const PRIORITY_OPTIONS = ["Low", "Medium", "High", "Urgent"];
+const REPEAT_OPTIONS = ["Never", "Daily", "Weekly", "Monthly"];
 
 function initials(name) {
   if (!name) return "?";
@@ -66,6 +68,49 @@ function formatDate(value) {
   }).format(date);
 }
 
+function toDateInputValue(date) {
+  if (!date || Number.isNaN(date.getTime())) return "";
+
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 10);
+}
+
+function formatDateSummary(value) {
+  if (!value) return "No date";
+
+  const date = new Date(`${value}T00:00`);
+  if (Number.isNaN(date.getTime())) return "No date";
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatTimeSummary(value) {
+  if (!value) return "No time";
+
+  const [hours, minutes] = value.split(":").map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return "No time";
+
+  return new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(2000, 0, 1, hours, minutes));
+}
+
+function getMonthStart(value) {
+  const date = value ? new Date(`${value}T00:00`) : new Date();
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+
+  return new Date(safeDate.getFullYear(), safeDate.getMonth(), 1);
+}
+
+function addMonths(date, amount) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
 function toDateTimeInputValue(value) {
   if (!value) return "";
 
@@ -74,6 +119,20 @@ function toDateTimeInputValue(value) {
 
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return offsetDate.toISOString().slice(0, 16);
+}
+
+function splitDateTime(value) {
+  const inputValue = toDateTimeInputValue(value);
+
+  return {
+    date: inputValue.slice(0, 10),
+    time: inputValue.slice(11, 16),
+  };
+}
+
+function combineDateTime({ date, isDateEnabled, isTimeEnabled, time }) {
+  if (!isDateEnabled || !date) return "";
+  return `${date}T${isTimeEnabled && time ? time : "00:00"}`;
 }
 
 function getTaskActionLabels(task) {
@@ -107,23 +166,49 @@ function buildBoardColumns({ groups, tasks }) {
   }));
 }
 
-function Avatars({ names }) {
-  if (!names.length) {
-    return <span className="text-[11px] font-semibold text-[#94a3b8]">Unassigned</span>;
+function getOccupation(employee) {
+  return (
+    employee?.job_title ||
+    employee?.department?.department_name ||
+    employee?.role?.role_name ||
+    employee?.email ||
+    "No occupation added"
+  );
+}
+
+function AssigneeProfile({ employee }) {
+  if (!employee) {
+    return (
+      <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl bg-white/45 px-3 py-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#94a3b8] text-[10px] font-black text-white">
+            ?
+          </span>
+          <span className="truncate text-xs font-black text-[#0D1E4C]">Unassigned</span>
+        </span>
+        <span className="shrink-0 truncate text-right text-[11px] font-semibold text-[#94a3b8]">
+          No assignee
+        </span>
+      </div>
+    );
   }
 
+  const name = getDisplayName(employee);
+
   return (
-    <div className="flex -space-x-2">
-      {names.map((name, index) => (
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-full bg-white/10 backdrop-blur-3xl px-3 py-2">
+      <span className="flex min-w-0 items-center gap-2">
         <span
-          key={name}
-          title={name}
-          className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white"
-          style={{ backgroundColor: AVATAR_COLORS[index % AVATAR_COLORS.length] }}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white"
+          style={{ backgroundColor: AVATAR_COLORS[0] }}
         >
           {initials(name)}
         </span>
-      ))}
+        <span className="truncate text-xs font-black text-[#0D1E4C]">{name}</span>
+      </span>
+      <span className="shrink-0 truncate text-right text-[11px] font-semibold text-[#667085]">
+        {getOccupation(employee)}
+      </span>
     </div>
   );
 }
@@ -229,49 +314,391 @@ function TaskCard({ onOpen, task }) {
         </p>
         <TimelineRail start={task.start_datetime} end={task.end_datetime} />
 
-        <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="mt-4">
+          <AssigneeProfile employee={task.assignee} />
           <button
             type="button"
             onClick={(event) => event.stopPropagation()}
-            className="shrink-0 rounded-full border border-white/60 bg-white/60 px-3 py-2 text-[11px] font-black text-slate-800 transition hover:border-slate-300 hover:bg-slate-200 hover:scale-110"
+            className="mt-3 w-full rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-slate-800 transition hover:scale-[1.05] hover:border-slate-300"
           >
             Assign
           </button>
-          <Avatars names={task.assignees} />
         </div>
       </div>
     </div>
   );
 }
 
+function ToggleSwitch({ checked, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`flex h-7 w-12 items-center rounded-full p-1 transition ${
+        checked ? "bg-[#2563EB]" : "bg-[#cbd5e1]"
+      }`}
+      aria-pressed={checked}
+    >
+      <span
+        className={`h-5 w-5 rounded-full bg-white shadow-sm transition ${
+          checked ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
+    </button>
+  );
+}
+
+function CalendarPicker({ onChange, value }) {
+  const [visibleMonth, setVisibleMonth] = useState(() => getMonthStart(value));
+
+  useEffect(() => {
+    if (value) {
+      setVisibleMonth(getMonthStart(value));
+    }
+  }, [value]);
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingEmptyDays = new Date(year, month, 1).getDay();
+  const cells = [
+    ...Array.from({ length: leadingEmptyDays }, (_, index) => ({ key: `empty-${index}` })),
+    ...Array.from({ length: daysInMonth }, (_, index) => ({
+      key: `day-${index + 1}`,
+      day: index + 1,
+    })),
+  ];
+  const monthLabel = new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+  }).format(visibleMonth);
+
+  return (
+    <div className="border-t border-[#e6ebf2] px-4 py-4">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setVisibleMonth((current) => addMonths(current, -1))}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-2xl font-black text-[#2563EB] transition hover:bg-[#eff6ff]"
+          aria-label="Previous month"
+        >
+          ‹
+        </button>
+        <p className="text-sm font-black text-[#0D1E4C]">{monthLabel}</p>
+        <button
+          type="button"
+          onClick={() => setVisibleMonth((current) => addMonths(current, 1))}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-2xl font-black text-[#2563EB] transition hover:bg-[#eff6ff]"
+          aria-label="Next month"
+        >
+          ›
+        </button>
+      </div>
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-black text-[#94a3b8]">
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {cells.map((cell) => {
+          if (!cell.day) {
+            return <span key={cell.key} className="h-8" />;
+          }
+
+          const cellValue = toDateInputValue(new Date(year, month, cell.day));
+          const isSelected = cellValue === value;
+
+          return (
+            <button
+              type="button"
+              key={cell.key}
+              onClick={() => onChange(cellValue)}
+              className={`h-8 rounded-full text-xs font-black transition ${
+                isSelected
+                  ? "bg-[#2563EB] text-white shadow-[0_6px_16px_rgba(37,99,235,0.25)]"
+                  : "text-[#0D1E4C] hover:bg-[#eff6ff]"
+              }`}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function parseTimeParts(value) {
+  const [rawHour, rawMinute] = String(value || "09:00").split(":").map(Number);
+  const hour24 = Number.isNaN(rawHour) ? 9 : rawHour;
+  const minute = Number.isNaN(rawMinute) ? 0 : rawMinute;
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+
+  return { hour12, minute, period };
+}
+
+function composeTimeValue({ hour12, minute, period }) {
+  const normalizedHour = period === "PM" ? (hour12 % 12) + 12 : hour12 % 12;
+  return `${String(normalizedHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function WheelColumn({ ariaLabel, onSelect, options, value }) {
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  );
+  const visibleOptions =
+    options.length <= 2
+      ? [
+          { isBlank: true, offset: -2, renderKey: "blank-top" },
+          { ...options.find((option) => option.value !== value), offset: -1, renderKey: "other" },
+          { ...options[selectedIndex], offset: 0, renderKey: "selected" },
+          { isBlank: true, offset: 1, renderKey: "blank-bottom-1" },
+          { isBlank: true, offset: 2, renderKey: "blank-bottom-2" },
+        ]
+      : Array.from({ length: 5 }, (_, index) => {
+          const offset = index - 2;
+          const optionIndex = (selectedIndex + offset + options.length) % options.length;
+
+          return {
+            ...options[optionIndex],
+            offset,
+            renderKey: `${options[optionIndex].value}-${offset}`,
+          };
+        });
+
+  return (
+    <div className="min-w-0 flex-1 rounded-2xl">
+      <div className="space-y-1 py-1">
+        {visibleOptions.map((option) => {
+          if (option.isBlank) {
+            return <span key={option.renderKey} className="block h-10" />;
+          }
+
+          const isSelected = option.offset === 0;
+
+          return (
+            <button
+              type="button"
+              key={option.renderKey}
+              onClick={() => onSelect(option.value)}
+              aria-label={`${ariaLabel} ${option.label}`}
+              className={`block h-10 w-full rounded-full text-center text-lg transition ${
+                isSelected
+                  ? "border-2 border-[#2563EB] bg-white font-black text-[#0D1E4C] shadow-sm"
+                  : "font-bold text-[#94a3b8] opacity-70 hover:text-[#52627a] hover:opacity-100"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AppleTimePicker({ onChange, value }) {
+  const timeParts = parseTimeParts(value);
+  const selectedMinute = Math.min(55, Math.max(0, Math.round(timeParts.minute / 5) * 5));
+  const hourOptions = Array.from({ length: 12 }, (_, index) => ({
+    label: String(index + 1),
+    value: index + 1,
+  }));
+  const minuteOptions = Array.from({ length: 12 }, (_, index) => {
+    const minute = index * 5;
+    return {
+      label: String(minute).padStart(2, "0"),
+      value: minute,
+    };
+  });
+  const periodOptions = ["AM", "PM"].map((period) => ({ label: period, value: period }));
+
+  function updateTime(nextParts) {
+    onChange(composeTimeValue({ ...timeParts, ...nextParts }));
+  }
+
+  return (
+    <div className="border-t border-[#e6ebf2] px-4 py-4">
+      <div className="grid grid-cols-3 gap-2 rounded-3xl bg-white/55 p-2">
+        <WheelColumn
+          ariaLabel="Hour"
+          value={timeParts.hour12}
+          options={hourOptions}
+          onSelect={(hour12) => updateTime({ hour12 })}
+        />
+        <WheelColumn
+          ariaLabel="Minute"
+          value={selectedMinute}
+          options={minuteOptions}
+          onSelect={(minute) => updateTime({ minute })}
+        />
+        <WheelColumn
+          ariaLabel="Period"
+          value={timeParts.period}
+          options={periodOptions}
+          onSelect={(period) => updateTime({ period })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DateTimeSection({
+  dateEnabled,
+  dateValue,
+  onDateChange,
+  onDateEnabledChange,
+  onTimeChange,
+  onTimeEnabledChange,
+  timeEnabled,
+  timeValue,
+  title,
+}) {
+  function toggleDate(value) {
+    if (value && !dateValue) {
+      onDateChange(toDateInputValue(new Date()));
+    }
+
+    if (!value) {
+      onTimeEnabledChange(false);
+    }
+
+    onDateEnabledChange(value);
+  }
+
+  function toggleTime(value) {
+    if (value && !dateEnabled) {
+      onDateEnabledChange(true);
+      if (!dateValue) onDateChange(toDateInputValue(new Date()));
+    }
+
+    if (value && !timeValue) {
+      onTimeChange("09:00");
+    }
+
+    onTimeEnabledChange(value);
+  }
+
+  return (
+    <section>
+      <h4 className="mb-2 text-sm font-black text-[#52627a]">{title}</h4>
+      <div className="overflow-hidden rounded-3xl bg-white/60 backdrop-blur-3xl shadow-sm">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span className="material-symbols-outlined text-xl text-[#94a3b8]" aria-hidden="true">
+            calendar_month
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-black text-[#0D1E4C]">Date</span>
+            <span className="block text-xs font-bold text-[#2563EB]">
+              {dateEnabled ? formatDateSummary(dateValue) : ""}
+            </span>
+          </span>
+          <ToggleSwitch checked={dateEnabled} onChange={toggleDate} />
+        </div>
+        {dateEnabled ? <CalendarPicker value={dateValue} onChange={onDateChange} /> : null}
+        <div className="mx-4 border-t border-[#e6ebf2]" />
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span className="material-symbols-outlined text-xl text-[#94a3b8]" aria-hidden="true">
+            schedule
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-black text-[#0D1E4C]">Time</span>
+            <span className="block text-xs font-bold text-[#2563EB]">
+              {dateEnabled && timeEnabled ? formatTimeSummary(timeValue) : ""}
+            </span>
+          </span>
+          <ToggleSwitch
+            checked={dateEnabled && timeEnabled}
+            onChange={toggleTime}
+          />
+        </div>
+        {dateEnabled && timeEnabled ? (
+          <AppleTimePicker value={timeValue} onChange={onTimeChange} />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function SelectRow({ isLast = false, label, onChange, options, value }) {
+  return (
+    <label className={`flex items-center gap-3 px-4 py-3 ${isLast ? "" : "border-b border-[#e6ebf2]"}`}>
+      <span className="min-w-0 flex-1 text-sm font-black text-[#0D1E4C]">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="max-w-36 rounded-xl border border-[#dbe4f0] bg-white/70 px-2 py-2 text-right text-xs font-black text-[#52627a] outline-none"
+      >
+        {options.map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function TaskEditPanel({ employees, onClose, onSave, task }) {
+  const startParts = splitDateTime(task?.start_datetime);
+  const endParts = splitDateTime(task?.end_datetime);
+  const [isMounted, setIsMounted] = useState(false);
   const [form, setForm] = useState(() => ({
     title: task?.title ?? "",
     description: task?.description ?? "",
     status: task?.status ?? "Open",
     priority: task?.priority ?? "Medium",
-    assignedTo: task?.assigned_to ?? "",
-    startDatetime: toDateTimeInputValue(task?.start_datetime),
-    endDatetime: toDateTimeInputValue(task?.end_datetime),
+    repeat: "Never",
+    assigneeIds: task?.assigned_to ? [task.assigned_to] : [],
+    startDateEnabled: Boolean(startParts.date),
+    startDate: startParts.date,
+    startTimeEnabled: Boolean(startParts.time),
+    startTime: startParts.time,
+    endDateEnabled: Boolean(endParts.date),
+    endDate: endParts.date,
+    endTimeEnabled: Boolean(endParts.time),
+    endTime: endParts.time,
   }));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [openPanel, setOpenPanel] = useState("");
 
   useEffect(() => {
+    const nextStartParts = splitDateTime(task?.start_datetime);
+    const nextEndParts = splitDateTime(task?.end_datetime);
     setForm({
       title: task?.title ?? "",
       description: task?.description ?? "",
       status: task?.status ?? "Open",
       priority: task?.priority ?? "Medium",
-      assignedTo: task?.assigned_to ?? "",
-      startDatetime: toDateTimeInputValue(task?.start_datetime),
-      endDatetime: toDateTimeInputValue(task?.end_datetime),
+      repeat: "Never",
+      assigneeIds: task?.assigned_to ? [task.assigned_to] : [],
+      startDateEnabled: Boolean(nextStartParts.date),
+      startDate: nextStartParts.date,
+      startTimeEnabled: Boolean(nextStartParts.time),
+      startTime: nextStartParts.time,
+      endDateEnabled: Boolean(nextEndParts.date),
+      endDate: nextEndParts.date,
+      endTimeEnabled: Boolean(nextEndParts.time),
+      endTime: nextEndParts.time,
     });
     setError("");
+    setOpenPanel("");
   }, [task]);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function toggleAssignee(userId) {
+    setForm((current) => {
+      const currentIds = current.assigneeIds ?? [];
+      const nextIds = currentIds.includes(userId)
+        ? currentIds.filter((id) => id !== userId)
+        : [...currentIds, userId];
+
+      return { ...current, assigneeIds: nextIds };
+    });
   }
 
   async function handleSave(event) {
@@ -287,7 +714,25 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
     setError("");
 
     try {
-      await onSave?.(task, { ...form, title: cleanTitle });
+      await onSave?.(task, {
+        title: cleanTitle,
+        description: form.description,
+        status: form.status,
+        priority: form.priority,
+        assignedTo: form.assigneeIds[0] ?? "",
+        startDatetime: combineDateTime({
+          date: form.startDate,
+          isDateEnabled: form.startDateEnabled,
+          isTimeEnabled: form.startTimeEnabled,
+          time: form.startTime,
+        }),
+        endDatetime: combineDateTime({
+          date: form.endDate,
+          isDateEnabled: form.endDateEnabled,
+          isTimeEnabled: form.endTimeEnabled,
+          time: form.endTime,
+        }),
+      });
       onClose?.();
     } catch (saveError) {
       setError(saveError.message || "Could not save task.");
@@ -296,130 +741,191 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-[80] flex justify-end bg-[#0D1E4C]/30 backdrop-blur-sm">
+  const selectedEmployees = employees.filter((employee) =>
+    form.assigneeIds.includes(employee.user_id),
+  );
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) return null;
+
+  return createPortal(
+    <div className="pointer-events-none fixed inset-y-0 right-0 z-[999] flex w-full items-start justify-end px-7 pb-8 pt-26">
       <button
         type="button"
-        className="absolute inset-0 cursor-default"
+        className="pointer-events-auto absolute inset-0 cursor-default"
         onClick={onClose}
         aria-label="Close task editor"
       />
       <form
         onSubmit={handleSave}
-        className="relative z-10 flex h-full w-full max-w-xl flex-col border-l border-white/60 bg-white/90 shadow-[0_24px_80px_rgba(13,30,76,0.25)] backdrop-blur-2xl"
+        className="pointer-events-auto relative z-10 flex max-h-[calc(100vh-9.5rem)] w-full max-w-sm flex-col overflow-hidden rounded-[2rem] border border-white/60 bg-white/10 shadow-[0_24px_80px_rgba(13,30,76,0.25)] backdrop-blur-md"
       >
-        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[#e6ebf2] px-6 py-5">
-          <div>
-            <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Task details</p>
-            <h3 className="text-xl font-black text-[#0D1E4C]">Edit task</h3>
-          </div>
+        <div className="grid shrink-0 grid-cols-3 items-center gap-4 px-6 pb-6 pt-5">
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dbe4f0] bg-white text-xl font-black text-[#0D1E4C] transition hover:bg-[#eef2f8]"
+            className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-[#dbe4f0] bg-white text-2xl font-light text-[#0D1E4C] transition hover:bg-[#eef2f8]"
             aria-label="Close task editor"
           >
             ×
           </button>
+          <h3 className="justify-self-center text-xl font-black text-[#0D1E4C]">Details</h3>
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="flex h-11 w-11 items-center justify-center justify-self-end rounded-full bg-[#2563EB] text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Save task"
+          >
+            <span className="material-symbols-outlined text-[28px] leading-none" aria-hidden="true">
+              check
+            </span>
+          </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
-          <label className="block">
-            <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Task name</span>
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
+          <section className="rounded-3xl bg-white/60 backdrop-blur-3xl px-6 py-2 shadow-sm">
             <input
               type="text"
               value={form.title}
               onChange={(event) => updateField("title", event.target.value)}
-              className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+              placeholder="Title"
+              className="h-11 w-full border-0 bg-transparent text-lg font-black text-[#0D1E4C] outline-none placeholder:text-[#94a3b8]"
             />
-          </label>
-
-          <label className="block">
-            <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Description</span>
             <textarea
               value={form.description}
               onChange={(event) => updateField("description", event.target.value)}
-              rows={4}
-              className="mt-2 w-full resize-none rounded-xl border border-[#dbe4f0] bg-white/80 px-3 py-3 text-sm font-semibold leading-6 text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+              rows={3}
+              placeholder="Description"
+              className="mt-1 w-full resize-none border-0 bg-transparent text-sm font-semibold leading-6 text-[#0D1E4C] outline-none placeholder:text-[#94a3b8]"
             />
-          </label>
+          </section>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Status</span>
-              <select
-                value={form.status}
-                onChange={(event) => updateField("status", event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
-              >
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status}>{status}</option>
-                ))}
-              </select>
-            </label>
+          <DateTimeSection
+            title="Start Date & Time"
+            dateEnabled={form.startDateEnabled}
+            dateValue={form.startDate}
+            timeEnabled={form.startTimeEnabled}
+            timeValue={form.startTime}
+            onDateEnabledChange={(value) => updateField("startDateEnabled", value)}
+            onDateChange={(value) => updateField("startDate", value)}
+            onTimeEnabledChange={(value) => updateField("startTimeEnabled", value)}
+            onTimeChange={(value) => updateField("startTime", value)}
+          />
 
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Priority</span>
-              <select
-                value={form.priority}
-                onChange={(event) => updateField("priority", event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
-              >
-                {PRIORITY_OPTIONS.map((priority) => (
-                  <option key={priority}>{priority}</option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <DateTimeSection
+            title="End Date & Time"
+            dateEnabled={form.endDateEnabled}
+            dateValue={form.endDate}
+            timeEnabled={form.endTimeEnabled}
+            timeValue={form.endTime}
+            onDateEnabledChange={(value) => updateField("endDateEnabled", value)}
+            onDateChange={(value) => updateField("endDate", value)}
+            onTimeEnabledChange={(value) => updateField("endTimeEnabled", value)}
+            onTimeChange={(value) => updateField("endTime", value)}
+          />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Start date</span>
-              <input
-                type="datetime-local"
-                value={form.startDatetime}
-                onChange={(event) => updateField("startDatetime", event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
-              />
-            </label>
+          <section className="overflow-hidden rounded-3xl bg-white/70 shadow-sm">
+            <SelectRow
+              label="Status"
+              value={form.status}
+              options={STATUS_OPTIONS}
+              onChange={(value) => updateField("status", value)}
+            />
+            <SelectRow
+              label="Priority"
+              value={form.priority}
+              options={PRIORITY_OPTIONS}
+              onChange={(value) => updateField("priority", value)}
+            />
+            <SelectRow
+              label="Repeat"
+              value={form.repeat}
+              options={REPEAT_OPTIONS}
+              onChange={(value) => updateField("repeat", value)}
+              isLast
+            />
+          </section>
 
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">End date</span>
-              <input
-                type="datetime-local"
-                value={form.endDatetime}
-                onChange={(event) => updateField("endDatetime", event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
-              />
-            </label>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-black uppercase tracking-wide text-[#52627a]">Assignee</span>
-              {form.assignedTo ? (
-                <button
-                  type="button"
-                  onClick={() => updateField("assignedTo", "")}
-                  className="text-xs font-black text-[#DF2F4A] transition hover:text-[#b91c1c]"
-                >
-                  Remove assignee
-                </button>
-              ) : null}
-            </div>
-            <select
-              value={form.assignedTo}
-              onChange={(event) => updateField("assignedTo", event.target.value)}
-              className="mt-2 h-11 w-full rounded-xl border border-[#dbe4f0] bg-white/80 px-3 text-sm font-bold text-[#0D1E4C] outline-none transition focus:border-[#2563EB]"
+          <section className="overflow-hidden rounded-3xl bg-white/70 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setOpenPanel((current) => (current === "attachments" ? "" : "attachments"))}
+              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-black text-[#0D1E4C] transition hover:bg-white/70"
             >
-              <option value="">Unassigned</option>
-              {employees.map((employee) => (
-                <option key={employee.user_id} value={employee.user_id}>
-                  {getDisplayName(employee)}
-                </option>
-              ))}
-            </select>
-          </div>
+              <span>Attachments</span>
+              <span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-[11px] font-black text-[#2563EB]">
+                Open
+              </span>
+            </button>
+            <div className="mx-4 border-t border-[#e6ebf2]" />
+            <button
+              type="button"
+              onClick={() => setOpenPanel((current) => (current === "comments" ? "" : "comments"))}
+              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-black text-[#0D1E4C] transition hover:bg-white/70"
+            >
+              <span>Comments</span>
+              <span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-[11px] font-black text-[#2563EB]">
+                Open
+              </span>
+            </button>
+          </section>
+
+          {openPanel ? (
+            <section className="rounded-3xl bg-white/70 px-4 py-4 text-sm font-semibold text-[#667085] shadow-sm">
+              {openPanel === "attachments"
+                ? "Attachments panel is ready for file/link controls."
+                : "Comments panel is ready for discussion controls."}
+            </section>
+          ) : null}
+
+          <section className="rounded-3xl bg-white/70 px-4 py-4 shadow-sm">
+            <p className="text-sm font-black normal-case text-[#52627a]">Assigned to</p>
+            <div className="mt-3 space-y-2">
+              {selectedEmployees.length ? (
+                selectedEmployees.map((employee) => (
+                  <AssigneeProfile key={employee.user_id} employee={employee} />
+                ))
+              ) : (
+                <AssigneeProfile employee={null} />
+              )}
+            </div>
+            <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
+              {employees.map((employee) => {
+                const isSelected = form.assigneeIds.includes(employee.user_id);
+
+                return (
+                  <button
+                    type="button"
+                    key={employee.user_id}
+                    onClick={() => toggleAssignee(employee.user_id)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-left transition ${
+                      isSelected ? "bg-[#dbeafe]" : "bg-white/60 hover:bg-white"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-[10px] font-black text-white">
+                        {initials(getDisplayName(employee))}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-black text-[#0D1E4C]">
+                          {getDisplayName(employee)}
+                        </span>
+                        <span className="block truncate text-[11px] font-semibold text-[#667085]">
+                          {getOccupation(employee)}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="text-xs font-black text-[#2563EB]">
+                      {isSelected ? "Selected" : "Add"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
           {error ? (
             <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
@@ -428,24 +934,9 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
           ) : null}
         </div>
 
-        <div className="flex shrink-0 justify-end gap-3 border-t border-[#e6ebf2] px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-[#dbe4f0] bg-white px-5 py-2 text-sm font-black text-[#52627a] transition hover:bg-[#eef2f8]"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="rounded-full bg-[#2563EB] px-5 py-2 text-sm font-black text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "Saving..." : "Save changes"}
-          </button>
-        </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -524,7 +1015,7 @@ export default function WorkspaceBoard({
 
         return {
           ...task,
-          assignees: assignee ? [getDisplayName(assignee)] : [],
+          assignee: assignee ?? null,
           owner: owner ? getDisplayName(owner) : "Manager",
         };
       }),
