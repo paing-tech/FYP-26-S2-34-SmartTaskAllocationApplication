@@ -171,6 +171,36 @@ export default function WorkspaceView() {
     }
   }
 
+  async function createGroup() {
+    if (!selectedWorkspaceId) {
+      return null;
+    }
+
+    setError("");
+
+    try {
+      const response = await fetch("/api/task-groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ workspaceId: selectedWorkspaceId, groupName: "New Group" }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not create task group.");
+      }
+
+      if (result.group) {
+        setGroups((current) => [...current, result.group]);
+      }
+
+      return result.group ?? null;
+    } catch (createError) {
+      setError(createError.message);
+      throw createError;
+    }
+  }
+
   async function updateTask(task, updates) {
     if (!task?.task_id) {
       return;
@@ -183,6 +213,7 @@ export default function WorkspaceView() {
       status: updates.status || "Open",
       priority: updates.priority || "Medium",
       assigned_to: updates.assignedTo || null,
+      group_id: updates.groupId ?? null,
       start_datetime: updates.startDatetime || null,
       end_datetime: updates.endDatetime || null,
       updated_at: new Date().toISOString(),
@@ -205,6 +236,7 @@ export default function WorkspaceView() {
           title: updates.title,
           description: updates.description,
           assignedTo: updates.assignedTo,
+          groupId: updates.groupId,
           status: updates.status,
           priority: updates.priority,
           startDatetime: updates.startDatetime,
@@ -262,6 +294,7 @@ export default function WorkspaceView() {
             error={error}
             groups={groups}
             isLoading={isLoading}
+            onGroupCreate={createGroup}
             onGroupRename={renameGroup}
             onTaskUpdate={updateTask}
             tasks={tasks}

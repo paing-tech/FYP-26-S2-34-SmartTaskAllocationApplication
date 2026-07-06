@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const PRIORITY_TONES = {
@@ -155,7 +155,8 @@ function buildBoardColumns({ groups, tasks }) {
   const tasksByGroup = new Map(baseGroups.map((group) => [group.group_id, []]));
 
   for (const task of tasks) {
-    const key = tasksByGroup.has(task.group_id) ? task.group_id : firstGroupId;
+    const matchingGroup = baseGroups.find((group) => sameId(group.group_id, task.group_id));
+    const key = matchingGroup?.group_id ?? firstGroupId;
     tasksByGroup.get(key)?.push(task);
   }
 
@@ -174,6 +175,10 @@ function getOccupation(employee) {
     employee?.email ||
     "No occupation added"
   );
+}
+
+function sameId(left, right) {
+  return String(left ?? "") === String(right ?? "");
 }
 
 function AssigneeProfile({ employee }) {
@@ -653,7 +658,7 @@ function SelectRow({ icon, isLast = false, label, onChange, options, value }) {
           </button>
 
           {isOpen ? (
-            <div className="absolute right-0 top-full z-50 mt-1 min-w-44 overflow-hidden rounded-xl border border-white/60 bg-white/80 backdrop-blur-3xl py-1 shadow-[0_14px_32px_rgba(13,30,76,0.24)]">
+            <div className="absolute right-0 top-full z-[200] min-w-44 overflow-hidden rounded-3xl border border-white/80 bg-white px-2 py-2 shadow-[0_24px_60px_rgba(13,30,76,0.34)]">
               {options.map((option) => {
                 const isSelected = option === value;
 
@@ -662,7 +667,7 @@ function SelectRow({ icon, isLast = false, label, onChange, options, value }) {
                     type="button"
                     key={option}
                     onClick={() => selectOption(option)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-bold text-white transition hover:bg-white/12"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-semibold rounded-full text-black transition hover:bg-black/10"
                   >
                     <span className="flex w-4 items-center justify-center">
                       {isSelected ? (
@@ -684,7 +689,74 @@ function SelectRow({ icon, isLast = false, label, onChange, options, value }) {
   );
 }
 
-function TaskEditPanel({ employees, onClose, onSave, task }) {
+function GroupPicker({ groups, onChange, value }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedGroup = groups.find((group) => sameId(group.group_id, value));
+  const selectedName = selectedGroup?.group_name || "No group";
+
+  function selectGroup(groupId) {
+    onChange(groupId);
+    setIsOpen(false);
+  }
+
+  return (
+    <section className="relative z-20 overflow-hidden rounded-3xl bg-white/60 backdrop-blur-3xl shadow-sm">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition hover:bg-white/35"
+        aria-expanded={isOpen}
+      >
+        <span className="material-symbols-outlined text-xl text-[#94a3b8]" aria-hidden="true">
+          amp_stories
+        </span>
+        <span className="min-w-0 flex-1 text-sm font-black text-[#0D1E4C]">Group</span>
+        <span className="inline-flex min-w-0 max-w-40 shrink-0 items-center justify-end gap-1 text-right text-sm font-black text-[#52627a]">
+          <span className="truncate">{selectedName}</span>
+          <span
+            className={`material-symbols-outlined text-xl transition-transform ${isOpen ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          >
+            arrow_drop_down
+          </span>
+        </span>
+      </button>
+
+      {isOpen ? (
+        <>
+          <div className="mx-4 border-t border-[#e6ebf2]" />
+          <div className="space-y-1 px-3 py-2">
+            {groups.map((group) => {
+              const isSelected = sameId(group.group_id, value);
+
+              return (
+                <button
+                  type="button"
+                  key={group.group_id}
+                  onClick={() => selectGroup(group.group_id)}
+                  className={`flex w-full items-center gap-2 rounded-full px-3 py-2 text-left text-sm font-semibold transition ${
+                    isSelected ? "bg-black/10 text-[#0D1E4C]" : "text-[#52627a] hover:bg-black/5"
+                  }`}
+                >
+                  <span className="flex w-4 items-center justify-center">
+                    {isSelected ? (
+                      <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">
+                        check_small
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="truncate">{group.group_name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
   const startParts = splitDateTime(task?.start_datetime);
   const endParts = splitDateTime(task?.end_datetime);
   const [isMounted, setIsMounted] = useState(false);
@@ -694,6 +766,7 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
     status: task?.status ?? "Open",
     priority: task?.priority ?? "Medium",
     repeat: "Never",
+    groupId: task?.group_id ?? "",
     assigneeIds: task?.assigned_to ? [task.assigned_to] : [],
     startDateEnabled: Boolean(startParts.date),
     startDate: startParts.date,
@@ -717,6 +790,7 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
       status: task?.status ?? "Open",
       priority: task?.priority ?? "Medium",
       repeat: "Never",
+      groupId: task?.group_id ?? "",
       assigneeIds: task?.assigned_to ? [task.assigned_to] : [],
       startDateEnabled: Boolean(nextStartParts.date),
       startDate: nextStartParts.date,
@@ -764,6 +838,7 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
         description: form.description,
         status: form.status,
         priority: form.priority,
+        groupId: form.groupId || null,
         assignedTo: form.assigneeIds[0] ?? "",
         startDatetime: combineDateTime({
           date: form.startDate,
@@ -872,7 +947,7 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
             onTimeChange={(value) => updateField("endTime", value)}
           />
 
-          <section className="relative rounded-3xl bg-white/60 backdrop-blur-3xl shadow-sm">
+          <section className="relative z-30 rounded-3xl bg-white/60 backdrop-blur-3xl shadow-sm">
             <SelectRow
               icon="rule"
               label="Status"
@@ -897,7 +972,13 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
             />
           </section>
 
-          <section className="overflow-hidden rounded-3xl bg-white/70 shadow-sm">
+          <GroupPicker
+            groups={groups}
+            value={form.groupId}
+            onChange={(value) => updateField("groupId", value)}
+          />
+
+          <section className="relative z-0 overflow-hidden rounded-3xl bg-white/70 shadow-sm">
             <button
               type="button"
               onClick={() => setOpenPanel((current) => (current === "attachments" ? "" : "attachments"))}
@@ -922,14 +1003,14 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
           </section>
 
           {openPanel ? (
-            <section className="rounded-3xl bg-white/70 px-4 py-4 text-sm font-semibold text-[#667085] shadow-sm">
+            <section className="relative z-0 rounded-3xl bg-white/70 px-4 py-4 text-sm font-semibold text-[#667085] shadow-sm">
               {openPanel === "attachments"
                 ? "Attachments panel is ready for file/link controls."
                 : "Comments panel is ready for discussion controls."}
             </section>
           ) : null}
 
-          <section className="rounded-3xl bg-white/70 px-4 py-4 shadow-sm">
+          <section className="relative z-0 rounded-3xl bg-white/70 px-4 py-4 shadow-sm">
             <p className="text-sm font-black normal-case text-[#52627a]">Assigned to</p>
             <div className="mt-3 space-y-2">
               {selectedEmployees.length ? (
@@ -1042,11 +1123,15 @@ export default function WorkspaceBoard({
   error = "",
   groups = [],
   isLoading = false,
+  onGroupCreate,
   onGroupRename,
   onTaskUpdate,
   tasks = [],
 }) {
   const [editingTask, setEditingTask] = useState(null);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const boardScrollRef = useRef(null);
+  const previousGroupCountRef = useRef(groups.length);
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
     [employees],
@@ -1069,6 +1154,39 @@ export default function WorkspaceBoard({
       }),
     }));
   }, [employeesById, groups, tasks]);
+
+  const currentEditingTask = editingTask
+    ? tasks.find((task) => task.task_id === editingTask.task_id) ?? editingTask
+    : null;
+
+  useEffect(() => {
+    const previousGroupCount = previousGroupCountRef.current;
+    previousGroupCountRef.current = groups.length;
+
+    if (groups.length > previousGroupCount) {
+      requestAnimationFrame(() => {
+        const scrollElement = boardScrollRef.current;
+        if (scrollElement) {
+          scrollElement.scrollTo({
+            left: scrollElement.scrollWidth,
+            behavior: "smooth",
+          });
+        }
+      });
+    }
+  }, [groups.length]);
+
+  async function handleCreateGroup() {
+    if (!onGroupCreate || isCreatingGroup) return;
+
+    setIsCreatingGroup(true);
+
+    try {
+      await onGroupCreate();
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -1094,37 +1212,47 @@ export default function WorkspaceBoard({
     );
   }
 
-  const currentEditingTask = editingTask
-    ? tasks.find((task) => task.task_id === editingTask.task_id) ?? editingTask
-    : null;
-
   return (
-    <div className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2">
-      {columns.map((column) => (
-        <div key={column.id} className="flex w-80 shrink-0 flex-col">
-          <ColumnHeader
-            groupId={column.id}
-            name={column.name}
-            count={column.tasks.length}
-            onRename={onGroupRename}
-          />
+    <div className="relative h-full min-h-0">
+      <div ref={boardScrollRef} className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2 pr-20">
+        {columns.map((column) => (
+          <div key={column.id} className="flex w-80 shrink-0 flex-col">
+            <ColumnHeader
+              groupId={column.id}
+              name={column.name}
+              count={column.tasks.length}
+              onRename={onGroupRename}
+            />
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-4 pt-6">
-            {column.tasks.map((task) => (
-              <TaskCard key={task.task_id} task={task} onOpen={setEditingTask} />
-            ))}
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-4 pt-6">
+              {column.tasks.map((task) => (
+                <TaskCard key={task.task_id} task={task} onOpen={setEditingTask} />
+              ))}
 
-            {!column.tasks.length ? (
-              <div className="rounded-2xl border-2 border-dashed border-[#cbd5e1] py-8 text-center text-sm font-bold text-[#94a3b8]">
-                No tasks in this group.
-              </div>
-            ) : null}
+              {!column.tasks.length ? (
+                <div className="rounded-2xl border-2 border-dashed border-[#cbd5e1] py-8 text-center text-sm font-bold text-[#94a3b8]">
+                  No tasks in this group.
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={handleCreateGroup}
+        disabled={isCreatingGroup}
+        className="absolute right-2 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/60 bg-white/10 text-3xl font-light leading-none text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.18)] backdrop-blur-xl transition hover:scale-105 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+        aria-label="Add group"
+      >
+        +
+      </button>
+
       {currentEditingTask ? (
         <TaskEditPanel
           employees={employees}
+          groups={groups}
           task={currentEditingTask}
           onClose={() => setEditingTask(null)}
           onSave={onTaskUpdate}
