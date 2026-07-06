@@ -28,7 +28,7 @@ export default function RootLayout({ children }) {
       <head>
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=calendar_month%2Ccheck%2Cleft_panel_close%2Cleft_panel_open%2Cperson_add%2Cproductivity%2Cschedule&display=block"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=calendar_month%2Ccheck%2Ccheck_small%2Cexpand_all%2Cleft_panel_close%2Cleft_panel_open%2Cperson_add%2Cpriority_high%2Cproductivity%2Crepeat%2Crule%2Cschedule&display=block"
         />
       </head>
       <body className="min-h-full flex flex-col">

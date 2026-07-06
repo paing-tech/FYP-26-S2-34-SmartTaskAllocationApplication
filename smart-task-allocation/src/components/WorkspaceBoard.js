@@ -20,7 +20,7 @@ const STATUS_TONES = {
 const AVATAR_COLORS = ["#1E40AF", "#0F766E", "#7C3AED", "#B45309", "#BE185D"];
 const STATUS_OPTIONS = ["Open", "In Progress", "Completed", "Cancelled"];
 const PRIORITY_OPTIONS = ["Low", "Medium", "High", "Urgent"];
-const REPEAT_OPTIONS = ["Never", "Daily", "Weekly", "Monthly"];
+const REPEAT_OPTIONS = ["Never", "Daily", "Weekdays", "Weekends", "Weekly", "Monthly", "Custom"];
 
 function initials(name) {
   if (!name) return "?";
@@ -622,20 +622,65 @@ function DateTimeSection({
   );
 }
 
-function SelectRow({ isLast = false, label, onChange, options, value }) {
+function SelectRow({ icon, isLast = false, label, onChange, options, value }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  function selectOption(option) {
+    onChange(option);
+    setIsOpen(false);
+  }
+
   return (
-    <label className={`flex items-center gap-3 px-4 py-3 ${isLast ? "" : "border-b border-[#e6ebf2]"}`}>
-      <span className="min-w-0 flex-1 text-sm font-black text-[#0D1E4C]">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="max-w-36 rounded-xl border border-[#dbe4f0] bg-white/70 px-2 py-2 text-right text-xs font-black text-[#52627a] outline-none"
-      >
-        {options.map((option) => (
-          <option key={option}>{option}</option>
-        ))}
-      </select>
-    </label>
+    <>
+      <div className="relative flex items-center gap-3 px-4 py-3">
+        {icon ? (
+          <span className="material-symbols-outlined text-xl text-[#94a3b8]" aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
+        <span className="min-w-0 flex-1 text-sm font-black text-[#0D1E4C]">{label}</span>
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsOpen((current) => !current)}
+            className="inline-flex min-w-28 items-center justify-end gap-1 py-2 pl-2 text-right text-sm font-black text-[#52627a] outline-none transition hover:text-[#0D1E4C]"
+            aria-expanded={isOpen}
+          >
+            <span>{value}</span>
+            <span className="material-symbols-outlined text-xl" aria-hidden="true">
+              expand_all
+            </span>
+          </button>
+
+          {isOpen ? (
+            <div className="absolute right-0 top-full z-50 mt-1 min-w-44 overflow-hidden rounded-xl border border-white/60 bg-white/80 backdrop-blur-3xl py-1 shadow-[0_14px_32px_rgba(13,30,76,0.24)]">
+              {options.map((option) => {
+                const isSelected = option === value;
+
+                return (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => selectOption(option)}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-bold text-white transition hover:bg-white/12"
+                  >
+                    <span className="flex w-4 items-center justify-center">
+                      {isSelected ? (
+                        <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">
+                          check_small
+                        </span>
+                      ) : null}
+                    </span>
+                    <span>{option}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      {!isLast ? <div className="mx-4 border-t border-[#e6ebf2]" /> : null}
+    </>
   );
 }
 
@@ -827,20 +872,23 @@ function TaskEditPanel({ employees, onClose, onSave, task }) {
             onTimeChange={(value) => updateField("endTime", value)}
           />
 
-          <section className="overflow-hidden rounded-3xl bg-white/70 shadow-sm">
+          <section className="relative rounded-3xl bg-white/60 backdrop-blur-3xl shadow-sm">
             <SelectRow
+              icon="rule"
               label="Status"
               value={form.status}
               options={STATUS_OPTIONS}
               onChange={(value) => updateField("status", value)}
             />
             <SelectRow
+              icon="priority_high"
               label="Priority"
               value={form.priority}
               options={PRIORITY_OPTIONS}
               onChange={(value) => updateField("priority", value)}
             />
             <SelectRow
+              icon="repeat"
               label="Repeat"
               value={form.repeat}
               options={REPEAT_OPTIONS}
