@@ -12,8 +12,6 @@ const VIEWS = [
 
 export default function WorkspaceView() {
   const [view, setView] = useState("calendar");
-  const [workspaces, setWorkspaces] = useState([]);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [tasks, setTasks] = useState([]);
   const [groups, setGroups] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -28,116 +26,88 @@ export default function WorkspaceView() {
     };
   }
 
-  useEffect(() => {
-    let isCurrent = true;
+  async function loadWorkspaceData() {
+    setError("");
+    setIsLoading(true);
 
-    async function loadInitialData() {
-      setError("");
-      setIsLoading(true);
+    try {
+      const headers = await authHeaders();
+      const [tasksResponse, groupsResponse, employeesResponse] = await Promise.all([
+        fetch("/api/tasks", { headers }),
+        fetch("/api/task-groups", { headers }),
+        fetch("/api/employees", { headers }),
+      ]);
+      const [tasksResult, groupsResult, employeesResult] = await Promise.all([
+        tasksResponse.json(),
+        groupsResponse.json(),
+        employeesResponse.json(),
+      ]);
 
-      try {
-        const headers = await authHeaders();
-        const [workspacesResponse, employeesResponse] = await Promise.all([
-          fetch("/api/workspaces", { headers }),
-          fetch("/api/employees", { headers }),
-        ]);
-        const [workspacesResult, employeesResult] = await Promise.all([
-          workspacesResponse.json(),
-          employeesResponse.json(),
-        ]);
-
-        if (!workspacesResponse.ok) {
-          throw new Error(workspacesResult.error || "Could not load workspaces.");
-        }
-
-        if (!employeesResponse.ok) {
-          throw new Error(employeesResult.error || "Could not load employees.");
-        }
-
-        if (!isCurrent) return;
-
-        const nextWorkspaces = workspacesResult.workspaces ?? [];
-        const nextWorkspaceId = selectedWorkspaceId || nextWorkspaces[0]?.workspace_id || "";
-
-        setWorkspaces(nextWorkspaces);
-        setSelectedWorkspaceId(nextWorkspaceId);
-        setEmployees(employeesResult.employees ?? []);
-
-        if (!nextWorkspaceId) {
-          setIsLoading(false);
-        }
-      } catch (loadError) {
-        if (isCurrent) {
-          setError(loadError.message);
-          setIsLoading(false);
-        }
+      if (!tasksResponse.ok) {
+        throw new Error(tasksResult.error || "Could not load tasks.");
       }
+
+      if (!groupsResponse.ok) {
+        throw new Error(groupsResult.error || "Could not load task groups.");
+      }
+
+      if (!employeesResponse.ok) {
+        throw new Error(employeesResult.error || "Could not load employees.");
+      }
+
+      setTasks(tasksResult.tasks ?? []);
+      setGroups(groupsResult.groups ?? []);
+      setEmployees(employeesResult.employees ?? []);
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setIsLoading(false);
     }
+  }
 
-    loadInitialData();
-
-    return () => {
-      isCurrent = false;
-    };
+  useEffect(() => {
+    loadWorkspaceData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    let isCurrent = true;
+    async function handleOptimusSettingChange(event) {
+      const detail = event.detail ?? {};
 
-    async function loadWorkspaceData() {
-      if (!selectedWorkspaceId) {
-        setTasks([]);
-        setGroups([]);
-        setIsLoading(false);
+      if (detail.actor !== "manager" || detail.feature !== "smart_task_creation") {
         return;
       }
 
       setError("");
-      setIsLoading(true);
 
       try {
-        const headers = await authHeaders();
-        const [tasksResponse, groupsResponse] = await Promise.all([
-          fetch(`/api/tasks?workspaceId=${selectedWorkspaceId}`, { headers }),
-          fetch(`/api/task-groups?workspaceId=${selectedWorkspaceId}`, { headers }),
-        ]);
-        const [tasksResult, groupsResult] = await Promise.all([
-          tasksResponse.json(),
-          groupsResponse.json(),
-        ]);
+        const response = await fetch("/api/tasks", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({
+            action: "set-ai-task-visibility",
+            enabled: Boolean(detail.enabled),
+          }),
+        });
+        const result = await response.json();
 
-        if (!tasksResponse.ok) {
-          throw new Error(tasksResult.error || "Could not load tasks.");
+        if (!response.ok) {
+          throw new Error(result.error || "Could not update Optimus AI tasks.");
         }
 
-        if (!groupsResponse.ok) {
-          throw new Error(groupsResult.error || "Could not load task groups.");
-        }
-
-        if (!isCurrent) return;
-
-        setTasks(tasksResult.tasks ?? []);
-        setGroups(groupsResult.groups ?? []);
-        setIsLoading(false);
-      } catch (loadError) {
-        if (isCurrent) {
-          setError(loadError.message);
-          setIsLoading(false);
-        }
+        await loadWorkspaceData();
+      } catch (toggleError) {
+        setError(toggleError.message);
       }
     }
 
-    loadWorkspaceData();
+    window.addEventListener("optima:optimus-setting-change", handleOptimusSettingChange);
 
     return () => {
-      isCurrent = false;
+      window.removeEventListener("optima:optimus-setting-change", handleOptimusSettingChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWorkspaceId]);
-
-  const selectedWorkspace =
-    workspaces.find((workspace) => workspace.workspace_id === selectedWorkspaceId) ?? null;
+  }, []);
 
   async function renameGroup(groupId, groupName) {
     const cleanName = groupName.trim();
@@ -172,17 +142,13 @@ export default function WorkspaceView() {
   }
 
   async function createGroup() {
-    if (!selectedWorkspaceId) {
-      return null;
-    }
-
     setError("");
 
     try {
       const response = await fetch("/api/task-groups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ workspaceId: selectedWorkspaceId, groupName: "New Group" }),
+        body: JSON.stringify({ groupName: "New Group" }),
       });
       const result = await response.json();
 
@@ -214,6 +180,10 @@ export default function WorkspaceView() {
       priority: updates.priority || "Medium",
       assigned_to: updates.assignedTo || null,
       group_id: updates.groupId ?? null,
+      ai_state:
+        task.source === "optimus_ai" && !["accepted", "dismissed"].includes(task.ai_state)
+          ? "accepted"
+          : task.ai_state,
       start_datetime: updates.startDatetime || null,
       end_datetime: updates.endDatetime || null,
       updated_at: new Date().toISOString(),
@@ -257,7 +227,6 @@ export default function WorkspaceView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* View switcher */}
       <div className="mb-4 flex shrink-0 justify-center">
         <div className="inline-flex rounded-full border border-white/60 bg-white/30 p-1 backdrop-blur-sm">
           {VIEWS.map((option) => (
@@ -280,7 +249,6 @@ export default function WorkspaceView() {
       <div className="min-h-0 flex-1">
         {view === "calendar" ? (
           <WorkspaceCalendar
-            currentWorkspace={selectedWorkspace}
             employees={employees}
             error={error}
             groups={groups}
@@ -289,7 +257,6 @@ export default function WorkspaceView() {
           />
         ) : (
           <WorkspaceBoard
-            currentWorkspace={selectedWorkspace}
             employees={employees}
             error={error}
             groups={groups}

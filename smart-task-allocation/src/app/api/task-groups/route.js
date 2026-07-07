@@ -6,25 +6,34 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-// List the task groups for a workspace (ordered).
+async function getManagerOrganizationId(supabase, user) {
+  const { data } = await supabase
+    .from("user_account")
+    .select("organization_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return data?.organization_id ?? null;
+}
+
+// List the task groups for the manager organization (ordered).
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await requireManager(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const workspaceId = searchParams.get("workspaceId");
-    if (!workspaceId) {
+    const organizationId = await getManagerOrganizationId(supabase, user);
+    if (!organizationId) {
       return NextResponse.json({ groups: [] });
     }
 
     const { data, error } = await supabase
       .from("task_group")
-      .select("group_id, workspace_id, group_name, sort_order")
-      .eq("workspace_id", workspaceId)
+      .select("group_id, organization_id, group_name, sort_order")
+      .eq("organization_id", organizationId)
       .order("sort_order", { ascending: true })
       .order("group_id", { ascending: true });
 
@@ -38,41 +47,42 @@ export async function GET(request) {
   }
 }
 
-// Create a task group inside a workspace.
+// Create a task group inside the manager organization.
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await requireManager(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { workspaceId, groupName } = await request.json();
-    if (!workspaceId) {
-      return NextResponse.json({ error: "Workspace ID is required." }, { status: 400 });
+    const organizationId = await getManagerOrganizationId(supabase, user);
+    if (!organizationId) {
+      return NextResponse.json({ error: "Organization ID is required." }, { status: 400 });
     }
+    const { groupName } = await request.json();
     const name = cleanString(groupName) || "New Group";
 
-    const { data: lastInWorkspace } = await supabase
+    const { data: lastInOrganization } = await supabase
       .from("task_group")
       .select("sort_order")
-      .eq("workspace_id", workspaceId)
+      .eq("organization_id", organizationId)
       .order("sort_order", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const nextSortOrder = Number.isFinite(Number(lastInWorkspace?.sort_order))
-      ? Number(lastInWorkspace.sort_order) + 1
+    const nextSortOrder = Number.isFinite(Number(lastInOrganization?.sort_order))
+      ? Number(lastInOrganization.sort_order) + 1
       : 0;
 
     // group_id is a generated identity column — let the database assign it.
     const { data, error } = await supabase
       .from("task_group")
       .insert({
-        workspace_id: workspaceId,
+        organization_id: organizationId,
         group_name: name,
         sort_order: nextSortOrder,
       })
-      .select("group_id, workspace_id, group_name, sort_order")
+      .select("group_id, organization_id, group_name, sort_order")
       .single();
 
     if (error) {

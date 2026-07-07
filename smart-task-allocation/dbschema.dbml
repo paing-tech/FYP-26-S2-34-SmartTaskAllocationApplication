@@ -126,29 +126,9 @@ Table user_qualification {
     updated_at timestamptz
 }
 
-Table workspace {
-    workspace_id uuid [pk]
-    workspace_name varchar [not null]
-    description text
-    created_by uuid [not null, ref: > user_account.user_id]
-    status varchar [not null, default: 'Active']
-    visibility varchar [not null, default: 'Private']
-    share_token uuid
-    link_access varchar [not null, default: 'Private']
-    created_at timestamptz [not null, default: `now()`]
-    updated_at timestamptz
-    "created_by, workspace_name" unique
-}
-
-Table workspace_member {
-    workspace_id uuid [pk, ref: > workspace.workspace_id]
-    user_id uuid [pk, ref: > user_account.user_id]
-    joined_at timestamptz [not null, default: `now()`]
-}
-
 Table task_group {
     group_id int [pk]
-    workspace_id uuid [not null, ref: > workspace.workspace_id]
+    organization_id uuid [not null, ref: > organization.organization_id]
     group_name varchar [not null]
     sort_order int [not null, default: 0]
     created_at timestamptz [not null, default: `now()`]
@@ -159,7 +139,6 @@ Table task {
     task_id int [pk]
     organization_id uuid [not null, ref: > organization.organization_id]
     group_id int [ref: > task_group.group_id]
-    workspace_id uuid [ref: > workspace.workspace_id]
     title varchar [not null]
     description text
     owner_id uuid [not null, ref: > user_account.user_id]
@@ -171,6 +150,10 @@ Table task {
     sort_order int [not null, default: 0]
     created_at timestamptz
     updated_at timestamptz
+    source varchar [default: 'manual']
+    ai_state varchar
+    ai_generation_run_id uuid
+    reason jsonb
 }
 
 Table task_comment {

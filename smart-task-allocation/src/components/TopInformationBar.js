@@ -129,6 +129,30 @@ function BellIcon() {
   );
 }
 
+function OptimusToggle({ checked, label, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition hover:bg-white/15"
+      aria-pressed={checked}
+    >
+      <span className="text-sm font-black text-[#0D1E4C]">{label}</span>
+      <span
+        className={`flex h-6 w-11 items-center rounded-full p-1 transition ${
+          checked ? "bg-[#2563EB]" : "bg-white/35"
+        }`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${
+            checked ? "translate-x-5" : "translate-x-0"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
 export default function TopInformationBar({ actor }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -137,6 +161,12 @@ export default function TopInformationBar({ actor }) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isOptimusPanelOpen, setIsOptimusPanelOpen] = useState(false);
+  const [optimusSettings, setOptimusSettings] = useState({
+    smartTaskCreation: false,
+    smartTaskAllocation: false,
+    workflowAutomation: false,
+  });
   const [accountSearchItems, setAccountSearchItems] = useState([]);
   const [isLoadingSearchItems, setIsLoadingSearchItems] = useState(false);
   const [profile, setProfile] = useState({ email: "", name: "" });
@@ -317,6 +347,7 @@ export default function TopInformationBar({ actor }) {
 
     setIsProfileOpen((current) => !current);
     setIsNotificationsOpen(false);
+    setIsOptimusPanelOpen(false);
   }
 
   async function signOut() {
@@ -383,6 +414,30 @@ export default function TopInformationBar({ actor }) {
     setQuery("");
   }
 
+  function toggleOptimusSetting(key) {
+    setOptimusSettings((current) => {
+      const nextValue = !current[key];
+      const nextSettings = {
+        ...current,
+        [key]: nextValue,
+      };
+
+      if (key === "smartTaskCreation") {
+        window.dispatchEvent(
+          new CustomEvent("optima:optimus-setting-change", {
+            detail: {
+              actor,
+              feature: "smart_task_creation",
+              enabled: nextValue,
+            },
+          }),
+        );
+      }
+
+      return nextSettings;
+    });
+  }
+
   function runSearchResult(item) {
     closeSearch();
 
@@ -424,6 +479,43 @@ export default function TopInformationBar({ actor }) {
           </span>
         ) : null}
 
+        {actor === "manager" && pathname === "/manager/workspace" ? (
+          <div className="relative hidden sm:block">
+            <button
+              type="button"
+              onClick={() => {
+                setIsOptimusPanelOpen((current) => !current);
+                setIsNotificationsOpen(false);
+                setIsProfileOpen(false);
+                closeSearch();
+              }}
+              className="rounded-full border border-white/60 bg-white/20 px-4 py-2 text-sm font-black text-[#0D1E4C] shadow-sm backdrop-blur-xl transition hover:bg-white/35"
+            >
+              Optimus AI
+            </button>
+
+            {isOptimusPanelOpen ? (
+              <div className="absolute left-0 top-12 z-[120] w-72 rounded-3xl border border-white/50 bg-white/10 p-3 shadow-[0_20px_70px_rgba(7,24,59,0.18)] backdrop-blur-xl">
+                <OptimusToggle
+                  checked={optimusSettings.smartTaskCreation}
+                  label="Smart Task Creation"
+                  onChange={() => toggleOptimusSetting("smartTaskCreation")}
+                />
+                <OptimusToggle
+                  checked={optimusSettings.smartTaskAllocation}
+                  label="Smart Task Allocation"
+                  onChange={() => toggleOptimusSetting("smartTaskAllocation")}
+                />
+                <OptimusToggle
+                  checked={optimusSettings.workflowAutomation}
+                  label="Workflow Automation"
+                  onChange={() => toggleOptimusSetting("workflowAutomation")}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
       <div className="absolute left-1/2 top-1/2 h-10 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2">
         <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#61708a]">
           <SearchIcon />
@@ -434,6 +526,7 @@ export default function TopInformationBar({ actor }) {
             setIsSearchOpen(true);
             setIsNotificationsOpen(false);
             setIsProfileOpen(false);
+            setIsOptimusPanelOpen(false);
           }}
           className="absolute inset-0 h-full w-full rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-4 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
           aria-label="Open global search"
@@ -451,6 +544,7 @@ export default function TopInformationBar({ actor }) {
           onClick={() => {
             setIsNotificationsOpen((current) => !current);
             setIsProfileOpen(false);
+            setIsOptimusPanelOpen(false);
           }}
           className="relative flex h-11 w-11 items-center justify-center rounded-full text-[#07183b] transition hover:bg-white/70"
           aria-label="Open notifications"

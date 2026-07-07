@@ -136,12 +136,25 @@ function combineDateTime({ date, isDateEnabled, isTimeEnabled, time }) {
 }
 
 function getTaskActionLabels(task) {
-  const actionSource = `${task.owner ?? ""} ${task.latest_assigned_by ?? ""}`;
-  const isSmartAction = /optimus|ai/i.test(actionSource);
+  const isSmartAction =
+    task.source === "optimus_ai" || /optimus|ai/i.test(`${task.owner ?? ""} ${task.latest_assigned_by ?? ""}`);
 
   return [
     isSmartAction ? "Smart task creation" : "Created manually",
     task.assigned_to ? (isSmartAction ? "Smart task allocation" : "Assigned manually") : null,
+  ].filter(Boolean);
+}
+
+function getTaskReasonLabels(task) {
+  const reason = task.reason;
+
+  if (!reason || typeof reason !== "object") {
+    return [];
+  }
+
+  return [
+    ...(Array.isArray(reason.creation) ? reason.creation : []),
+    ...(Array.isArray(reason.allocation) ? reason.allocation : []),
   ].filter(Boolean);
 }
 
@@ -274,6 +287,7 @@ function TaskCard({ onOpen, task }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
+  const reasonLabels = getTaskReasonLabels(task);
 
   return (
     <div className="group relative z-0 pt-11 hover:z-20">
@@ -284,6 +298,11 @@ function TaskCard({ onOpen, task }) {
         <p className="mt-1 text-[11px] font-semibold leading-4 text-[#2563EB] opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           {actionLabels.join(" · ")}
         </p>
+        {reasonLabels.length ? (
+          <p className="mt-1 line-clamp-2 text-[10px] font-semibold leading-4 text-[#52627a] opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            {reasonLabels.join(" · ")}
+          </p>
+        ) : null}
       </div>
 
       <div
@@ -1118,7 +1137,6 @@ function ColumnHeader({ groupId, name, count, onRename }) {
 }
 
 export default function WorkspaceBoard({
-  currentWorkspace,
   employees = [],
   error = "",
   groups = [],
@@ -1191,7 +1209,7 @@ export default function WorkspaceBoard({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
-        Loading workspace board...
+        Loading board...
       </div>
     );
   }
@@ -1200,14 +1218,6 @@ export default function WorkspaceBoard({
     return (
       <div className="flex h-full items-center justify-center rounded-2xl border border-red-200 bg-red-50/80 px-4 text-sm font-bold text-red-700">
         {error}
-      </div>
-    );
-  }
-
-  if (!currentWorkspace) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
-        No workspace found.
       </div>
     );
   }

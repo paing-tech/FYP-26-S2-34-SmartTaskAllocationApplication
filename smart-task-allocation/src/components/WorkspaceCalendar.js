@@ -139,7 +139,6 @@ function CloseIcon() {
 }
 
 export default function WorkspaceCalendar({
-  currentWorkspace,
   employees = [],
   error = "",
   groups = [],
@@ -188,7 +187,7 @@ export default function WorkspaceCalendar({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
-        Loading workspace calendar...
+        Loading calendar...
       </div>
     );
   }
@@ -197,14 +196,6 @@ export default function WorkspaceCalendar({
     return (
       <div className="flex h-full items-center justify-center rounded-2xl border border-red-200 bg-red-50/80 px-4 text-sm font-bold text-red-700">
         {error}
-      </div>
-    );
-  }
-
-  if (!currentWorkspace) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
-        No workspace found.
       </div>
     );
   }
