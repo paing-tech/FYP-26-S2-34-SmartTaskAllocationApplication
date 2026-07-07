@@ -55,8 +55,25 @@ export default function WorkspaceView() {
         throw new Error(employeesResult.error || "Could not load employees.");
       }
 
+      let nextGroups = groupsResult.groups ?? [];
+
+      if (!nextGroups.length) {
+        const createResponse = await fetch("/api/task-groups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify({ groupName: "New" }),
+        });
+        const createResult = await createResponse.json();
+
+        if (!createResponse.ok) {
+          throw new Error(createResult.error || "Could not create default task group.");
+        }
+
+        nextGroups = createResult.group ? [createResult.group] : [];
+      }
+
       setTasks(tasksResult.tasks ?? []);
-      setGroups(groupsResult.groups ?? []);
+      setGroups(nextGroups);
       setEmployees(employeesResult.employees ?? []);
     } catch (loadError) {
       setError(loadError.message);
@@ -112,7 +129,7 @@ export default function WorkspaceView() {
   async function renameGroup(groupId, groupName) {
     const cleanName = groupName.trim();
 
-    if (!groupId || !cleanName) {
+    if (!groupId || !cleanName || !Number.isFinite(Number(groupId))) {
       return;
     }
 
@@ -225,6 +242,37 @@ export default function WorkspaceView() {
     }
   }
 
+  async function createTask(updates) {
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({
+          title: updates.title,
+          description: updates.description,
+          assignedTo: updates.assignedTo,
+          groupId: updates.groupId,
+          status: updates.status,
+          priority: updates.priority,
+          startDatetime: updates.startDatetime,
+          endDatetime: updates.endDatetime,
+        }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not create task.");
+      }
+
+      await loadWorkspaceData();
+    } catch (createError) {
+      setError(createError.message);
+      throw createError;
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-4 flex shrink-0 justify-center">
@@ -263,6 +311,7 @@ export default function WorkspaceView() {
             isLoading={isLoading}
             onGroupCreate={createGroup}
             onGroupRename={renameGroup}
+            onTaskCreate={createTask}
             onTaskUpdate={updateTask}
             tasks={tasks}
           />

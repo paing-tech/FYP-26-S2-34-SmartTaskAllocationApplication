@@ -152,8 +152,7 @@ Table task {
     updated_at timestamptz
     source varchar [default: 'manual']
     ai_state varchar
-    ai_generation_run_id uuid
-    reason jsonb
+    reasons jsonb
 }
 
 Table task_comment {

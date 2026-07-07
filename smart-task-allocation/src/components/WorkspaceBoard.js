@@ -146,7 +146,7 @@ function getTaskActionLabels(task) {
 }
 
 function getTaskReasonLabels(task) {
-  const reason = task.reason;
+  const reason = task.reasons ?? task.reason;
 
   if (!reason || typeof reason !== "object") {
     return [];
@@ -1103,6 +1103,11 @@ function ColumnHeader({ groupId, name, count, onRename }) {
       return;
     }
 
+    if (!Number.isFinite(Number(groupId))) {
+      setDraftName(name);
+      return;
+    }
+
     if (nextName !== name) {
       onRename?.(groupId, nextName);
     }
@@ -1143,6 +1148,7 @@ export default function WorkspaceBoard({
   isLoading = false,
   onGroupCreate,
   onGroupRename,
+  onTaskCreate,
   onTaskUpdate,
   tasks = [],
 }) {
@@ -1167,7 +1173,7 @@ export default function WorkspaceBoard({
         return {
           ...task,
           assignee: assignee ?? null,
-          owner: owner ? getDisplayName(owner) : "Manager",
+          owner: task.source === "optimus_ai" ? "Optimus AI" : owner ? getDisplayName(owner) : "Manager",
         };
       }),
     }));
@@ -1206,6 +1212,31 @@ export default function WorkspaceBoard({
     }
   }
 
+  function handleOpenNewTask() {
+    setEditingTask({
+      task_id: "__new_task__",
+      title: "",
+      description: "",
+      status: "Open",
+      priority: "Medium",
+      group_id: groups[0]?.group_id ?? "",
+      assigned_to: null,
+      start_datetime: null,
+      end_datetime: null,
+      source: "manual",
+      isNew: true,
+    });
+  }
+
+  async function handleTaskSave(task, updates) {
+    if (task?.isNew) {
+      await onTaskCreate?.(updates);
+      return;
+    }
+
+    await onTaskUpdate?.(task, updates);
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
@@ -1224,7 +1255,15 @@ export default function WorkspaceBoard({
 
   return (
     <div className="relative h-full min-h-0">
-      <div ref={boardScrollRef} className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2 pr-20">
+      <button
+        type="button"
+        onClick={handleOpenNewTask}
+        className="absolute right-16 top-0 z-30 rounded-full border border-white/70 bg-white/35 px-4 py-2 text-sm font-black text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/70"
+      >
+        Add task
+      </button>
+
+      <div ref={boardScrollRef} className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2 pr-40">
         {columns.map((column) => (
           <div key={column.id} className="flex w-80 shrink-0 flex-col">
             <ColumnHeader
@@ -1265,7 +1304,7 @@ export default function WorkspaceBoard({
           groups={groups}
           task={currentEditingTask}
           onClose={() => setEditingTask(null)}
-          onSave={onTaskUpdate}
+          onSave={handleTaskSave}
         />
       ) : null}
     </div>
