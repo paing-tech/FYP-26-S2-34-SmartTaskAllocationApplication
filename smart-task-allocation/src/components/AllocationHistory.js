@@ -6,8 +6,6 @@ import EmployeeProfileCard from "@/components/EmployeeProfileCard";
 import HoverPill from "@/components/HoverPill";
 import ReassignModal from "@/components/ReassignModal";
 
-const VIEWS = [{ value: "history", label: "Task Allocation History" }];
-
 function formatDateHeader(iso) {
   const date = new Date(iso);
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -21,8 +19,6 @@ function formatDateTime(iso) {
 }
 
 export default function AllocationHistory({ onClose } = {}) {
-  const [view, setView] = useState("history");
-  const [isViewOpen, setIsViewOpen] = useState(false);
   const [allocations, setAllocations] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [workspaces, setWorkspaces] = useState([]);
@@ -64,14 +60,6 @@ export default function AllocationHistory({ onClose } = {}) {
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    function close() {
-      setIsViewOpen(false);
-    }
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
   }, []);
 
   const employeeById = useMemo(
@@ -119,40 +107,9 @@ export default function AllocationHistory({ onClose } = {}) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header: dropdown title + Bulk Reassign */}
+      {/* Header: title + Bulk Reassign */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsViewOpen((current) => !current);
-            }}
-            className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-5 py-2 text-lg font-bold text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/60"
-          >
-            {VIEWS.find((v) => v.value === view)?.label}
-          </button>
-          {isViewOpen ? (
-            <div
-              className="absolute left-0 top-12 z-30 w-64 overflow-hidden rounded-2xl border border-white/60 bg-white/95 shadow-[0_18px_50px_rgba(7,24,59,0.18)] backdrop-blur-md"
-              onClick={(event) => event.stopPropagation()}
-            >
-              {VIEWS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    setView(option.value);
-                    setIsViewOpen(false);
-                  }}
-                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-[#eef6ff]"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <h2 className="text-lg font-black text-[#0D1E4C]">Allocation History</h2>
 
         <div className="flex items-center gap-2">
           <button
@@ -168,7 +125,7 @@ export default function AllocationHistory({ onClose } = {}) {
               type="button"
               onClick={onClose}
               aria-label="Close allocation history"
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/70"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/70 hover:scale-110"
             >
               <span className="material-symbols-outlined text-xl" aria-hidden="true">
                 close

@@ -155,11 +155,11 @@ function AllocationHistoryPreview({ allocations = [], employees = [], workspaces
       {isExpanded ? (
         <Portal>
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-transparent p-4 backdrop-blur-lg"
             onClick={() => setIsExpanded(false)}
           >
             <div
-              className="h-full max-h-[calc(80vh-4rem)] w-full max-w-7xl overflow-hidden rounded-[28px] bg-white p-8 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
+              className="h-full max-h-[calc(80vh-4rem)] w-full max-w-7xl overflow-hidden rounded-[28px] border border-white/60 bg-white/60 backdrop-blur-3xl p-8 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
               onClick={(event) => event.stopPropagation()}
             >
               <AllocationHistory
