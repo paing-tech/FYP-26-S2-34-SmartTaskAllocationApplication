@@ -164,7 +164,7 @@ export async function requirePlatformAdmin(request, supabase) {
   return requireHomeRoute(
     request,
     supabase,
-    ["/platformadmin"],
+    ["/platformadmin/content"],
     "Only Platform Admin accounts can manage marketing site content.",
   );
 }

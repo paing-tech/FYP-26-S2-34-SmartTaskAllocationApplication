@@ -82,7 +82,11 @@ export async function GET(request) {
         (profiles ?? []).map((profile) => [profile.user_id, profile.profile_picture_url]),
       );
     }
-    const [{ data: skillRows, error: skillError }, { data: availabilityRows, error: availabilityError }] =
+    const [
+      { data: skillRows, error: skillError },
+      { data: availabilityRows, error: availabilityError },
+      { data: availableStatusRows, error: availableStatusError },
+    ] =
       employeeIds.length
         ? await Promise.all([
             supabase
@@ -94,8 +98,13 @@ export async function GET(request) {
               .select("user_id, status, availability_start, availability_end")
               .in("user_id", employeeIds)
               .order("availability_start", { ascending: false }),
+            supabase
+              .from("availability")
+              .select("user_id, status")
+              .ilike("status", "%Available%"),
           ])
         : [
+            { data: [], error: null },
             { data: [], error: null },
             { data: [], error: null },
           ];
@@ -106,6 +115,10 @@ export async function GET(request) {
 
     if (availabilityError) {
       return NextResponse.json({ error: availabilityError.message }, { status: 400 });
+    }
+
+    if (availableStatusError) {
+      return NextResponse.json({ error: availableStatusError.message }, { status: 400 });
     }
 
     // Worked hours this week, summed from work_log clock in/out spans.
@@ -157,6 +170,20 @@ export async function GET(request) {
     }
 
     const availabilitiesByUserId = new Map();
+    const employeeIdSet = new Set(employeeIds);
+    const availableUserIds = new Set();
+
+    for (const row of availableStatusRows ?? []) {
+      const status = String(row?.status || "").trim().toLowerCase();
+      if (
+        employeeIdSet.has(row.user_id) &&
+        status.includes("available") &&
+        !status.includes("not available") &&
+        !status.includes("unavailable")
+      ) {
+        availableUserIds.add(row.user_id);
+      }
+    }
 
     for (const row of availabilityRows ?? []) {
       if (!availabilityByUserId.has(row.user_id)) {
@@ -175,6 +202,7 @@ export async function GET(request) {
       avatar_url: avatarByUserId.get(employee.user_id) ?? null,
       availability: availabilityByUserId.get(employee.user_id) ?? null,
       availabilities: availabilitiesByUserId.get(employee.user_id) ?? [],
+      is_available: availableUserIds.has(employee.user_id),
       skills: skillsByUserId.get(employee.user_id) ?? [],
       skill_details: skillDetailsByUserId.get(employee.user_id) ?? [],
       worked_hours_this_week: Math.round((workedHoursByUserId.get(employee.user_id) ?? 0) / 60),
@@ -183,6 +211,10 @@ export async function GET(request) {
     return NextResponse.json({
       user_accounts: userAccounts,
       employees: userAccounts,
+      availabilitySummary: {
+        availableEmployees: availableUserIds.size,
+        totalEmployees: employeeIds.length,
+      },
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

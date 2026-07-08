@@ -355,58 +355,95 @@ const AVAILABILITY_TONES = {
 };
 const DEFAULT_AVAILABILITY_TONE = "bg-[#f1f5f9] text-[#64748b]";
 
-function EmployeeAssignCard({ activeTaskCount, employee, isAssigned, isSubmitting, onAssign }) {
+function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isAssigned, isSubmitting, onAssign }) {
   const name = getDisplayName(employee);
   const availabilityLabel = getEmployeeAvailabilityLabel(employee, activeTaskCount);
+  const skills = employee?.skills ?? [];
 
   return (
-    <div className="flex flex-col items-center rounded-3xl border border-white/60 bg-white/70 p-4 text-center shadow-sm backdrop-blur-xl">
-      <span
-        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${
-          AVAILABILITY_TONES[availabilityLabel] ?? DEFAULT_AVAILABILITY_TONE
-        }`}
-      >
-        {availabilityLabel}
-      </span>
+    <div className="group relative z-0 hover:z-20">
+      {/* Stacked card behind the profile card — peeks out at rest, then
+          expands downward on hover to reveal this employee's current
+          assignments. */}
+      <div className="absolute inset-x-3 top-full z-0 max-h-3 overflow-hidden rounded-b-3xl border border-t-0 border-white/50 bg-white/70 px-4 pb-0 pt-6 shadow-sm backdrop-blur-xl transition-all duration-300 ease-out group-hover:max-h-64 group-hover:pb-4">
+        <p className="text-center text-[11px] font-black uppercase tracking-wide text-[#94a3b8]">Assigned to</p>
+        <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+          {assignedTasks.length ? (
+            assignedTasks.map((assignedTask) => (
+              <div
+                key={assignedTask.task_id}
+                className="truncate rounded-full bg-white/90 px-3 py-1.5 text-center text-xs font-bold text-[#0D1E4C] shadow-sm"
+              >
+                {assignedTask.title || "Untitled task"}
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-xs font-semibold text-[#94a3b8]">No active tasks</p>
+          )}
+        </div>
+      </div>
 
-      <span className="mt-3 flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#2563EB] text-base font-black text-white">
-        {employee?.avatar_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={employee.avatar_url} alt={name} className="h-full w-full object-cover" />
-        ) : (
-          initials(name)
-        )}
-      </span>
-
-      <p className="mt-3 truncate text-sm font-black text-[#0D1E4C]">{name}</p>
-      <p className="truncate text-xs font-semibold text-[#667085]">
-        {employee?.job_title || "No job title added"}
-      </p>
-      {employee?.department?.department_name ? (
-        <p className="truncate text-xs text-[#94a3b8]">{employee.department.department_name}</p>
-      ) : null}
-
-      {employee?.email ? (
-        <span className="mt-3 flex max-w-full items-center gap-1.5 truncate rounded-full bg-[#f8faff] px-3 py-1.5 text-xs font-semibold text-[#52627a]">
-          <span className="material-symbols-outlined text-sm text-[#94a3b8]" aria-hidden="true">
-            mail
-          </span>
-          <span className="truncate">{employee.email}</span>
+      <div className="relative z-10 flex flex-col items-center rounded-3xl border border-white/60 bg-white/70 p-4 text-center shadow-sm backdrop-blur-xl">
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${
+            AVAILABILITY_TONES[availabilityLabel] ?? DEFAULT_AVAILABILITY_TONE
+          }`}
+        >
+          {availabilityLabel}
         </span>
-      ) : null}
 
-      <button
-        type="button"
-        onClick={() => onAssign(employee.user_id)}
-        disabled={isAssigned || isSubmitting}
-        className={`mt-4 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
-          isAssigned
-            ? "cursor-not-allowed bg-[#eef2f8] text-[#94a3b8]"
-            : "bg-[#2563EB] text-white hover:bg-[#1d4ed8]"
-        } disabled:cursor-not-allowed disabled:opacity-70`}
-      >
-        {isAssigned ? "Assigned" : isSubmitting ? "Assigning…" : "Assign"}
-      </button>
+        <span className="mt-3 flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#2563EB] text-base font-black text-white">
+          {employee?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={employee.avatar_url} alt={name} className="h-full w-full object-cover" />
+          ) : (
+            initials(name)
+          )}
+        </span>
+
+        <p className="mt-3 truncate text-sm font-black text-[#0D1E4C]">{name}</p>
+        <p className="truncate text-xs font-semibold text-[#667085]">
+          {employee?.job_title || "No job title added"}
+        </p>
+        {employee?.department?.department_name ? (
+          <p className="truncate text-xs text-[#94a3b8]">{employee.department.department_name}</p>
+        ) : null}
+
+        {employee?.email ? (
+          <span className="mt-3 flex max-w-full items-center gap-1.5 truncate rounded-full bg-[#f8faff] px-3 py-1.5 text-xs font-semibold text-[#52627a]">
+            <span className="material-symbols-outlined text-sm text-[#94a3b8]" aria-hidden="true">
+              mail
+            </span>
+            <span className="truncate">{employee.email}</span>
+          </span>
+        ) : null}
+
+        {skills.length ? (
+          <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+            {skills.map((skill) => (
+              <span
+                key={skill}
+                className="truncate rounded-full bg-[#eef2f8] px-2.5 py-1 text-[10px] font-bold text-[#52627a]"
+              >
+                {skill}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => onAssign(employee.user_id)}
+          disabled={isAssigned || isSubmitting}
+          className={`mt-4 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
+            isAssigned
+              ? "cursor-not-allowed bg-[#eef2f8] text-[#94a3b8]"
+              : "bg-[#2563EB] text-white hover:bg-[#1d4ed8]"
+          } disabled:cursor-not-allowed disabled:opacity-70`}
+        >
+          {isAssigned ? "Assigned" : isSubmitting ? "Assigning…" : "Assign"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -421,15 +458,20 @@ function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign, onClo
   const assignedEmployees = task?.assignees ?? [];
   const assignedIds = new Set(assignedEmployees.map((assignee) => assignee.user_id));
 
-  const activeTaskCountByEmployeeId = useMemo(() => {
-    const counts = new Map();
+  // Every non-terminal task currently assigned to each employee — the count
+  // drives the availability label, and the list itself is shown in the
+  // card's hover-reveal "Assigned to" panel.
+  const activeTasksByEmployeeId = useMemo(() => {
+    const map = new Map();
     for (const otherTask of tasks) {
       if (["Completed", "Cancelled"].includes(otherTask.status)) continue;
       for (const userId of otherTask.assigneeIds ?? []) {
-        counts.set(userId, (counts.get(userId) ?? 0) + 1);
+        const list = map.get(userId) ?? [];
+        list.push(otherTask);
+        map.set(userId, list);
       }
     }
-    return counts;
+    return map;
   }, [tasks]);
 
   // Only staff with the Employee role can be assigned — managers and user
@@ -577,7 +619,8 @@ function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign, onClo
                 {filteredEmployees.map((employee) => (
                   <EmployeeAssignCard
                     key={employee.user_id}
-                    activeTaskCount={activeTaskCountByEmployeeId.get(employee.user_id) ?? 0}
+                    activeTaskCount={(activeTasksByEmployeeId.get(employee.user_id) ?? []).length}
+                    assignedTasks={activeTasksByEmployeeId.get(employee.user_id) ?? []}
                     employee={employee}
                     isAssigned={assignedIds.has(employee.user_id)}
                     isSubmitting={assigningId === employee.user_id}

@@ -1,27 +1,8 @@
 import AuthForm from "@/components/AuthForm";
-import Strands from "@/components/Strands";
 
 export default function LoginPage() {
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black px-4 py-10">
-      <div className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[1200px] w-[1400px] max-w-[120vw] -translate-x-1/2 -translate-y-1/2 -rotate-34">
-        <Strands
-          colors={["#F97316", "#7C3AED", "#06B6D4"]}
-          count={3}
-          speed={0.5}
-          amplitude={1}
-          waviness={1}
-          thickness={0.7}
-          glow={2.6}
-          taper={3}
-          spread={1}
-          intensity={0.6}
-          saturation={2}
-          opacity={1}
-          scale={1.5}
-        />
-      </div>
-
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-800 px-4 py-10">
       <div className="relative z-10 w-full max-w-xl">
         <AuthForm />
       </div>

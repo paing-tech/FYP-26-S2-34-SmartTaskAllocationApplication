@@ -979,6 +979,15 @@ export async function POST(request) {
 
     if (assignedTo) {
       const actor = assignedBy || (await getActorName(supabase, user));
+      const { error: assigneeError } = await supabase.from("task_assignee").insert({
+        task_id: createdTask.task_id,
+        user_id: assignedTo,
+      });
+
+      if (assigneeError) {
+        return NextResponse.json({ error: assigneeError.message }, { status: 400 });
+      }
+
       await recordAssignment(supabase, {
         taskId: createdTask.task_id,
         userId: assignedTo,

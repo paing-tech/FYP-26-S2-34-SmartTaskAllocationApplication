@@ -31,6 +31,42 @@ function formatHistoryTime(value) {
   return `${day} at ${time}`;
 }
 
+function isSameLocalDay(value, reference = new Date()) {
+  if (!value) return false;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  return (
+    date.getFullYear() === reference.getFullYear() &&
+    date.getMonth() === reference.getMonth() &&
+    date.getDate() === reference.getDate()
+  );
+}
+
+function InsightPill({ label, value, detail, progress = 1 }) {
+  const safeProgress = Math.max(0, Math.min(1, progress));
+
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/25 px-3 py-1.5 text-[#0D1E4C] shadow-sm backdrop-blur-xl">
+      <span
+        className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-black"
+        style={{
+          background: `conic-gradient(#2563EB ${safeProgress * 360}deg, rgba(255,255,255,0.45) 0deg)`,
+        }}
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/80">
+          {value}
+        </span>
+      </span>
+      <span className="whitespace-nowrap text-xs font-black">
+        {label}
+        {detail ? <span className="ml-1 text-[#52627a]">{detail}</span> : null}
+      </span>
+    </div>
+  );
+}
+
 function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
   const [startIndex, setStartIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -128,7 +164,7 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
                     if (isReassigning) return;
                     setIsReassigning(true);
                     try {
-                      await onReassign?.(allocation.taskId);
+                      await onReassign?.(allocation);
                     } finally {
                       setIsReassigning(false);
                     }
@@ -182,6 +218,9 @@ export default function WorkspaceView() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [createTaskRequestKey, setCreateTaskRequestKey] = useState(0);
+  const today = new Date();
+  const totalTasks = tasks.length;
+  const dueTodayCount = tasks.filter((task) => isSameLocalDay(task.end_datetime, today)).length;
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -644,24 +683,33 @@ export default function WorkspaceView() {
     }
   }
 
-  // Reassign hands the task straight to the current manager — no picker, no
-  // confirmation step. The server infers "current user" from the auth token,
-  // so the client only ever needs to name the task(s).
-  async function reassignAllocationToSelf(taskId) {
-    if (!taskId) return;
+  async function recreateTaskFromAllocation(allocation) {
+    if (!allocation?.taskTitle || !allocation?.assigneeUserId) return;
 
     setError("");
 
     try {
       const response = await fetch("/api/tasks", {
-        method: "PATCH",
+        method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ action: "reassign-task", taskIds: [taskId] }),
+        body: JSON.stringify({
+          title: allocation.taskTitle,
+          description: allocation.taskDescription,
+          groupId: allocation.groupId,
+          status: allocation.taskStatus || "Open",
+          priority: allocation.priority || "Medium",
+          startDatetime: allocation.startDatetime,
+          endDatetime: allocation.endDatetime,
+          assignedTo: allocation.assigneeUserId,
+          assignedBy: allocation.assignedBy,
+          requiredSkillIds: allocation.requiredSkillIds ?? [],
+          reasons: allocation.reasons,
+        }),
       });
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "Could not reassign task.");
+        throw new Error(result.error || "Could not recreate task.");
       }
 
       await loadWorkspaceData();
@@ -812,13 +860,23 @@ export default function WorkspaceView() {
           ))}
         </div>
         {view === "board" ? (
-          <button
-            type="button"
-            onClick={() => setCreateTaskRequestKey((current) => current + 1)}
-            className="absolute right-0 rounded-full border border-white/70 bg-white/35 px-4 py-2 text-sm font-black text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/70"
-          >
-            Add task
-          </button>
+          <div className="absolute right-0 flex items-center gap-2">
+            <div className="hidden items-center gap-2 xl:flex">
+              <InsightPill label="Total tasks" value={totalTasks} />
+              <InsightPill
+                label="Due today"
+                value={dueTodayCount}
+                progress={totalTasks ? dueTodayCount / totalTasks : 0}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setCreateTaskRequestKey((current) => current + 1)}
+              className="rounded-full border border-white/70 bg-white/35 px-4 py-2 text-sm font-black text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/70"
+            >
+              Add task
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -859,7 +917,7 @@ export default function WorkspaceView() {
 
       <AllocationHistoryPreview
         allocations={allocations}
-        onReassign={reassignAllocationToSelf}
+        onReassign={recreateTaskFromAllocation}
         onReload={loadWorkspaceData}
       />
     </div>
