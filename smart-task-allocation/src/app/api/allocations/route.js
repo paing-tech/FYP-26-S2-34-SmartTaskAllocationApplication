@@ -32,10 +32,10 @@ export async function GET(request) {
       return NextResponse.json({ allocations: [] });
     }
 
-    // Tasks in this org → map of task_id to its title/workspace.
+    // Tasks in this org -> map of task_id to its title.
     const { data: tasks } = await supabase
       .from("task")
-      .select("task_id, title, workspace_id")
+      .select("task_id, title")
       .eq("organization_id", organizationId);
     const taskById = new Map((tasks ?? []).map((t) => [t.task_id, t]));
     const taskIds = (tasks ?? []).map((t) => t.task_id);
@@ -74,7 +74,6 @@ export async function GET(request) {
         id: assignment.assignment_id,
         taskId: assignment.task_id,
         taskTitle: task?.title ?? "Task",
-        workspaceId: task?.workspace_id ?? null,
         assigneeUserId: assignment.user_id,
         assigneeName: nameByUser.get(assignment.user_id) ?? "Unknown",
         assignedBy: assignment.assigned_by ?? "Manager",

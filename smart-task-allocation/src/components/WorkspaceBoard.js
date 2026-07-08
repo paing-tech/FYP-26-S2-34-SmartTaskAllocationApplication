@@ -1142,6 +1142,7 @@ function ColumnHeader({ groupId, name, count, onRename }) {
 }
 
 export default function WorkspaceBoard({
+  createTaskRequestKey = 0,
   employees = [],
   error = "",
   groups = [],
@@ -1200,6 +1201,13 @@ export default function WorkspaceBoard({
     }
   }, [groups.length]);
 
+  useEffect(() => {
+    if (createTaskRequestKey > 0) {
+      handleOpenNewTask();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createTaskRequestKey]);
+
   async function handleCreateGroup() {
     if (!onGroupCreate || isCreatingGroup) return;
 
@@ -1255,15 +1263,7 @@ export default function WorkspaceBoard({
 
   return (
     <div className="relative h-full min-h-0">
-      <button
-        type="button"
-        onClick={handleOpenNewTask}
-        className="absolute right-16 top-0 z-30 rounded-full border border-white/70 bg-white/35 px-4 py-2 text-sm font-black text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/70"
-      >
-        Add task
-      </button>
-
-      <div ref={boardScrollRef} className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2 pr-40">
+      <div ref={boardScrollRef} className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2 pr-20">
         {columns.map((column) => (
           <div key={column.id} className="flex w-80 shrink-0 flex-col">
             <ColumnHeader
