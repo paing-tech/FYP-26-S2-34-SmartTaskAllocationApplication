@@ -790,7 +790,7 @@ function GroupPicker({ groups, onChange, value }) {
   );
 }
 
-function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
+function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [], task }) {
   const startParts = splitDateTime(task?.start_datetime);
   const endParts = splitDateTime(task?.end_datetime);
   const [isMounted, setIsMounted] = useState(false);
@@ -817,6 +817,7 @@ function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
   const [skillQuery, setSkillQuery] = useState("");
   const [isSuggestingSkills, setIsSuggestingSkills] = useState(false);
   const [isWritingDescription, setIsWritingDescription] = useState(false);
+  const [isCreatingSkill, setIsCreatingSkill] = useState(false);
 
   useEffect(() => {
     const nextStartParts = splitDateTime(task?.start_datetime);
@@ -921,6 +922,31 @@ function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
     }
   }
 
+  async function handleCreateSkill() {
+    const name = skillQuery.trim();
+    if (!name || isCreatingSkill || !onSkillCreate) return;
+
+    setIsCreatingSkill(true);
+
+    try {
+      const skill = await onSkillCreate(name);
+
+      if (skill) {
+        setForm((current) => ({
+          ...current,
+          requiredSkillIds: current.requiredSkillIds.includes(skill.skill_id)
+            ? current.requiredSkillIds
+            : [...current.requiredSkillIds, skill.skill_id],
+        }));
+        setSkillQuery("");
+      }
+    } catch (createError) {
+      setError(createError.message || "Could not create skill.");
+    } finally {
+      setIsCreatingSkill(false);
+    }
+  }
+
   async function handleSave(event) {
     event.preventDefault();
     const cleanTitle = form.title.trim();
@@ -963,9 +989,14 @@ function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
   }
 
   const selectedSkills = skills.filter((skill) => form.requiredSkillIds.includes(skill.skill_id));
-  const filteredSkills = skillQuery.trim()
-    ? skills.filter((skill) => skill.skill_name.toLowerCase().includes(skillQuery.trim().toLowerCase()))
+  const trimmedSkillQuery = skillQuery.trim();
+  const filteredSkills = trimmedSkillQuery
+    ? skills.filter((skill) => skill.skill_name.toLowerCase().includes(trimmedSkillQuery.toLowerCase()))
     : skills;
+  const canCreateSkill =
+    Boolean(onSkillCreate) &&
+    trimmedSkillQuery.length > 0 &&
+    !skills.some((skill) => skill.skill_name.toLowerCase() === trimmedSkillQuery.toLowerCase());
 
   useEffect(() => {
     setIsMounted(true);
@@ -989,16 +1020,18 @@ function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-[#dbe4f0] bg-white text-2xl font-light text-[#0D1E4C] transition hover:bg-[#eef2f8]"
+            className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
             aria-label="Close task editor"
           >
-            ×
+            <span className="material-symbols-outlined text-xl" aria-hidden="true">
+              close
+            </span>
           </button>
           <h3 className="justify-self-center text-xl font-black text-[#0D1E4C]">Details</h3>
           <button
             type="submit"
             disabled={isSaving}
-            className="flex h-11 w-11 items-center justify-center justify-self-end rounded-full bg-[#2563EB] text-white transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex h-11 w-11 items-center justify-center justify-self-end rounded-full bg-[#2563EB] text-white transition hover:scale-110 hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
             aria-label="Save task"
           >
             <span className="material-symbols-outlined text-[28px] leading-none" aria-hidden="true">
@@ -1146,10 +1179,10 @@ function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
                     type="button"
                     key={skill.skill_id}
                     onClick={() => toggleSkill(skill.skill_id)}
-                    className="flex items-center gap-1 rounded-full bg-[#2563EB] px-3 py-1 text-xs font-black text-white transition hover:bg-[#1d4ed8]"
+                    className="flex items-center rounded-full bg-[#2563EB] px-3 py-1 text-xs font-black text-white transition hover:bg-[#1d4ed8]"
                   >
                     {skill.skill_name}
-                    <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                    <span className="material-symbols-outlined text-sm scale-80" aria-hidden="true">
                       close
                     </span>
                   </button>
@@ -1168,6 +1201,22 @@ function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
             />
 
             <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
+              {canCreateSkill ? (
+                <button
+                  type="button"
+                  onClick={handleCreateSkill}
+                  disabled={isCreatingSkill}
+                  className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-[#2563EB]/40 bg-[#2563EB]/5 px-3 py-2 text-left transition hover:bg-[#2563EB]/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-sm text-[#2563EB]" aria-hidden="true">
+                    add
+                  </span>
+                  <span className="truncate text-xs font-black text-[#2563EB]">
+                    {isCreatingSkill ? "Creating…" : `Create "${trimmedSkillQuery}"`}
+                  </span>
+                </button>
+              ) : null}
+
               {filteredSkills.map((skill) => {
                 const isSelected = form.requiredSkillIds.includes(skill.skill_id);
 
@@ -1190,7 +1239,7 @@ function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
                 );
               })}
 
-              {!filteredSkills.length ? (
+              {!filteredSkills.length && !canCreateSkill ? (
                 <p className="px-1 text-xs font-semibold text-[#94a3b8]">No matching skills.</p>
               ) : null}
             </div>
@@ -1270,6 +1319,7 @@ export default function WorkspaceBoard({
   isLoading = false,
   onGroupCreate,
   onGroupRename,
+  onSkillCreate,
   onTaskCreate,
   onTaskUpdate,
   skills = [],
@@ -1427,6 +1477,7 @@ export default function WorkspaceBoard({
           task={currentEditingTask}
           onClose={() => setEditingTask(null)}
           onSave={handleTaskSave}
+          onSkillCreate={onSkillCreate}
         />
       ) : null}
     </div>

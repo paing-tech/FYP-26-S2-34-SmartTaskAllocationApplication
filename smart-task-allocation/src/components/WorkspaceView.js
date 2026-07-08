@@ -482,6 +482,27 @@ export default function WorkspaceView() {
     }
   }
 
+  async function createSkill(skillName) {
+    const response = await fetch("/api/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ skillName }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Could not create skill.");
+    }
+
+    setSkills((current) =>
+      current.some((skill) => skill.skill_id === result.skill.skill_id)
+        ? current
+        : [...current, result.skill].sort((a, b) => a.skill_name.localeCompare(b.skill_name)),
+    );
+
+    return result.skill;
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="relative mb-4 flex shrink-0 items-center justify-center">
@@ -530,6 +551,7 @@ export default function WorkspaceView() {
             isLoading={isLoading}
             onGroupCreate={createGroup}
             onGroupRename={renameGroup}
+            onSkillCreate={createSkill}
             onTaskCreate={createTask}
             onTaskUpdate={updateTask}
             skills={skills}
