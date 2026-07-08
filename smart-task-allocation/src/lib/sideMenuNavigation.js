@@ -16,7 +16,6 @@ export const sideMenuNavigation = {
       { label: "Workspace", href: "/manager/workspace", icon: "workspace" },
       { label: "Team", href: "/manager/team", icon: "users" },
       { label: "Organization", href: "/manager/organization", icon: "organization" },
-      { label: "Allocation", href: "/manager/allocation", icon: "allocation" },
       { label: "Inbox", href: "/manager/inbox", icon: "inbox" },
       { label: "My Space", href: "/manager/my-space", icon: "home" },
       { label: "Archive", href: "/manager/archive", icon: "archive" },

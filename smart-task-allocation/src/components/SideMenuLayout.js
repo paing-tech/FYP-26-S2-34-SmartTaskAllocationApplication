@@ -110,19 +110,6 @@ function NavIcon({ name }) {
     );
   }
 
-  if (name === "allocation") {
-    return (
-      <svg {...commonProps}>
-        <circle cx="6" cy="6" r="2.5" />
-        <path d="M8.5 6H15a3 3 0 0 1 3 3v0" />
-        <circle cx="18" cy="11" r="2.5" />
-        <path d="M18 13.5V15a3 3 0 0 1-3 3H9" />
-        <circle cx="6" cy="18" r="2.5" />
-        <path d="M6 8.5v7" />
-      </svg>
-    );
-  }
-
   if (name === "agents") {
     return (
       <svg {...commonProps}>

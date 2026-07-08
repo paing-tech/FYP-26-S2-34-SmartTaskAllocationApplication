@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import EmployeeProfileCard from "@/components/EmployeeProfileCard";
+import HoverPill from "@/components/HoverPill";
+import ReassignModal from "@/components/ReassignModal";
 
 const VIEWS = [{ value: "history", label: "Task Allocation History" }];
 
@@ -18,35 +20,7 @@ function formatDateTime(iso) {
   return `${day} at ${time}`;
 }
 
-function HoverPill({ label, detail, tone = "slate", maxWidthClass = "max-w-[200px]", variant = "panel" }) {
-  const tones = {
-    slate: "border-[#0D1E4C]/15 bg-white/70 text-[#0D1E4C]",
-    blue: "border-[#2563EB]/25 bg-[#2563EB]/10 text-[#1E40AF]",
-    purple: "border-[#7C3AED]/25 bg-[#7C3AED]/10 text-[#5B21B6]",
-  };
-  return (
-    <span className="group/pill relative inline-flex align-middle">
-      <span
-        className={`inline-block ${maxWidthClass} truncate rounded-full border px-3 py-1 text-sm font-bold leading-5 ${tones[tone]}`}
-      >
-        {label}
-      </span>
-      {detail ? (
-        variant === "card" ? (
-          <span className="absolute left-0 top-full z-40 hidden pt-2 text-left group-hover/pill:block">
-            {detail}
-          </span>
-        ) : (
-          <span className="pointer-events-none absolute left-0 top-full z-40 mt-2 hidden w-72 max-w-[80vw] rounded-2xl border border-white/60 bg-white/95 p-4 text-left shadow-[0_18px_50px_rgba(7,24,59,0.2)] backdrop-blur-md group-hover/pill:block">
-            {detail}
-          </span>
-        )
-      ) : null}
-    </span>
-  );
-}
-
-export default function AllocationHistory() {
+export default function AllocationHistory({ onClose } = {}) {
   const [view, setView] = useState("history");
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [allocations, setAllocations] = useState([]);
@@ -55,12 +29,8 @@ export default function AllocationHistory() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [error, setError] = useState("");
 
-  // Reassign modal: targets = array of allocations; phase = "edit" | "confirm".
+  // Reassign modal targets: array of allocations, or null when closed.
   const [reassign, setReassign] = useState(null);
-  const [reassignWorkspaceId, setReassignWorkspaceId] = useState("");
-  const [reassignAssigneeId, setReassignAssigneeId] = useState("");
-  const [reassignPhase, setReassignPhase] = useState("edit");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -136,48 +106,11 @@ export default function AllocationHistory() {
   function openReassign(targets) {
     if (!targets.length) return;
     setReassign(targets);
-    setReassignPhase("edit");
-    setReassignWorkspaceId(targets[0].workspaceId ?? workspaces[0]?.workspace_id ?? "");
-    setReassignAssigneeId(targets.length === 1 ? targets[0].assigneeUserId ?? "" : "");
     setError("");
   }
 
   function closeReassign() {
     setReassign(null);
-    setReassignPhase("edit");
-    setIsSubmitting(false);
-  }
-
-  async function confirmReassign() {
-    if (!reassignWorkspaceId) {
-      setError("Choose a workspace.");
-      return;
-    }
-    setIsSubmitting(true);
-    setError("");
-    try {
-      const headers = await authHeaders();
-      for (const target of reassign) {
-        // For bulk, keep each task's own assignee; for single, use the chosen one.
-        const assignedTo =
-          reassign.length === 1 ? reassignAssigneeId : target.assigneeUserId;
-        await fetch("/api/tasks", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            workspaceId: reassignWorkspaceId,
-            title: target.taskTitle,
-            assignedTo,
-          }),
-        });
-      }
-      closeReassign();
-      setSelectedIds(new Set());
-      await loadAll();
-    } catch (submitError) {
-      setError(submitError.message);
-      setIsSubmitting(false);
-    }
   }
 
   const selectedAllocations = allocations.filter((a) => selectedIds.has(a.id));
@@ -221,14 +154,28 @@ export default function AllocationHistory() {
           ) : null}
         </div>
 
-        <button
-          type="button"
-          onClick={() => openReassign(selectedAllocations)}
-          disabled={!selectedIds.size}
-          className="rounded-full bg-[#0a72e8] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#075fc2] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Bulk Reassign{selectedIds.size ? ` (${selectedIds.size})` : ""}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => openReassign(selectedAllocations)}
+            disabled={!selectedIds.size}
+            className="rounded-full bg-[#0a72e8] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#075fc2] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Bulk Reassign{selectedIds.size ? ` (${selectedIds.size})` : ""}
+          </button>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close allocation history"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/70"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {error ? (
@@ -312,121 +259,16 @@ export default function AllocationHistory() {
       </div>
 
       {reassign ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
-          onClick={closeReassign}
-        >
-          <div
-            className="w-full max-w-lg rounded-[28px] bg-white p-8 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2 className="text-2xl font-black text-[#0D1E4C]">
-              {reassign.length > 1 ? `Reassign ${reassign.length} tasks` : "Reassign task"}
-            </h2>
-
-            {reassignPhase === "edit" ? (
-              <div className="mt-6 space-y-5">
-                {reassign.length === 1 ? (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-bold text-[#0D1E4C]">Assignee</label>
-                    <select
-                      value={reassignAssigneeId}
-                      onChange={(event) => setReassignAssigneeId(event.target.value)}
-                      className="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-[#0D1E4C] outline-none focus:border-[#2563EB]"
-                    >
-                      <option value="">Unassigned</option>
-                      {employees.map((employee) => (
-                        <option key={employee.user_id} value={employee.user_id}>
-                          {employee.full_name || employee.username || employee.email}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-bold text-[#0D1E4C]">Workspace</label>
-                  <select
-                    value={reassignWorkspaceId}
-                    onChange={(event) => setReassignWorkspaceId(event.target.value)}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-[#0D1E4C] outline-none focus:border-[#2563EB]"
-                  >
-                    <option value="">Choose a workspace…</option>
-                    {workspaces.map((workspace) => (
-                      <option key={workspace.workspace_id} value={workspace.workspace_id}>
-                        {workspace.workspace_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={closeReassign}
-                    className="rounded-full px-5 py-2.5 text-sm font-bold text-[#667085] hover:bg-slate-100"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!reassignWorkspaceId) {
-                        setError("Choose a workspace.");
-                        return;
-                      }
-                      setError("");
-                      setReassignPhase("confirm");
-                    }}
-                    className="rounded-full bg-[#0D1E4C] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#0a1838]"
-                  >
-                    Review
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6 space-y-4">
-                <p className="text-sm text-[#52627a]">
-                  This will create {reassign.length > 1 ? "these tasks" : "this task"} in{" "}
-                  <strong>{workspaceName(reassignWorkspaceId)}</strong> and log the assignment:
-                </p>
-                <ul className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  {reassign.map((target) => {
-                    const assigneeId =
-                      reassign.length === 1 ? reassignAssigneeId : target.assigneeUserId;
-                    const assignee = employeeById.get(assigneeId);
-                    return (
-                      <li key={target.id} className="text-sm text-[#0D1E4C]">
-                        <strong>{target.taskTitle}</strong> →{" "}
-                        {assignee
-                          ? assignee.full_name || assignee.username || assignee.email
-                          : "Unassigned"}
-                      </li>
-                    );
-                  })}
-                </ul>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setReassignPhase("edit")}
-                    className="rounded-full px-5 py-2.5 text-sm font-bold text-[#667085] hover:bg-slate-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={confirmReassign}
-                    disabled={isSubmitting}
-                    className="rounded-full bg-[#0a72e8] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#075fc2] disabled:opacity-60"
-                  >
-                    {isSubmitting ? "Reassigning…" : "Confirm reassign"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <ReassignModal
+          targets={reassign}
+          employees={employees}
+          workspaces={workspaces}
+          onClose={closeReassign}
+          onDone={async () => {
+            setSelectedIds(new Set());
+            await loadAll();
+          }}
+        />
       ) : null}
     </div>
   );

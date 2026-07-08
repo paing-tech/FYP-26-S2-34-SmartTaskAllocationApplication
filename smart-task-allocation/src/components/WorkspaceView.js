@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import WorkspaceCalendar from "@/components/WorkspaceCalendar";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
+import ReassignModal from "@/components/ReassignModal";
+import AllocationHistory from "@/components/AllocationHistory";
+import Portal from "@/components/Portal";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 const VIEWS = [
@@ -29,23 +32,14 @@ function formatHistoryTime(value) {
   return `${day} at ${time}`;
 }
 
-function AllocationHistoryPreview({ allocations = [] }) {
+function AllocationHistoryPreview({ allocations = [], employees = [], workspaces = [], onReload }) {
   const [startIndex, setStartIndex] = useState(0);
-  const historyItems = useMemo(
-    () =>
-      allocations
-        .map((allocation) => ({
-          id: allocation.id,
-          assignedBy: allocation.assignedBy || "Manager",
-          assignedTo: allocation.assigneeName || "Unknown",
-          taskTitle: allocation.taskTitle || "Task",
-          time: allocation.assignedAt,
-        }))
-    [allocations],
-  );
-  const visibleItems = historyItems.slice(startIndex, startIndex + 4);
+  const [reassign, setReassign] = useState(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const historyItems = allocations;
+  const visibleItems = historyItems.slice(startIndex, startIndex + 1);
   const canShowNewer = startIndex > 0;
-  const canShowOlder = startIndex + 4 < historyItems.length;
+  const canShowOlder = startIndex + 1 < historyItems.length;
 
   useEffect(() => {
     setStartIndex(0);
@@ -56,35 +50,47 @@ function AllocationHistoryPreview({ allocations = [] }) {
   }
 
   function showOlderRecords() {
-    setStartIndex((current) => Math.min(Math.max(historyItems.length - 4, 0), current + 1));
+    setStartIndex((current) => Math.min(Math.max(historyItems.length - 1, 0), current + 1));
   }
 
   return (
     <section className="mt-4 shrink-0 rounded-[1.75rem] border border-white/50 bg-white/20 px-5 py-4 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-black text-[#0D1E4C]">History</h3>
-        <div className="inline-flex overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
+        <h3 className="text-sm font-black text-[#0D1E4C]">Allocation History</h3>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={showNewerRecords}
+              disabled={!canShowNewer}
+              className="flex h-8 w-9 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+              aria-label="Show newer allocation records"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                keyboard_arrow_up
+              </span>
+            </button>
+            <div className="w-px bg-white/60" />
+            <button
+              type="button"
+              onClick={showOlderRecords}
+              disabled={!canShowOlder}
+              className="flex h-8 w-9 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+              aria-label="Show older allocation records"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                keyboard_arrow_down
+              </span>
+            </button>
+          </div>
           <button
             type="button"
-            onClick={showNewerRecords}
-            disabled={!canShowNewer}
-            className="flex h-8 w-9 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
-            aria-label="Show newer allocation records"
+            onClick={() => setIsExpanded(true)}
+            className="flex h-8 w-9 items-center justify-center rounded-full border border-white/60 bg-white/30 text-[#0D1E4C] shadow-sm backdrop-blur-sm transition hover:bg-white/60"
+            aria-label="Expand allocation history"
           >
             <span className="material-symbols-outlined text-xl" aria-hidden="true">
-              keyboard_arrow_up
-            </span>
-          </button>
-          <div className="w-px bg-white/60" />
-          <button
-            type="button"
-            onClick={showOlderRecords}
-            disabled={!canShowOlder}
-            className="flex h-8 w-9 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
-            aria-label="Show older allocation records"
-          >
-            <span className="material-symbols-outlined text-xl" aria-hidden="true">
-              keyboard_arrow_down
+              expand_content
             </span>
           </button>
         </div>
@@ -92,31 +98,80 @@ function AllocationHistoryPreview({ allocations = [] }) {
 
       {visibleItems.length ? (
         <div className="space-y-2">
-          {visibleItems.map((item) => (
-            <article
-              key={item.id}
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/50 bg-white/30 px-4 py-3 text-sm backdrop-blur-sm"
-            >
-              <span className="max-w-[180px] truncate rounded-full border border-[#2563EB]/25 bg-[#2563EB]/10 px-3 py-1 font-bold text-[#1E40AF]">
-                {item.assignedTo}
-              </span>
-              <span className="text-[#52627a]">was assigned to</span>
-              <span className="max-w-[260px] truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
-                {item.taskTitle}
-              </span>
-              <span className="text-[#52627a]">by</span>
-              <span className="max-w-[160px] truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
-                {item.assignedBy}
-              </span>
-              <span className="text-[#52627a]">on {formatHistoryTime(item.time)}</span>
-            </article>
-          ))}
+          {visibleItems.map((allocation) => {
+            const byAI = /optimus/i.test(allocation.assignedBy ?? "");
+            return (
+              <article
+                key={allocation.id}
+                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/50 bg-white/30 px-4 py-3 text-sm backdrop-blur-sm"
+              >
+                <span className="max-w-[180px] truncate rounded-full border border-[#2563EB]/25 bg-[#2563EB]/10 px-3 py-1 font-bold text-[#1E40AF]">
+                  {allocation.assigneeName || "Unknown"}
+                </span>
+                <span className="text-[#52627a]">was assigned to</span>
+                <span className="max-w-[260px] truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
+                  {allocation.taskTitle || "Task"}
+                </span>
+                <span className="text-[#52627a]">by</span>
+                <span
+                  className={`max-w-[160px] truncate rounded-full border px-3 py-1 font-bold ${
+                    byAI
+                      ? "border-[#7C3AED]/25 bg-[#7C3AED]/10 text-[#5B21B6]"
+                      : "border-[#0D1E4C]/15 bg-white/70 text-[#0D1E4C]"
+                  }`}
+                >
+                  {allocation.assignedBy || "Manager"}
+                </span>
+                <span className="text-[#52627a]">on {formatHistoryTime(allocation.assignedAt)}</span>
+                <button
+                  type="button"
+                  onClick={() => setReassign([allocation])}
+                  className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white"
+                >
+                  Reassign
+                </button>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-white/60 bg-white/20 py-6 text-center text-sm font-bold text-[#94a3b8]">
           No allocation history yet.
         </div>
       )}
+
+      {reassign ? (
+        <ReassignModal
+          targets={reassign}
+          employees={employees}
+          workspaces={workspaces}
+          onClose={() => setReassign(null)}
+          onDone={async () => {
+            await onReload?.();
+          }}
+        />
+      ) : null}
+
+      {isExpanded ? (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+            onClick={() => setIsExpanded(false)}
+          >
+            <div
+              className="h-full max-h-[calc(80vh-4rem)] w-full max-w-7xl overflow-hidden rounded-[28px] bg-white p-8 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <AllocationHistory
+                onClose={async () => {
+                  setIsExpanded(false);
+                  await onReload?.();
+                }}
+              />
+            </div>
+          </div>
+        </Portal>
+      ) : null}
     </section>
   );
 }
@@ -127,6 +182,7 @@ export default function WorkspaceView() {
   const [groups, setGroups] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [allocations, setAllocations] = useState([]);
+  const [workspaces, setWorkspaces] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [createTaskRequestKey, setCreateTaskRequestKey] = useState(0);
@@ -145,17 +201,19 @@ export default function WorkspaceView() {
 
     try {
       const headers = await authHeaders();
-      const [tasksResponse, groupsResponse, employeesResponse, allocationsResponse] = await Promise.all([
+      const [tasksResponse, groupsResponse, employeesResponse, allocationsResponse, workspacesResponse] = await Promise.all([
         fetch("/api/tasks", { headers }),
         fetch("/api/task-groups", { headers }),
         fetch("/api/employees", { headers }),
         fetch("/api/allocations", { headers }),
+        fetch("/api/workspaces", { headers }),
       ]);
-      const [tasksResult, groupsResult, employeesResult, allocationsResult] = await Promise.all([
+      const [tasksResult, groupsResult, employeesResult, allocationsResult, workspacesResult] = await Promise.all([
         tasksResponse.json(),
         groupsResponse.json(),
         employeesResponse.json(),
         allocationsResponse.json(),
+        workspacesResponse.json(),
       ]);
 
       if (!tasksResponse.ok) {
@@ -195,6 +253,7 @@ export default function WorkspaceView() {
       setGroups(nextGroups);
       setEmployees(employeesResult.employees ?? []);
       setAllocations(allocationsResult.allocations ?? []);
+      setWorkspaces(workspacesResponse.ok ? workspacesResult.workspaces ?? [] : []);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -448,7 +507,12 @@ export default function WorkspaceView() {
         )}
       </div>
 
-      <AllocationHistoryPreview allocations={allocations} />
+      <AllocationHistoryPreview
+        allocations={allocations}
+        employees={employees}
+        workspaces={workspaces}
+        onReload={loadWorkspaceData}
+      />
     </div>
   );
 }
