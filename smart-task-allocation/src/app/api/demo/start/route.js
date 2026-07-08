@@ -190,14 +190,13 @@ export async function POST() {
       createdUserIds.push(created.userId);
       employees.push({ ...created, seed });
 
-      // Skills with proficiency level (1–5).
-      for (const [skillName, level] of seed.skills) {
+      // Skills.
+      for (const [skillName] of seed.skills) {
         const skillId = await resolveSkillId(skillName);
         if (skillId != null) {
           await supabase.from("user_skill").insert({
             user_id: created.userId,
             skill_id: skillId,
-            proficiency_level: level,
           });
         }
       }

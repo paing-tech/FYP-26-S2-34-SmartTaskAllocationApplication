@@ -411,10 +411,11 @@ function EmployeeAssignCard({ activeTaskCount, employee, isAssigned, isSubmittin
   );
 }
 
-function AssignEmployeeModal({ employees, groupName, onAssign, onClose, onUnassign, task, tasks = [] }) {
+function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign, onClose, onUnassign, task, tasks = [] }) {
   const [query, setQuery] = useState("");
   const [assigningId, setAssigningId] = useState(null);
   const [unassigningId, setUnassigningId] = useState(null);
+  const [isAiAssigning, setIsAiAssigning] = useState(false);
   const [error, setError] = useState("");
 
   const assignedEmployees = task?.assignees ?? [];
@@ -468,6 +469,19 @@ function AssignEmployeeModal({ employees, groupName, onAssign, onClose, onUnassi
     }
   }
 
+  async function handleAiAssign() {
+    setIsAiAssigning(true);
+    setError("");
+
+    try {
+      await onAiAssign?.();
+    } catch (aiAssignError) {
+      setError(aiAssignError.message || "Could not find an AI match for this task.");
+    } finally {
+      setIsAiAssigning(false);
+    }
+  }
+
   return (
     <Portal>
       <div
@@ -515,6 +529,20 @@ function AssignEmployeeModal({ employees, groupName, onAssign, onClose, onUnassi
                   </button>
                 </span>
               ))}
+
+              <button
+                type="button"
+                onClick={handleAiAssign}
+                disabled={isAiAssigning}
+                aria-label="Assign with AI"
+                title="Assign with AI"
+                className="flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-[#7C3AED]/30 bg-[#7C3AED]/10 px-3.5 text-xs font-black text-[#5B21B6] transition hover:bg-[#7C3AED]/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="material-symbols-outlined text-base" aria-hidden="true">
+                  auto_awesome
+                </span>
+                {isAiAssigning ? "Assigning…" : "Assign with AI"}
+              </button>
 
               <button
                 type="button"
@@ -569,7 +597,7 @@ function AssignEmployeeModal({ employees, groupName, onAssign, onClose, onUnassi
   );
 }
 
-function TaskCard({ employees, groupName, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
+function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
@@ -656,20 +684,21 @@ function TaskCard({ employees, groupName, onApprove, onAssignEmployee, onOpen, o
             <AssigneeProfile employee={null} />
           )}
           {isPendingApproval ? (
-            <div className="mt-1 flex gap-2">
+            <div className="mt-1 inline-flex w-full overflow-hidden rounded-full border border-white/60 bg-slate-200 shadow-sm backdrop-blur-sm">
               <button
                 type="button"
                 onClick={handleApprove}
                 disabled={isDeciding}
-                className="flex-1 rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-emerald-700 transition hover:scale-[1.05] hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-11 flex-1 items-center justify-center text-[11px] font-black text-emerald-700 transition hover:bg-white/50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Approve
               </button>
+              <div className="w-px bg-white/70" />
               <button
                 type="button"
                 onClick={handleReject}
                 disabled={isDeciding}
-                className="flex-1 rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-rose-700 transition hover:scale-[1.05] hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-11 flex-1 items-center justify-center text-[11px] font-black text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Reject
               </button>
@@ -695,6 +724,7 @@ function TaskCard({ employees, groupName, onApprove, onAssignEmployee, onOpen, o
           groupName={groupName}
           task={task}
           tasks={tasks}
+          onAiAssign={() => onAiAssign?.(task)}
           onAssign={(employeeId) => onAssignEmployee?.(task, employeeId)}
           onClose={() => setIsAssignOpen(false)}
           onUnassign={(employeeId) => onUnassignEmployee?.(task, employeeId)}
@@ -1122,7 +1152,16 @@ function GroupPicker({ groups, onChange, value }) {
   );
 }
 
-function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [], task }) {
+function TaskEditPanel({
+  groups = [],
+  onArchive,
+  onClose,
+  onDelete,
+  onSave,
+  onSkillCreate,
+  skills = [],
+  task,
+}) {
   const startParts = splitDateTime(task?.start_datetime);
   const endParts = splitDateTime(task?.end_datetime);
   const [form, setForm] = useState(() => ({
@@ -1143,6 +1182,8 @@ function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [
     endTime: endParts.time,
   }));
   const [isSaving, setIsSaving] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
   const [openPanel, setOpenPanel] = useState("");
   const [skillQuery, setSkillQuery] = useState("");
@@ -1295,6 +1336,38 @@ function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [
       setError(saveError.message || "Could not save task.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleArchiveTask() {
+    if (!task?.task_id || task?.isNew || !onArchive) return;
+
+    setIsArchiving(true);
+    setError("");
+
+    try {
+      await onArchive(task);
+      onClose?.();
+    } catch (archiveError) {
+      setError(archiveError.message || "Could not archive task.");
+    } finally {
+      setIsArchiving(false);
+    }
+  }
+
+  async function handleDeleteTask() {
+    if (!task?.task_id || task?.isNew || !onDelete) return;
+
+    setIsDeleting(true);
+    setError("");
+
+    try {
+      await onDelete(task);
+      onClose?.();
+    } catch (deleteError) {
+      setError(deleteError.message || "Could not delete task.");
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -1554,6 +1627,28 @@ function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [
               {error}
             </p>
           ) : null}
+
+          {!task?.isNew ? (
+            <div className="inline-flex w-full overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
+              <button
+                type="button"
+                onClick={handleDeleteTask}
+                disabled={isDeleting || isArchiving}
+                className="flex h-11 flex-1 items-center justify-center text-sm font-black text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+              <div className="w-px bg-white/70" />
+              <button
+                type="button"
+                onClick={handleArchiveTask}
+                disabled={isDeleting || isArchiving}
+                className="flex h-11 flex-1 items-center justify-center text-sm font-black text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isArchiving ? "Archiving..." : "Archive"}
+              </button>
+            </div>
+          ) : null}
         </div>
 
       </form>
@@ -1768,9 +1863,12 @@ export default function WorkspaceBoard({
   onGroupDelete,
   onGroupRename,
   onSkillCreate,
+  onTaskAiAssign,
   onTaskApprove,
+  onTaskArchive,
   onTaskAssignEmployee,
   onTaskCreate,
+  onTaskDelete,
   onTaskReject,
   onTaskUnassignEmployee,
   onTaskUpdate,
@@ -1915,6 +2013,7 @@ export default function WorkspaceBoard({
                   key={task.task_id}
                   employees={employees}
                   groupName={column.name}
+                  onAiAssign={onTaskAiAssign}
                   onApprove={onTaskApprove}
                   onAssignEmployee={onTaskAssignEmployee}
                   onOpen={setEditingTask}
@@ -1951,7 +2050,9 @@ export default function WorkspaceBoard({
           groups={groups}
           skills={skills}
           task={currentEditingTask}
+          onArchive={onTaskArchive}
           onClose={() => setEditingTask(null)}
+          onDelete={onTaskDelete}
           onSave={handleTaskSave}
           onSkillCreate={onSkillCreate}
         />

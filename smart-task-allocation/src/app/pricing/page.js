@@ -1,69 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import ElectricBorder from "@/components/ElectricBorder";
 import LandingNav from "@/components/LandingNav";
 import LanyardShowcase from "@/components/LanyardShowcase";
-
-const PLANS = [
-  {
-    name: "Starter",
-    color: "#2563EB",
-    price: "$0",
-    cadence: "/forever",
-    description: "For individuals and small teams getting started.",
-    features: [
-      "Core task allocation",
-      "All user roles available",
-      "Unlimited users",
-      "Unlimited workspaces",
-      "Organizational hierarchy management",
-      "Team management",
-      "Schedule management",
-      "Real-time team messaging",
-      "Smart notifications",
-      "Basic support"
-
-    ],
-    cta: "Try Optima",
-    highlighted: false,
-  },
-  {
-    name: "Pro",
-    color: "#7C3AED",
-    tag: "per user",
-    price: "$9",
-    cadence: ".99/monthly",
-    description: "For professionals ready to unlock intelligent automation and the full power of Optimus AI.",
-    features: [
-      "Everything in Starter",
-      "Full access to Optimus AI",
-      "Personal and specialized AI agents",
-      "AI recommendations and automation",
-      "Intelligent Workforce Matching",
-      "Allocation history and smart reassignment",
-      "Task assignment requests",
-      "Priority support",
-    ],
-    cta: "Try Optima",
-    highlighted: false,
-  },
-  {
-    name: "Team",
-    color: "#E8A23D",
-    tag: "per team",
-    price: "$49",
-    cadence: ".99/monthly",
-    description: "Best for organizations seeking to maximize productivity with Optimus AI.",
-    features: [
-      "Everything in Pro",
-      "Organization-wide AI access",
-      "More AI agent usage",
-      "Centralized billing and administration",
-      "Dedicated support",
-    ],
-    cta: "Try Optima",
-    highlighted: false,
-  },
-];
+import { useSiteContent } from "@/lib/useSiteContent";
 
 function CheckIcon({ color }) {
   return (
@@ -143,27 +84,29 @@ function PlanCard({ plan }) {
 }
 
 export default function PricingPage() {
+  const content = useSiteContent("pricing");
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-black px-6 pb-10 pt-32 text-white">
       <LandingNav />
 
-      <section className="mx-auto mt-4 max-w-3xl text-center">
-        <span className="rounded-full border border-white/15 px-4 py-1 text-lg font-medium text-white/80">
-          Pricing
-        </span>
-        <h1 className="mt-6 text-4xl font-bold tracking-tight sm:text-5xl">
-          Maximize your team's potential
-        </h1>
-        <p className="mt-4 text-base text-white/60">
-          Start free, then upgrade as your team grows. Transparent pricing, no hidden fees.
-        </p>
-      </section>
+      {!content.hidden ? (
+        <>
+          <section className="mx-auto mt-4 max-w-3xl text-center">
+            <span className="rounded-full border border-white/15 px-4 py-1 text-lg font-medium text-white/80">
+              {content.badge}
+            </span>
+            <h1 className="mt-6 text-4xl font-bold tracking-tight sm:text-5xl">{content.heading}</h1>
+            <p className="mt-4 text-base text-white/60">{content.subheading}</p>
+          </section>
 
-      <section className="relative isolate mx-auto mt-16 grid max-w-6xl gap-8 pb-60 md:grid-cols-3">
-        {PLANS.map((plan) => (
-          <PlanCard key={plan.name} plan={plan} />
-        ))}
-      </section>
+          <section className="relative isolate mx-auto mt-16 grid max-w-6xl gap-8 pb-60 md:grid-cols-3">
+            {(content.plans ?? []).map((plan) => (
+              <PlanCard key={plan.name} plan={plan} />
+            ))}
+          </section>
+        </>
+      ) : null}
 
       <div className="-mx-6">
         <LanyardShowcase />

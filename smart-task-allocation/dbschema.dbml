@@ -104,7 +104,6 @@ Table skill {
 Table user_skill {
     user_id uuid [pk, ref: > user_account.user_id]
     skill_id int [pk, ref: > skill.skill_id]
-    proficiency_level varchar [not null]
     created_at timestamptz [not null, default: `now()`]
     updated_at timestamptz
 }
@@ -247,4 +246,14 @@ Table testimonial {
     status varchar [not null, default: 'Pending']
     created_at timestamptz [not null, default: `now()`]
     updated_at timestamptz
+}
+
+// Marketing-site CMS content, edited by Platform Admin. One row per section
+// (nav, hero, features, testimonials_section, pricing, footer); global, not
+// organization-scoped, since the marketing site isn't tenant-specific.
+Table site_content {
+    content_key text [pk]
+    content jsonb [not null, default: '{}']
+    updated_at timestamptz [not null, default: `now()`]
+    updated_by uuid [ref: > user_account.user_id]
 }

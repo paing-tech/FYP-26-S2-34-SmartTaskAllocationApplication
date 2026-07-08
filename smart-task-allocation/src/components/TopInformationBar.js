@@ -437,40 +437,39 @@ export default function TopInformationBar({ actor }) {
     setQuery("");
   }
 
+  // Dispatching the event here — in the click handler itself, rather than
+  // inside the setOptimusSettings updater — matters: updater functions run
+  // during React's render of this component, so a synchronous listener that
+  // calls setState on WorkspaceView from inside one triggers "Cannot update a
+  // component while rendering a different component".
   function toggleOptimusSetting(key) {
-    setOptimusSettings((current) => {
-      const nextValue = !current[key];
-      const nextSettings = {
-        ...current,
-        [key]: nextValue,
-      };
+    const nextValue = !optimusSettings[key];
 
-      if (key === "smartTaskCreation") {
-        window.dispatchEvent(
-          new CustomEvent("optima:optimus-setting-change", {
-            detail: {
-              actor,
-              feature: "smart_task_creation",
-              enabled: nextValue,
-            },
-          }),
-        );
-      }
+    setOptimusSettings((current) => ({ ...current, [key]: nextValue }));
 
-      if (key === "smartTaskAllocation") {
-        window.dispatchEvent(
-          new CustomEvent("optima:optimus-setting-change", {
-            detail: {
-              actor,
-              feature: "smart_task_allocation",
-              enabled: nextValue,
-            },
-          }),
-        );
-      }
+    if (key === "smartTaskCreation") {
+      window.dispatchEvent(
+        new CustomEvent("optima:optimus-setting-change", {
+          detail: {
+            actor,
+            feature: "smart_task_creation",
+            enabled: nextValue,
+          },
+        }),
+      );
+    }
 
-      return nextSettings;
-    });
+    if (key === "smartTaskAllocation") {
+      window.dispatchEvent(
+        new CustomEvent("optima:optimus-setting-change", {
+          detail: {
+            actor,
+            feature: "smart_task_allocation",
+            enabled: nextValue,
+          },
+        }),
+      );
+    }
   }
 
   function runSearchResult(item) {

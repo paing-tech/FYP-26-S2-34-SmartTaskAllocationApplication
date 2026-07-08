@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { TestimonialsColumn } from "@/components/TestimonialsColumn";
+import { useSiteContent } from "@/lib/useSiteContent";
 
 export default function TestimonialsSection() {
+  const header = useSiteContent("testimonials_section");
   const [testimonials, setTestimonials] = useState([]);
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export default function TestimonialsSection() {
     };
   }, []);
 
-  if (!testimonials.length) {
+  if (header.hidden || !testimonials.length) {
     return null;
   }
 
@@ -36,13 +38,13 @@ export default function TestimonialsSection() {
       <div className="mx-auto max-w-[600px] px-4 text-center">
         <div className="flex justify-center">
           <span className="rounded-lg border border-[#0D1E4C]/15 px-4 py-1 text-sm font-medium text-[#0D1E4C]">
-            Testimonials
+            {header.badge}
           </span>
         </div>
         <h2 className="mt-5 text-4xl font-bold tracking-tight text-[#0D1E4C] lg:text-5xl">
-          Loved by the Community
+          {header.heading}
         </h2>
-        <p className="mt-4 text-[#0D1E4C]/70">See what our users say</p>
+        <p className="mt-4 text-[#0D1E4C]/70">{header.subheading}</p>
       </div>
 
       <div className="relative mx-auto mt-12 flex max-h-[740px] max-w-6xl justify-center gap-6 overflow-hidden px-4 [mask-image:linear-gradient(to_bottom,transparent,black_18%,black_82%,transparent)]">

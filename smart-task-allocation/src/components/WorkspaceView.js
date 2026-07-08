@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import WorkspaceCalendar from "@/components/WorkspaceCalendar";
 import WorkspaceBoard from "@/components/WorkspaceBoard";
-import ReassignModal from "@/components/ReassignModal";
 import AllocationHistory from "@/components/AllocationHistory";
 import Portal from "@/components/Portal";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
@@ -32,10 +31,10 @@ function formatHistoryTime(value) {
   return `${day} at ${time}`;
 }
 
-function AllocationHistoryPreview({ allocations = [], employees = [], workspaces = [], onReload }) {
+function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
   const [startIndex, setStartIndex] = useState(0);
-  const [reassign, setReassign] = useState(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isReassigning, setIsReassigning] = useState(false);
   const historyItems = allocations;
   const visibleItems = historyItems.slice(startIndex, startIndex + 1);
   const canShowNewer = startIndex > 0;
@@ -125,8 +124,17 @@ function AllocationHistoryPreview({ allocations = [], employees = [], workspaces
                 <span className="text-[#52627a]">on {formatHistoryTime(allocation.assignedAt)}</span>
                 <button
                   type="button"
-                  onClick={() => setReassign([allocation])}
-                  className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white"
+                  onClick={async () => {
+                    if (isReassigning) return;
+                    setIsReassigning(true);
+                    try {
+                      await onReassign?.(allocation.taskId);
+                    } finally {
+                      setIsReassigning(false);
+                    }
+                  }}
+                  disabled={isReassigning}
+                  className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Reassign
                 </button>
@@ -139,18 +147,6 @@ function AllocationHistoryPreview({ allocations = [], employees = [], workspaces
           No allocation history yet.
         </div>
       )}
-
-      {reassign ? (
-        <ReassignModal
-          targets={reassign}
-          employees={employees}
-          workspaces={workspaces}
-          onClose={() => setReassign(null)}
-          onDone={async () => {
-            await onReload?.();
-          }}
-        />
-      ) : null}
 
       {isExpanded ? (
         <Portal>
@@ -182,7 +178,6 @@ export default function WorkspaceView() {
   const [groups, setGroups] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [allocations, setAllocations] = useState([]);
-  const [workspaces, setWorkspaces] = useState([]);
   const [skills, setSkills] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -207,14 +202,12 @@ export default function WorkspaceView() {
         groupsResponse,
         employeesResponse,
         allocationsResponse,
-        workspacesResponse,
         skillsResponse,
       ] = await Promise.all([
         fetch("/api/tasks", { headers }),
         fetch("/api/task-groups", { headers }),
         fetch("/api/employees", { headers }),
         fetch("/api/allocations", { headers }),
-        fetch("/api/workspaces", { headers }),
         fetch("/api/skills", { headers }),
       ]);
       const [
@@ -222,14 +215,12 @@ export default function WorkspaceView() {
         groupsResult,
         employeesResult,
         allocationsResult,
-        workspacesResult,
         skillsResult,
       ] = await Promise.all([
         tasksResponse.json(),
         groupsResponse.json(),
         employeesResponse.json(),
         allocationsResponse.json(),
-        workspacesResponse.json(),
         skillsResponse.json(),
       ]);
 
@@ -270,7 +261,6 @@ export default function WorkspaceView() {
       setGroups(nextGroups);
       setEmployees(employeesResult.employees ?? []);
       setAllocations(allocationsResult.allocations ?? []);
-      setWorkspaces(workspacesResponse.ok ? workspacesResult.workspaces ?? [] : []);
       setSkills(skillsResponse.ok ? skillsResult.skills ?? [] : []);
     } catch (loadError) {
       setError(loadError.message);
@@ -481,6 +471,69 @@ export default function WorkspaceView() {
     }
   }
 
+  async function archiveTask(task) {
+    if (!task?.task_id) {
+      return;
+    }
+
+    const previousTasks = tasks;
+    setTasks((current) => current.filter((currentTask) => currentTask.task_id !== task.task_id));
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({
+          taskId: task.task_id,
+          title: task.title,
+          description: task.description,
+          groupId: task.group_id,
+          status: "Archived",
+          priority: task.priority,
+          startDatetime: task.start_datetime,
+          endDatetime: task.end_datetime,
+          requiredSkillIds: (task.requiredSkills ?? []).map((skill) => skill.skill_id),
+        }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not archive task.");
+      }
+    } catch (archiveError) {
+      setTasks(previousTasks);
+      setError(archiveError.message);
+      throw archiveError;
+    }
+  }
+
+  async function deleteTask(task) {
+    if (!task?.task_id) {
+      return;
+    }
+
+    const previousTasks = tasks;
+    setTasks((current) => current.filter((currentTask) => currentTask.task_id !== task.task_id));
+    setError("");
+
+    try {
+      const response = await fetch(`/api/tasks?taskId=${task.task_id}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not delete task.");
+      }
+    } catch (deleteError) {
+      setTasks(previousTasks);
+      setError(deleteError.message);
+      throw deleteError;
+    }
+  }
+
   // Tasks support multiple current assignees (task_assignee), independent of
   // the rest of the task-edit form — so these update just the assignee list
   // optimistically, without touching title/description/etc.
@@ -549,6 +602,72 @@ export default function WorkspaceView() {
       setTasks(previousTasks);
       setError(unassignError.message);
       throw unassignError;
+    }
+  }
+
+  // Lets Optimus AI pick the assignee (skill/history/department match) for
+  // one task on demand. Which employee gets picked isn't known until the
+  // server responds, so this isn't optimistic — it patches assigneeIds in
+  // once the match comes back instead of guessing beforehand.
+  async function aiAssignTask(task) {
+    if (!task?.task_id) return;
+
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "ai-assign-task", taskId: task.task_id }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not find an AI match for this task.");
+      }
+
+      setTasks((current) =>
+        current.map((currentTask) =>
+          currentTask.task_id === task.task_id
+            ? {
+                ...currentTask,
+                assigneeIds: [...new Set([...(currentTask.assigneeIds ?? []), result.employeeId])],
+              }
+            : currentTask,
+        ),
+      );
+
+      return result.employeeId;
+    } catch (aiAssignError) {
+      setError(aiAssignError.message);
+      throw aiAssignError;
+    }
+  }
+
+  // Reassign hands the task straight to the current manager — no picker, no
+  // confirmation step. The server infers "current user" from the auth token,
+  // so the client only ever needs to name the task(s).
+  async function reassignAllocationToSelf(taskId) {
+    if (!taskId) return;
+
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "reassign-task", taskIds: [taskId] }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reassign task.");
+      }
+
+      await loadWorkspaceData();
+    } catch (reassignError) {
+      setError(reassignError.message);
+      throw reassignError;
     }
   }
 
@@ -723,9 +842,12 @@ export default function WorkspaceView() {
             onGroupDelete={deleteGroup}
             onGroupRename={renameGroup}
             onSkillCreate={createSkill}
+            onTaskAiAssign={aiAssignTask}
             onTaskApprove={approveAiTask}
             onTaskAssignEmployee={assignEmployeeToTask}
+            onTaskArchive={archiveTask}
             onTaskCreate={createTask}
+            onTaskDelete={deleteTask}
             onTaskReject={rejectAiTask}
             onTaskUnassignEmployee={unassignEmployeeFromTask}
             onTaskUpdate={updateTask}
@@ -737,8 +859,7 @@ export default function WorkspaceView() {
 
       <AllocationHistoryPreview
         allocations={allocations}
-        employees={employees}
-        workspaces={workspaces}
+        onReassign={reassignAllocationToSelf}
         onReload={loadWorkspaceData}
       />
     </div>

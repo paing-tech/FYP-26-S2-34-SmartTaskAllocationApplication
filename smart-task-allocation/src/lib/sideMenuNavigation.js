@@ -40,6 +40,7 @@ export const sideMenuNavigation = {
     homeHref: "/platformadmin",
     items: [
       { label: "Home", href: "/platformadmin", icon: "home" },
+      { label: "Content", href: "/platformadmin/content", icon: "content" },
       { label: "Agents", href: "/platformadmin/agents", icon: "agents" },
     ],
   },

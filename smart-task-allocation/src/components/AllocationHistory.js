@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import EmployeeProfileCard from "@/components/EmployeeProfileCard";
 import HoverPill from "@/components/HoverPill";
-import ReassignModal from "@/components/ReassignModal";
 
 function formatDateHeader(iso) {
   const date = new Date(iso);
@@ -21,12 +20,9 @@ function formatDateTime(iso) {
 export default function AllocationHistory({ onClose } = {}) {
   const [allocations, setAllocations] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [workspaces, setWorkspaces] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [error, setError] = useState("");
-
-  // Reassign modal targets: array of allocations, or null when closed.
-  const [reassign, setReassign] = useState(null);
+  const [isReassigning, setIsReassigning] = useState(false);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -40,18 +36,15 @@ export default function AllocationHistory({ onClose } = {}) {
   async function loadAll() {
     try {
       const headers = await authHeaders();
-      const [allocRes, empRes, wsRes] = await Promise.all([
+      const [allocRes, empRes] = await Promise.all([
         fetch("/api/allocations", { headers }),
         fetch("/api/employees", { headers }),
-        fetch("/api/workspaces", { headers }),
       ]);
       const allocData = await allocRes.json();
       const empData = await empRes.json();
-      const wsData = await wsRes.json();
       if (!allocRes.ok) throw new Error(allocData.error || "Could not load allocations.");
       setAllocations(allocData.allocations ?? []);
       setEmployees(empData.employees ?? []);
-      setWorkspaces(wsData.workspaces ?? []);
     } catch (loadError) {
       setError(loadError.message);
     }
@@ -91,19 +84,33 @@ export default function AllocationHistory({ onClose } = {}) {
     });
   }
 
-  function openReassign(targets) {
-    if (!targets.length) return;
-    setReassign(targets);
+  // Reassign immediately hands the task(s) over to the current manager —
+  // no picker, no confirmation step.
+  async function handleReassign(taskIds) {
+    if (!taskIds.length || isReassigning) return;
+    setIsReassigning(true);
     setError("");
-  }
-
-  function closeReassign() {
-    setReassign(null);
+    try {
+      const headers = await authHeaders();
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ action: "reassign-task", taskIds }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reassign task.");
+      }
+      setSelectedIds(new Set());
+      await loadAll();
+    } catch (reassignError) {
+      setError(reassignError.message);
+    } finally {
+      setIsReassigning(false);
+    }
   }
 
   const selectedAllocations = allocations.filter((a) => selectedIds.has(a.id));
-  const workspaceName = (id) =>
-    workspaces.find((w) => w.workspace_id === id)?.workspace_name ?? "—";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -114,8 +121,8 @@ export default function AllocationHistory({ onClose } = {}) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => openReassign(selectedAllocations)}
-            disabled={!selectedIds.size}
+            onClick={() => handleReassign(selectedAllocations.map((allocation) => allocation.taskId))}
+            disabled={!selectedIds.size || isReassigning}
             className="rounded-full bg-[#0a72e8] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#075fc2] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Bulk Reassign{selectedIds.size ? ` (${selectedIds.size})` : ""}
@@ -180,9 +187,6 @@ export default function AllocationHistory({ onClose } = {}) {
                       detail={
                         <span className="block text-sm text-[#0D1E4C]">
                           <span className="block font-bold break-words">{allocation.taskTitle}</span>
-                          <span className="mt-1 block text-xs text-[#667085]">
-                            Workspace: {workspaceName(allocation.workspaceId)}
-                          </span>
                           <span className="block text-xs text-[#667085]">
                             Status: {allocation.status ?? "Assigned"}
                           </span>
@@ -196,8 +200,9 @@ export default function AllocationHistory({ onClose } = {}) {
                     </span>
                     <button
                       type="button"
-                      onClick={() => openReassign([allocation])}
-                      className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white"
+                      onClick={() => handleReassign([allocation.taskId])}
+                      disabled={isReassigning}
+                      className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Reassign
                     </button>
@@ -214,19 +219,6 @@ export default function AllocationHistory({ onClose } = {}) {
           </p>
         ) : null}
       </div>
-
-      {reassign ? (
-        <ReassignModal
-          targets={reassign}
-          employees={employees}
-          workspaces={workspaces}
-          onClose={closeReassign}
-          onDone={async () => {
-            setSelectedIds(new Set());
-            await loadAll();
-          }}
-        />
-      ) : null}
     </div>
   );
 }

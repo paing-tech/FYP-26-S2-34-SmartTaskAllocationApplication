@@ -159,3 +159,12 @@ export async function requireEmployee(request, supabase) {
     "Only Employee accounts can access employee work areas.",
   );
 }
+
+export async function requirePlatformAdmin(request, supabase) {
+  return requireHomeRoute(
+    request,
+    supabase,
+    ["/platformadmin"],
+    "Only Platform Admin accounts can manage marketing site content.",
+  );
+}

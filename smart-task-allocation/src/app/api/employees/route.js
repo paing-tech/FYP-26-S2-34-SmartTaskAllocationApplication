@@ -87,7 +87,7 @@ export async function GET(request) {
         ? await Promise.all([
             supabase
               .from("user_skill")
-              .select("user_id, proficiency_level, skill:skill_id(skill_name)")
+              .select("user_id, skill:skill_id(skill_name)")
               .in("user_id", employeeIds),
             supabase
               .from("availability")
@@ -152,7 +152,7 @@ export async function GET(request) {
       skillsByUserId.set(row.user_id, currentSkills);
 
       const currentDetails = skillDetailsByUserId.get(row.user_id) ?? [];
-      currentDetails.push({ name: skillName, level: row.proficiency_level ?? 1 });
+      currentDetails.push({ name: skillName });
       skillDetailsByUserId.set(row.user_id, currentDetails);
     }
 

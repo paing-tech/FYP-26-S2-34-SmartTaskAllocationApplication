@@ -2,18 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-// Skill proficiency tiers (1–5) drive the chip border styling.
-const SKILL_TIERS = {
-  1: "border-[#cbd5e1] bg-[#f1f5f9] text-[#475569]", // common — light gray
-  2: "border-[#22c55e] bg-[#ecfdf5] text-[#15803d]", // common — green
-  3: "border-[#3b82f6] bg-[#eff6ff] text-[#1d4ed8]", // rare — blue
-  4: "border-[#a855f7] bg-[#faf5ff] text-[#7c3aed]", // epic — purple
-  5: "border-[#e8a23d] bg-[#fffaf0] text-[#b45309]", // legendary — gold
-};
-
-function skillTierClass(level) {
-  return SKILL_TIERS[level] ?? SKILL_TIERS[1];
-}
+const SKILL_CHIP_CLASS = "border-[#cbd5e1] bg-[#f1f5f9] text-[#475569]";
 
 const WEEKDAYS = [
   { key: 0, label: "Mon" },
@@ -61,7 +50,7 @@ export default function EmployeeProfileCard({ employee, defaultExpanded = false 
   const roleName = employee?.role?.role_name || "Employee";
   const skills = employee?.skill_details?.length
     ? employee.skill_details
-    : (employee?.skills ?? []).map((name) => ({ name, level: 1 }));
+    : (employee?.skills ?? []).map((name) => ({ name }));
 
   const hoursWorked = employee?.worked_hours_this_week ?? 0;
 
@@ -153,8 +142,7 @@ export default function EmployeeProfileCard({ employee, defaultExpanded = false 
               skills.map((skill) => (
                 <span
                   key={skill.name}
-                  className={`rounded-full border-2 px-3 py-1 text-xs font-bold ${skillTierClass(skill.level)}`}
-                  title={`Proficiency level ${skill.level}`}
+                  className={`rounded-full border-2 px-3 py-1 text-xs font-bold ${SKILL_CHIP_CLASS}`}
                 >
                   {skill.name}
                 </span>
