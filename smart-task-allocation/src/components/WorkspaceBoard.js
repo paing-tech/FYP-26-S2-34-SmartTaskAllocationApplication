@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 const PRIORITY_TONES = {
   low: { chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#22c55e]" },
@@ -135,26 +136,46 @@ function combineDateTime({ date, isDateEnabled, isTimeEnabled, time }) {
   return `${date}T${isTimeEnabled && time ? time : "00:00"}`;
 }
 
-function getTaskActionLabels(task) {
-  const isSmartAction =
-    task.source === "optimus_ai" || /optimus|ai/i.test(`${task.owner ?? ""} ${task.latest_assigned_by ?? ""}`);
-
-  return [
-    isSmartAction ? "Smart task creation" : "Created manually",
-    task.assigned_to ? (isSmartAction ? "Smart task allocation" : "Assigned manually") : null,
-  ].filter(Boolean);
-}
-
-function getTaskReasonLabels(task) {
+function getSmartCreationLabel(task) {
   const reason = task.reasons ?? task.reason;
 
-  if (!reason || typeof reason !== "object") {
-    return [];
+  if (reason?.creationKind === "skill_match") {
+    return "Matched required skills";
   }
 
+  if (reason?.creationKind === "allocation_history") {
+    return "Analyzed allocation history";
+  }
+
+  const reasonText = (Array.isArray(reason?.creation) ? reason.creation : []).join(" ").toLowerCase();
+
+  if (/skill/.test(reasonText)) {
+    return "Matched required skills";
+  }
+
+  if (/allocation/.test(reasonText)) {
+    return "Analyzed allocation history";
+  }
+
+  return "Smart task creation";
+}
+
+function getSmartAllocationLabel(task) {
+  const reason = task.reasons ?? task.reason;
+  return reason?.allocationKind === "skill_match" ? "Matched required skills" : "Smart task allocation";
+}
+
+function getTaskActionLabels(task) {
+  // Creation and allocation are independent facts: a manually-created task can
+  // still be auto-allocated by Optimus AI later, and vice versa. Deciding both
+  // from the same loose "does this look AI-ish" check mislabels either case.
+  const isSmartCreation = task.source === "optimus_ai";
+  const isSmartAllocation =
+    task.reasons?.allocationKind === "skill_match" || task.latest_assigned_by === "Optimus AI";
+
   return [
-    ...(Array.isArray(reason.creation) ? reason.creation : []),
-    ...(Array.isArray(reason.allocation) ? reason.allocation : []),
+    isSmartCreation ? getSmartCreationLabel(task) : "Created manually",
+    task.assigned_to ? (isSmartAllocation ? getSmartAllocationLabel(task) : "Assigned manually") : null,
   ].filter(Boolean);
 }
 
@@ -287,7 +308,6 @@ function TaskCard({ onOpen, task }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
-  const reasonLabels = getTaskReasonLabels(task);
 
   return (
     <div className="group relative z-0 pt-11 hover:z-20">
@@ -298,11 +318,6 @@ function TaskCard({ onOpen, task }) {
         <p className="mt-1 text-[11px] font-semibold leading-4 text-[#2563EB] opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           {actionLabels.join(" · ")}
         </p>
-        {reasonLabels.length ? (
-          <p className="mt-1 line-clamp-2 text-[10px] font-semibold leading-4 text-[#52627a] opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-            {reasonLabels.join(" · ")}
-          </p>
-        ) : null}
       </div>
 
       <div
@@ -775,7 +790,7 @@ function GroupPicker({ groups, onChange, value }) {
   );
 }
 
-function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
+function TaskEditPanel({ groups = [], onClose, onSave, skills = [], task }) {
   const startParts = splitDateTime(task?.start_datetime);
   const endParts = splitDateTime(task?.end_datetime);
   const [isMounted, setIsMounted] = useState(false);
@@ -786,7 +801,7 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
     priority: task?.priority ?? "Medium",
     repeat: "Never",
     groupId: task?.group_id ?? "",
-    assigneeIds: task?.assigned_to ? [task.assigned_to] : [],
+    requiredSkillIds: (task?.requiredSkills ?? []).map((skill) => skill.skill_id),
     startDateEnabled: Boolean(startParts.date),
     startDate: startParts.date,
     startTimeEnabled: Boolean(startParts.time),
@@ -799,6 +814,9 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [openPanel, setOpenPanel] = useState("");
+  const [skillQuery, setSkillQuery] = useState("");
+  const [isSuggestingSkills, setIsSuggestingSkills] = useState(false);
+  const [isWritingDescription, setIsWritingDescription] = useState(false);
 
   useEffect(() => {
     const nextStartParts = splitDateTime(task?.start_datetime);
@@ -810,7 +828,7 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
       priority: task?.priority ?? "Medium",
       repeat: "Never",
       groupId: task?.group_id ?? "",
-      assigneeIds: task?.assigned_to ? [task.assigned_to] : [],
+      requiredSkillIds: (task?.requiredSkills ?? []).map((skill) => skill.skill_id),
       startDateEnabled: Boolean(nextStartParts.date),
       startDate: nextStartParts.date,
       startTimeEnabled: Boolean(nextStartParts.time),
@@ -822,21 +840,85 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
     });
     setError("");
     setOpenPanel("");
+    setSkillQuery("");
   }, [task]);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function toggleAssignee(userId) {
+  function toggleSkill(skillId) {
     setForm((current) => {
-      const currentIds = current.assigneeIds ?? [];
-      const nextIds = currentIds.includes(userId)
-        ? currentIds.filter((id) => id !== userId)
-        : [...currentIds, userId];
+      const currentIds = current.requiredSkillIds ?? [];
+      const nextIds = currentIds.includes(skillId)
+        ? currentIds.filter((id) => id !== skillId)
+        : [...currentIds, skillId];
 
-      return { ...current, assigneeIds: nextIds };
+      return { ...current, requiredSkillIds: nextIds };
     });
+  }
+
+  async function authHeaders() {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+    };
+  }
+
+  async function suggestSkillsWithAI() {
+    if (!form.title.trim() || isSuggestingSkills) return;
+
+    setIsSuggestingSkills(true);
+
+    try {
+      const response = await fetch("/api/agent/suggest-skills", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ title: form.title, description: form.description }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not suggest skills.");
+      }
+
+      const suggestedIds = Array.isArray(result.skillIds) ? result.skillIds : [];
+      setForm((current) => ({
+        ...current,
+        requiredSkillIds: [...new Set([...current.requiredSkillIds, ...suggestedIds])],
+      }));
+    } catch (suggestError) {
+      setError(suggestError.message || "Could not suggest skills.");
+    } finally {
+      setIsSuggestingSkills(false);
+    }
+  }
+
+  async function writeDescriptionWithAI() {
+    if (!form.title.trim() || isWritingDescription) return;
+
+    setIsWritingDescription(true);
+
+    try {
+      const response = await fetch("/api/agent/write-description", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ title: form.title }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not write a description.");
+      }
+
+      updateField("description", result.description ?? "");
+    } catch (writeError) {
+      setError(writeError.message || "Could not write a description.");
+    } finally {
+      setIsWritingDescription(false);
+    }
   }
 
   async function handleSave(event) {
@@ -858,7 +940,7 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
         status: form.status,
         priority: form.priority,
         groupId: form.groupId || null,
-        assignedTo: form.assigneeIds[0] ?? "",
+        requiredSkillIds: form.requiredSkillIds,
         startDatetime: combineDateTime({
           date: form.startDate,
           isDateEnabled: form.startDateEnabled,
@@ -880,9 +962,10 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
     }
   }
 
-  const selectedEmployees = employees.filter((employee) =>
-    form.assigneeIds.includes(employee.user_id),
-  );
+  const selectedSkills = skills.filter((skill) => form.requiredSkillIds.includes(skill.skill_id));
+  const filteredSkills = skillQuery.trim()
+    ? skills.filter((skill) => skill.skill_name.toLowerCase().includes(skillQuery.trim().toLowerCase()))
+    : skills;
 
   useEffect(() => {
     setIsMounted(true);
@@ -940,6 +1023,17 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
               placeholder="Description"
               className="mt-1 w-full resize-none border-0 bg-transparent text-sm font-semibold leading-6 text-[#0D1E4C] outline-none placeholder:text-[#94a3b8]"
             />
+            <button
+              type="button"
+              onClick={writeDescriptionWithAI}
+              disabled={!form.title.trim() || isWritingDescription}
+              className="mb-2 flex items-center gap-1 rounded-full bg-[#2563EB]/10 px-3 py-1.5 text-[11px] font-black text-[#2563EB] transition hover:bg-[#2563EB]/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                auto_awesome
+              </span>
+              {isWritingDescription ? "Writing…" : "Write with AI"}
+            </button>
           </section>
 
           <DateTimeSection
@@ -1029,42 +1123,65 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
             </section>
           ) : null}
 
-          <section className="relative z-0 rounded-3xl bg-white/70 px-4 py-4 shadow-sm">
-            <p className="text-sm font-black normal-case text-[#52627a]">Assigned to</p>
-            <div className="mt-3 space-y-2">
-              {selectedEmployees.length ? (
-                selectedEmployees.map((employee) => (
-                  <AssigneeProfile key={employee.user_id} employee={employee} />
-                ))
-              ) : (
-                <AssigneeProfile employee={null} />
-              )}
+          <section className="relative z-0 rounded-3xl bg-white/60 backdrop-blur-3xl px-4 py-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-black normal-case text-[#0D1E4C]">Required Skills</p>
+              <button
+                type="button"
+                onClick={suggestSkillsWithAI}
+                disabled={!form.title.trim() || isSuggestingSkills}
+                className="flex items-center gap-1 rounded-full bg-[#2563EB]/10 px-3 py-1.5 text-[11px] font-black text-[#2563EB] transition hover:bg-[#2563EB]/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                  auto_awesome
+                </span>
+                {isSuggestingSkills ? "Suggesting…" : "Suggest with AI"}
+              </button>
             </div>
+
+            {selectedSkills.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedSkills.map((skill) => (
+                  <button
+                    type="button"
+                    key={skill.skill_id}
+                    onClick={() => toggleSkill(skill.skill_id)}
+                    className="flex items-center gap-1 rounded-full bg-[#2563EB] px-3 py-1 text-xs font-black text-white transition hover:bg-[#1d4ed8]"
+                  >
+                    {skill.skill_name}
+                    <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                      close
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs font-semibold text-[#94a3b8]"></p>
+            )}
+
+            <input
+              type="text"
+              value={skillQuery}
+              onChange={(event) => setSkillQuery(event.target.value)}
+              placeholder="Search skills…"
+              className="mt-3 h-9 w-full rounded-full border border-[#e6ebf2] bg-white/70 px-3 text-xs font-semibold text-[#0D1E4C] outline-none placeholder:text-[#94a3b8] focus:border-[#2563EB]"
+            />
+
             <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
-              {employees.map((employee) => {
-                const isSelected = form.assigneeIds.includes(employee.user_id);
+              {filteredSkills.map((skill) => {
+                const isSelected = form.requiredSkillIds.includes(skill.skill_id);
 
                 return (
                   <button
                     type="button"
-                    key={employee.user_id}
-                    onClick={() => toggleAssignee(employee.user_id)}
+                    key={skill.skill_id}
+                    onClick={() => toggleSkill(skill.skill_id)}
                     className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-left transition ${
                       isSelected ? "bg-[#dbeafe]" : "bg-white/60 hover:bg-white"
                     }`}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-[10px] font-black text-white">
-                        {initials(getDisplayName(employee))}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-black text-[#0D1E4C]">
-                          {getDisplayName(employee)}
-                        </span>
-                        <span className="block truncate text-[11px] font-semibold text-[#667085]">
-                          {getOccupation(employee)}
-                        </span>
-                      </span>
+                    <span className="truncate text-xs font-black text-[#0D1E4C]">
+                      {skill.skill_name}
                     </span>
                     <span className="text-xs font-black text-[#2563EB]">
                       {isSelected ? "Selected" : "Add"}
@@ -1072,6 +1189,10 @@ function TaskEditPanel({ employees, groups = [], onClose, onSave, task }) {
                   </button>
                 );
               })}
+
+              {!filteredSkills.length ? (
+                <p className="px-1 text-xs font-semibold text-[#94a3b8]">No matching skills.</p>
+              ) : null}
             </div>
           </section>
 
@@ -1151,6 +1272,7 @@ export default function WorkspaceBoard({
   onGroupRename,
   onTaskCreate,
   onTaskUpdate,
+  skills = [],
   tasks = [],
 }) {
   const [editingTask, setEditingTask] = useState(null);
@@ -1273,7 +1395,7 @@ export default function WorkspaceBoard({
               onRename={onGroupRename}
             />
 
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-4 pt-6">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4 pt-2">
               {column.tasks.map((task) => (
                 <TaskCard key={task.task_id} task={task} onOpen={setEditingTask} />
               ))}
@@ -1300,8 +1422,8 @@ export default function WorkspaceBoard({
 
       {currentEditingTask ? (
         <TaskEditPanel
-          employees={employees}
           groups={groups}
+          skills={skills}
           task={currentEditingTask}
           onClose={() => setEditingTask(null)}
           onSave={handleTaskSave}

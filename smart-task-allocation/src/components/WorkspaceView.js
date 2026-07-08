@@ -54,7 +54,7 @@ function AllocationHistoryPreview({ allocations = [], employees = [], workspaces
   }
 
   return (
-    <section className="mt-4 shrink-0 rounded-[1.75rem] border border-white/50 bg-white/20 px-5 py-4 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
+    <section className="mt-0 shrink-0 rounded-[1.75rem] border border-white/50 bg-white/20 px-5 py-4 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-black text-[#0D1E4C]">Allocation History</h3>
         <div className="flex items-center gap-2">
@@ -183,6 +183,7 @@ export default function WorkspaceView() {
   const [employees, setEmployees] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [workspaces, setWorkspaces] = useState([]);
+  const [skills, setSkills] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [createTaskRequestKey, setCreateTaskRequestKey] = useState(0);
@@ -201,19 +202,35 @@ export default function WorkspaceView() {
 
     try {
       const headers = await authHeaders();
-      const [tasksResponse, groupsResponse, employeesResponse, allocationsResponse, workspacesResponse] = await Promise.all([
+      const [
+        tasksResponse,
+        groupsResponse,
+        employeesResponse,
+        allocationsResponse,
+        workspacesResponse,
+        skillsResponse,
+      ] = await Promise.all([
         fetch("/api/tasks", { headers }),
         fetch("/api/task-groups", { headers }),
         fetch("/api/employees", { headers }),
         fetch("/api/allocations", { headers }),
         fetch("/api/workspaces", { headers }),
+        fetch("/api/skills", { headers }),
       ]);
-      const [tasksResult, groupsResult, employeesResult, allocationsResult, workspacesResult] = await Promise.all([
+      const [
+        tasksResult,
+        groupsResult,
+        employeesResult,
+        allocationsResult,
+        workspacesResult,
+        skillsResult,
+      ] = await Promise.all([
         tasksResponse.json(),
         groupsResponse.json(),
         employeesResponse.json(),
         allocationsResponse.json(),
         workspacesResponse.json(),
+        skillsResponse.json(),
       ]);
 
       if (!tasksResponse.ok) {
@@ -254,6 +271,7 @@ export default function WorkspaceView() {
       setEmployees(employeesResult.employees ?? []);
       setAllocations(allocationsResult.allocations ?? []);
       setWorkspaces(workspacesResponse.ok ? workspacesResult.workspaces ?? [] : []);
+      setSkills(skillsResponse.ok ? skillsResult.skills ?? [] : []);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -270,7 +288,17 @@ export default function WorkspaceView() {
     async function handleOptimusSettingChange(event) {
       const detail = event.detail ?? {};
 
-      if (detail.actor !== "manager" || detail.feature !== "smart_task_creation") {
+      if (detail.actor !== "manager") {
+        return;
+      }
+
+      const actionByFeature = {
+        smart_task_creation: "set-ai-task-visibility",
+        smart_task_allocation: "auto-allocate-tasks",
+      };
+      const action = actionByFeature[detail.feature];
+
+      if (!action) {
         return;
       }
 
@@ -281,7 +309,7 @@ export default function WorkspaceView() {
           method: "PATCH",
           headers: { "Content-Type": "application/json", ...(await authHeaders()) },
           body: JSON.stringify({
-            action: "set-ai-task-visibility",
+            action,
             enabled: Boolean(detail.enabled),
           }),
         });
@@ -374,8 +402,10 @@ export default function WorkspaceView() {
       description: updates.description || null,
       status: updates.status || "Open",
       priority: updates.priority || "Medium",
-      assigned_to: updates.assignedTo || null,
       group_id: updates.groupId ?? null,
+      requiredSkills: skills.filter((skill) =>
+        (updates.requiredSkillIds ?? []).includes(skill.skill_id),
+      ),
       ai_state:
         task.source === "optimus_ai" && !["accepted", "dismissed"].includes(task.ai_state)
           ? "accepted"
@@ -401,12 +431,12 @@ export default function WorkspaceView() {
           taskId: task.task_id,
           title: updates.title,
           description: updates.description,
-          assignedTo: updates.assignedTo,
           groupId: updates.groupId,
           status: updates.status,
           priority: updates.priority,
           startDatetime: updates.startDatetime,
           endDatetime: updates.endDatetime,
+          requiredSkillIds: updates.requiredSkillIds,
         }),
       });
       const result = await response.json();
@@ -431,12 +461,12 @@ export default function WorkspaceView() {
         body: JSON.stringify({
           title: updates.title,
           description: updates.description,
-          assignedTo: updates.assignedTo,
           groupId: updates.groupId,
           status: updates.status,
           priority: updates.priority,
           startDatetime: updates.startDatetime,
           endDatetime: updates.endDatetime,
+          requiredSkillIds: updates.requiredSkillIds,
         }),
       });
       const result = await response.json();
@@ -502,6 +532,7 @@ export default function WorkspaceView() {
             onGroupRename={renameGroup}
             onTaskCreate={createTask}
             onTaskUpdate={updateTask}
+            skills={skills}
             tasks={tasks}
           />
         )}

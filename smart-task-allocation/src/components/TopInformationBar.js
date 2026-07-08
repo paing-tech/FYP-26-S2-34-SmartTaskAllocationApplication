@@ -129,6 +129,29 @@ function BellIcon() {
   );
 }
 
+function AgentsIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="8" width="16" height="11" rx="3" />
+      <path d="M12 4v4" />
+      <circle cx="12" cy="3" r="1" />
+      <path d="M9 13h.01" />
+      <path d="M15 13h.01" />
+      <path d="M2 13v2" />
+      <path d="M22 13v2" />
+    </svg>
+  );
+}
+
 function OptimusToggle({ checked, label, onChange }) {
   return (
     <button
@@ -434,6 +457,18 @@ export default function TopInformationBar({ actor }) {
         );
       }
 
+      if (key === "smartTaskAllocation") {
+        window.dispatchEvent(
+          new CustomEvent("optima:optimus-setting-change", {
+            detail: {
+              actor,
+              feature: "smart_task_allocation",
+              enabled: nextValue,
+            },
+          }),
+        );
+      }
+
       return nextSettings;
     });
   }
@@ -479,6 +514,26 @@ export default function TopInformationBar({ actor }) {
           </span>
         ) : null}
 
+      <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+        <div className="relative h-10 w-[min(30rem,calc(100vw-14rem))]">
+          <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#61708a]">
+            <SearchIcon />
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearchOpen(true);
+              setIsNotificationsOpen(false);
+              setIsProfileOpen(false);
+              setIsOptimusPanelOpen(false);
+            }}
+            className="absolute inset-0 h-full w-full rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-4 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
+            aria-label="Open global search"
+          >
+            Search...
+          </button>
+        </div>
+
         {actor === "manager" && pathname === "/manager/workspace" ? (
           <div className="relative hidden sm:block">
             <button
@@ -489,13 +544,15 @@ export default function TopInformationBar({ actor }) {
                 setIsProfileOpen(false);
                 closeSearch();
               }}
-              className="rounded-full border border-white/60 bg-white/20 px-4 py-2 text-sm font-black text-[#0D1E4C] shadow-sm backdrop-blur-xl transition hover:bg-white/35"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/60 bg-white/20 text-[#0D1E4C] shadow-sm backdrop-blur-xl transition hover:bg-white/35 hover:scale-110"
+              aria-label="Open Optimus AI settings"
+              title="Optimus AI"
             >
-              Optimus AI
+              <AgentsIcon />
             </button>
 
             {isOptimusPanelOpen ? (
-              <div className="absolute left-0 top-12 z-[120] w-72 rounded-3xl border border-white/50 bg-white/10 p-3 shadow-[0_20px_70px_rgba(7,24,59,0.18)] backdrop-blur-xl">
+              <div className="absolute left-0 top-11 z-[120] w-72 rounded-3xl border border-white/60 bg-slate-200/90 p-3 shadow-[0_20px_70px_rgba(7,24,59,0.18)] backdrop-blur-3xl">
                 <OptimusToggle
                   checked={optimusSettings.smartTaskCreation}
                   label="Smart Task Creation"
@@ -515,24 +572,6 @@ export default function TopInformationBar({ actor }) {
             ) : null}
           </div>
         ) : null}
-
-      <div className="absolute left-1/2 top-1/2 h-10 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2">
-        <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#61708a]">
-          <SearchIcon />
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            setIsSearchOpen(true);
-            setIsNotificationsOpen(false);
-            setIsProfileOpen(false);
-            setIsOptimusPanelOpen(false);
-          }}
-          className="absolute inset-0 h-full w-full rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-4 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
-          aria-label="Open global search"
-        >
-          Search...
-        </button>
       </div>
 
       <div className="min-w-0 flex-1" />
