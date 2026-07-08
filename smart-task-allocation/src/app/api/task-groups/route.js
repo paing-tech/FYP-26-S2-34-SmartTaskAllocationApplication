@@ -124,7 +124,9 @@ export async function PATCH(request) {
   }
 }
 
-// Delete a task group. Tasks in the group are detached (group_id -> null).
+// Delete a task group. By default its tasks are detached (group_id -> null).
+// Pass migrateToGroupId to move them into another group instead, or
+// deleteTasks=true to delete the tasks (and their dependent rows) along with it.
 export async function DELETE(request) {
   try {
     const supabase = getSupabaseAdminClient();
@@ -135,11 +137,54 @@ export async function DELETE(request) {
 
     const { searchParams } = new URL(request.url);
     const groupId = searchParams.get("groupId");
+    const migrateToGroupId = searchParams.get("migrateToGroupId");
+    const deleteTasks = searchParams.get("deleteTasks") === "true";
+
     if (!groupId) {
       return NextResponse.json({ error: "Group ID is required." }, { status: 400 });
     }
 
-    await supabase.from("task").update({ group_id: null }).eq("group_id", groupId);
+    if (deleteTasks) {
+      const { data: groupTasks, error: groupTasksError } = await supabase
+        .from("task")
+        .select("task_id")
+        .eq("group_id", groupId);
+
+      if (groupTasksError) {
+        return NextResponse.json({ error: groupTasksError.message }, { status: 400 });
+      }
+
+      const taskIds = (groupTasks ?? []).map((task) => task.task_id);
+
+      if (taskIds.length) {
+        // Children first, then the tasks themselves — these tables have no
+        // cascading delete on task_id, so leftover rows would block the delete.
+        await supabase.from("task_assignment").delete().in("task_id", taskIds);
+        await supabase.from("task_assignee").delete().in("task_id", taskIds);
+        await supabase.from("task_comment").delete().in("task_id", taskIds);
+        await supabase.from("task_file").delete().in("task_id", taskIds);
+        await supabase.from("task_skill").delete().in("task_id", taskIds);
+        await supabase.from("task_qualification").delete().in("task_id", taskIds);
+
+        const { error: taskDeleteError } = await supabase.from("task").delete().in("task_id", taskIds);
+
+        if (taskDeleteError) {
+          return NextResponse.json({ error: taskDeleteError.message }, { status: 400 });
+        }
+      }
+    } else if (migrateToGroupId) {
+      const { error: migrateError } = await supabase
+        .from("task")
+        .update({ group_id: migrateToGroupId, updated_at: new Date().toISOString() })
+        .eq("group_id", groupId);
+
+      if (migrateError) {
+        return NextResponse.json({ error: migrateError.message }, { status: 400 });
+      }
+    } else {
+      await supabase.from("task").update({ group_id: null }).eq("group_id", groupId);
+    }
+
     const { error } = await supabase.from("task_group").delete().eq("group_id", groupId);
 
     if (error) {

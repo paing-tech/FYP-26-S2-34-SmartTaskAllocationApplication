@@ -36,19 +36,6 @@ function getDisplayName(employee) {
   return employee?.full_name || employee?.username || employee?.email || "Employee";
 }
 
-function getInitials(employee) {
-  const name = getDisplayName(employee);
-  const parts = name.split(/[\s._-]+/).filter(Boolean);
-
-  if (!parts.length) return "?";
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
 function formatTime(value) {
   if (!value) return "";
 
@@ -83,61 +70,6 @@ function getPriorityClasses(priority) {
   return "border-amber-200 bg-amber-50 text-amber-800";
 }
 
-function EmployeeListItem({ employee }) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-[#e6ebf2] bg-white/80 px-4 py-3 shadow-sm">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1E40AF] text-xs font-black text-white">
-        {getInitials(employee)}
-      </span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-black text-[#0D1E4C]">
-          {getDisplayName(employee)}
-        </span>
-        <span className="block truncate text-xs font-semibold text-[#667085]">
-          {employee?.job_title || employee?.department?.department_name || employee?.email || "Employee"}
-        </span>
-      </span>
-    </div>
-  );
-}
-
-// A half-width overlay panel that grows out of its trigger button. Its outer
-// edge sits flush with the calendar's left/right border. Closed via the
-// trigger pill (which becomes a × while open).
-function OverlayPanel({ open, align, children }) {
-  const isRight = align === "right";
-  return (
-    <div
-      className={`absolute -top-2 bottom-[30%] z-30 w-1/2 pb-2 transition duration-200 ease-out ${
-        isRight ? "right-0 origin-top-right pl-2" : "left-0 origin-top-left pr-2"
-      } ${open ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0"}`}
-    >
-      {/* Same border as the calendar card; surface stays opaque (not glass) */}
-      <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-white/60 bg-white/90 shadow-[0_24px_70px_rgba(13,30,76,0.22)] backdrop-blur-xl">
-        {/* Spacer under the floating pill, which acts as the close button */}
-        <div className="h-13 shrink-0" />
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      className="h-4 w-4"
-      aria-hidden="true"
-    >
-      <path d="M6 6l12 12M18 6L6 18" />
-    </svg>
-  );
-}
-
 export default function WorkspaceCalendar({
   employees = [],
   error = "",
@@ -146,7 +78,6 @@ export default function WorkspaceCalendar({
   tasks = [],
 }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
-  const [isEmployeesOpen, setIsEmployeesOpen] = useState(false);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
@@ -202,11 +133,9 @@ export default function WorkspaceCalendar({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {/* Header: spacer · month nav · Employee (3-col grid keeps the nav centered) */}
-      <div className="relative z-40 grid shrink-0 grid-cols-3 items-center px-2 pb-5">
-        <div aria-hidden="true" />
-
-        <div className="flex items-center justify-self-center gap-3 text-lg font-bold text-[#0D1E4C]">
+      {/* Header: month nav */}
+      <div className="relative z-40 flex shrink-0 items-center justify-center px-2 pb-5">
+        <div className="flex items-center gap-3 text-lg font-bold text-[#0D1E4C]">
           <button
             type="button"
             onClick={goToPreviousWeek}
@@ -225,19 +154,6 @@ export default function WorkspaceCalendar({
             ›
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setIsEmployeesOpen((current) => !current)}
-          aria-label={isEmployeesOpen ? "Close employees" : "Open employees"}
-          className={`flex items-center justify-center justify-self-end rounded-full border text-sm font-bold transition ${
-            isEmployeesOpen
-              ? "h-11 w-11 border-white bg-slate-200 text-[#0D1E4C]"
-              : "border-white/60 bg-white/20 px-6 py-3 text-[#0D1E4C] hover:bg-white/70"
-          }`}
-        >
-          {isEmployeesOpen ? <CloseIcon /> : "Employee"}
-        </button>
       </div>
 
       {/* Calendar card */}
@@ -331,19 +247,6 @@ export default function WorkspaceCalendar({
           </div>
         </div>
       </div>
-
-      {/* Employee overlay — right half, grows from the Employee button */}
-      <OverlayPanel open={isEmployeesOpen} align="right">
-        <div className="space-y-3">
-          {employees.length ? (
-            employees.map((employee) => (
-              <EmployeeListItem key={employee.user_id} employee={employee} />
-            ))
-          ) : (
-            <p className="px-1 py-2 text-sm text-[#52627a]">No employees yet.</p>
-          )}
-        </div>
-      </OverlayPanel>
     </div>
   );
 }

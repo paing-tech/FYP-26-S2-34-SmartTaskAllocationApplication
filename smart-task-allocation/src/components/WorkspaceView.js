@@ -391,6 +391,34 @@ export default function WorkspaceView() {
     }
   }
 
+  // Deleting a group either migrates its tasks to a new group (migrateToGroupId)
+  // or deletes the tasks along with it (deleteTasks); omitting both just detaches
+  // the tasks (group_id -> null), matching the API's default behavior.
+  async function deleteGroup(groupId, { migrateToGroupId, deleteTasks } = {}) {
+    setError("");
+
+    try {
+      const params = new URLSearchParams({ groupId: String(groupId) });
+      if (migrateToGroupId) params.set("migrateToGroupId", String(migrateToGroupId));
+      if (deleteTasks) params.set("deleteTasks", "true");
+
+      const response = await fetch(`/api/task-groups?${params.toString()}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not delete group.");
+      }
+
+      await loadWorkspaceData();
+    } catch (deleteError) {
+      setError(deleteError.message);
+      throw deleteError;
+    }
+  }
+
   async function updateTask(task, updates) {
     if (!task?.task_id) {
       return;
@@ -406,6 +434,7 @@ export default function WorkspaceView() {
       requiredSkills: skills.filter((skill) =>
         (updates.requiredSkillIds ?? []).includes(skill.skill_id),
       ),
+      ...(updates.assignedTo !== undefined ? { assigned_to: updates.assignedTo || null } : {}),
       ai_state:
         task.source === "optimus_ai" && !["accepted", "dismissed"].includes(task.ai_state)
           ? "accepted"
@@ -437,6 +466,7 @@ export default function WorkspaceView() {
           startDatetime: updates.startDatetime,
           endDatetime: updates.endDatetime,
           requiredSkillIds: updates.requiredSkillIds,
+          assignedTo: updates.assignedTo,
         }),
       });
       const result = await response.json();
@@ -448,6 +478,146 @@ export default function WorkspaceView() {
       setTasks(previousTasks);
       setError(updateError.message);
       throw updateError;
+    }
+  }
+
+  // Tasks support multiple current assignees (task_assignee), independent of
+  // the rest of the task-edit form — so these update just the assignee list
+  // optimistically, without touching title/description/etc.
+  async function assignEmployeeToTask(task, employeeId) {
+    if (!task?.task_id || !employeeId) return;
+
+    const previousTasks = tasks;
+    setTasks((current) =>
+      current.map((currentTask) =>
+        currentTask.task_id === task.task_id
+          ? {
+              ...currentTask,
+              assigneeIds: [...new Set([...(currentTask.assigneeIds ?? []), employeeId])],
+            }
+          : currentTask,
+      ),
+    );
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "assign-employee", taskId: task.task_id, userId: employeeId }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not assign employee.");
+      }
+    } catch (assignError) {
+      setTasks(previousTasks);
+      setError(assignError.message);
+      throw assignError;
+    }
+  }
+
+  async function unassignEmployeeFromTask(task, employeeId) {
+    if (!task?.task_id || !employeeId) return;
+
+    const previousTasks = tasks;
+    setTasks((current) =>
+      current.map((currentTask) =>
+        currentTask.task_id === task.task_id
+          ? {
+              ...currentTask,
+              assigneeIds: (currentTask.assigneeIds ?? []).filter((id) => id !== employeeId),
+            }
+          : currentTask,
+      ),
+    );
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "unassign-employee", taskId: task.task_id, userId: employeeId }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not remove assignee.");
+      }
+    } catch (unassignError) {
+      setTasks(previousTasks);
+      setError(unassignError.message);
+      throw unassignError;
+    }
+  }
+
+  // Approving an Optimus AI suggestion turns it into a real task (ai_state
+  // "accepted"), which the visibility toggle and GET /api/tasks both already
+  // treat as exempt from hiding — see set-ai-task-visibility / visibleTasks.
+  async function approveAiTask(task) {
+    if (!task?.task_id) return;
+
+    const previousTasks = tasks;
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "approve-ai-task", taskId: task.task_id }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not approve task.");
+      }
+
+      setTasks((current) =>
+        current.map((currentTask) =>
+          currentTask.task_id === task.task_id
+            ? {
+                ...currentTask,
+                ai_state: "accepted",
+                reasons: {
+                  ...(currentTask.reasons ?? {}),
+                  approvedBy: result.approvedBy,
+                  approvedAt: result.approvedAt,
+                },
+              }
+            : currentTask,
+        ),
+      );
+    } catch (approveError) {
+      setTasks(previousTasks);
+      setError(approveError.message);
+      throw approveError;
+    }
+  }
+
+  // Rejecting deletes the AI-generated suggestion outright — it was never a
+  // committed task, so there's nothing to keep around.
+  async function rejectAiTask(task) {
+    if (!task?.task_id) return;
+
+    const previousTasks = tasks;
+    setTasks((current) => current.filter((currentTask) => currentTask.task_id !== task.task_id));
+    setError("");
+
+    try {
+      const response = await fetch(`/api/tasks?taskId=${task.task_id}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reject task.");
+      }
+    } catch (rejectError) {
+      setTasks(previousTasks);
+      setError(rejectError.message);
+      throw rejectError;
     }
   }
 
@@ -550,9 +720,14 @@ export default function WorkspaceView() {
             createTaskRequestKey={createTaskRequestKey}
             isLoading={isLoading}
             onGroupCreate={createGroup}
+            onGroupDelete={deleteGroup}
             onGroupRename={renameGroup}
             onSkillCreate={createSkill}
+            onTaskApprove={approveAiTask}
+            onTaskAssignEmployee={assignEmployeeToTask}
             onTaskCreate={createTask}
+            onTaskReject={rejectAiTask}
+            onTaskUnassignEmployee={unassignEmployeeFromTask}
             onTaskUpdate={updateTask}
             skills={skills}
             tasks={tasks}

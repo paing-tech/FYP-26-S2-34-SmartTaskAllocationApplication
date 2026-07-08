@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import Portal from "@/components/Portal";
 
 const PRIORITY_TONES = {
   low: { chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#22c55e]" },
@@ -147,6 +148,10 @@ function getSmartCreationLabel(task) {
     return "Analyzed allocation history";
   }
 
+  if (reason?.creationKind === "recurring_pattern") {
+    return "Detected recurring pattern";
+  }
+
   const reasonText = (Array.isArray(reason?.creation) ? reason.creation : []).join(" ").toLowerCase();
 
   if (/skill/.test(reasonText)) {
@@ -157,12 +162,29 @@ function getSmartCreationLabel(task) {
     return "Analyzed allocation history";
   }
 
+  if (/recurring|usually created/.test(reasonText)) {
+    return "Detected recurring pattern";
+  }
+
   return "Smart task creation";
 }
 
 function getSmartAllocationLabel(task) {
   const reason = task.reasons ?? task.reason;
-  return reason?.allocationKind === "skill_match" ? "Matched required skills" : "Smart task allocation";
+
+  if (reason?.allocationKind === "skill_match") {
+    return "Matched required skills";
+  }
+
+  if (reason?.allocationKind === "history_pattern") {
+    return "Matched allocation history";
+  }
+
+  if (reason?.allocationKind === "department_match") {
+    return "Matched department";
+  }
+
+  return "Smart task allocation";
 }
 
 function getTaskActionLabels(task) {
@@ -253,6 +275,7 @@ function AssigneeProfile({ employee }) {
 }
 
 function TimelineRail({ end, start }) {
+  const [now] = useState(() => Date.now());
   const startLabel = formatDate(start);
   const endLabel = formatDate(end);
   const startDate = start ? new Date(start) : null;
@@ -267,10 +290,7 @@ function TimelineRail({ end, start }) {
   const currentPosition = hasValidRange
     ? Math.min(
         100,
-        Math.max(
-          0,
-          ((Date.now() - startDate.getTime()) / (endDate.getTime() - startDate.getTime())) * 100,
-        ),
+        Math.max(0, ((now - startDate.getTime()) / (endDate.getTime() - startDate.getTime())) * 100),
       )
     : null;
 
@@ -304,16 +324,290 @@ function TimelineRail({ end, start }) {
   );
 }
 
-function TaskCard({ onOpen, task }) {
+// "On leave" beats task load — it reflects whether the employee is physically
+// available right now, which task-count-based busyness can't tell you. The
+// default label comes straight from the employee's current availability row
+// rather than being hardcoded, so it stays in sync with that table.
+function getEmployeeAvailabilityLabel(employee, activeTaskCount) {
+  const now = new Date();
+  const availabilities = employee?.availabilities ?? [];
+
+  const currentAvailability = availabilities.find((row) => {
+    const start = new Date(row?.availability_start);
+    const end = new Date(row?.availability_end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+
+    return now >= start && now <= end;
+  });
+
+  const currentStatus = currentAvailability?.status ?? employee?.availability?.status ?? "";
+
+  if (/leave/i.test(currentStatus)) return "On Leave";
+  if (activeTaskCount >= 3) return "Busy";
+
+  return currentStatus || "Available";
+}
+
+const AVAILABILITY_TONES = {
+  Available: "bg-[#ecfdf5] text-[#15803d]",
+  Busy: "bg-[#fff7ed] text-[#b45309]",
+  "On Leave": "bg-[#fef2f2] text-[#b91c1c]",
+};
+const DEFAULT_AVAILABILITY_TONE = "bg-[#f1f5f9] text-[#64748b]";
+
+function EmployeeAssignCard({ activeTaskCount, employee, isAssigned, isSubmitting, onAssign }) {
+  const name = getDisplayName(employee);
+  const availabilityLabel = getEmployeeAvailabilityLabel(employee, activeTaskCount);
+
+  return (
+    <div className="flex flex-col items-center rounded-3xl border border-white/60 bg-white/70 p-4 text-center shadow-sm backdrop-blur-xl">
+      <span
+        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${
+          AVAILABILITY_TONES[availabilityLabel] ?? DEFAULT_AVAILABILITY_TONE
+        }`}
+      >
+        {availabilityLabel}
+      </span>
+
+      <span className="mt-3 flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#2563EB] text-base font-black text-white">
+        {employee?.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={employee.avatar_url} alt={name} className="h-full w-full object-cover" />
+        ) : (
+          initials(name)
+        )}
+      </span>
+
+      <p className="mt-3 truncate text-sm font-black text-[#0D1E4C]">{name}</p>
+      <p className="truncate text-xs font-semibold text-[#667085]">
+        {employee?.job_title || "No job title added"}
+      </p>
+      {employee?.department?.department_name ? (
+        <p className="truncate text-xs text-[#94a3b8]">{employee.department.department_name}</p>
+      ) : null}
+
+      {employee?.email ? (
+        <span className="mt-3 flex max-w-full items-center gap-1.5 truncate rounded-full bg-[#f8faff] px-3 py-1.5 text-xs font-semibold text-[#52627a]">
+          <span className="material-symbols-outlined text-sm text-[#94a3b8]" aria-hidden="true">
+            mail
+          </span>
+          <span className="truncate">{employee.email}</span>
+        </span>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => onAssign(employee.user_id)}
+        disabled={isAssigned || isSubmitting}
+        className={`mt-4 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
+          isAssigned
+            ? "cursor-not-allowed bg-[#eef2f8] text-[#94a3b8]"
+            : "bg-[#2563EB] text-white hover:bg-[#1d4ed8]"
+        } disabled:cursor-not-allowed disabled:opacity-70`}
+      >
+        {isAssigned ? "Assigned" : isSubmitting ? "Assigning…" : "Assign"}
+      </button>
+    </div>
+  );
+}
+
+function AssignEmployeeModal({ employees, groupName, onAssign, onClose, onUnassign, task, tasks = [] }) {
+  const [query, setQuery] = useState("");
+  const [assigningId, setAssigningId] = useState(null);
+  const [unassigningId, setUnassigningId] = useState(null);
+  const [error, setError] = useState("");
+
+  const assignedEmployees = task?.assignees ?? [];
+  const assignedIds = new Set(assignedEmployees.map((assignee) => assignee.user_id));
+
+  const activeTaskCountByEmployeeId = useMemo(() => {
+    const counts = new Map();
+    for (const otherTask of tasks) {
+      if (["Completed", "Cancelled"].includes(otherTask.status)) continue;
+      for (const userId of otherTask.assigneeIds ?? []) {
+        counts.set(userId, (counts.get(userId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [tasks]);
+
+  // Only staff with the Employee role can be assigned — managers and user
+  // admins are excluded from this picker.
+  const assignableEmployees = employees.filter(
+    (employee) => String(employee?.role?.role_name ?? "").toLowerCase() === "employee",
+  );
+  const filteredEmployees = query.trim()
+    ? assignableEmployees.filter((employee) =>
+        getDisplayName(employee).toLowerCase().includes(query.trim().toLowerCase()),
+      )
+    : assignableEmployees;
+
+  async function handleAssign(employeeId) {
+    setAssigningId(employeeId);
+    setError("");
+
+    try {
+      await onAssign(employeeId);
+    } catch (assignError) {
+      setError(assignError.message || "Could not assign employee.");
+    } finally {
+      setAssigningId(null);
+    }
+  }
+
+  async function handleUnassign(employeeId) {
+    setUnassigningId(employeeId);
+    setError("");
+
+    try {
+      await onUnassign(employeeId);
+    } catch (unassignError) {
+      setError(unassignError.message || "Could not remove assignee.");
+    } finally {
+      setUnassigningId(null);
+    }
+  }
+
+  return (
+    <Portal>
+      <div
+        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <div
+          className="flex max-h-[calc(100vh-4rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] bg-white p-6 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h2 className="truncate text-lg font-black text-[#0D1E4C]">
+                {task?.title || "Untitled task"}
+              </h2>
+              {groupName ? (
+                <span className="shrink-0 rounded-full bg-[#eef2f8] px-3 py-1 text-xs font-bold text-[#52627a]">
+                  {groupName}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {assignedEmployees.map((assignee) => (
+                <span
+                  key={assignee.user_id}
+                  className="flex items-center gap-1.5 rounded-full bg-[#eef2f8] py-1 pl-1 pr-2"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-[9px] font-black text-white">
+                    {initials(getDisplayName(assignee))}
+                  </span>
+                  <span className="truncate text-xs font-bold text-[#0D1E4C]">
+                    {getDisplayName(assignee)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleUnassign(assignee.user_id)}
+                    disabled={unassigningId === assignee.user_id}
+                    aria-label={`Remove ${getDisplayName(assignee)}`}
+                    className="flex h-4 w-4 shrink-0 items-center justify-center text-[#94a3b8] transition hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                      close
+                    </span>
+                  </button>
+                </span>
+              ))}
+
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/70 hover:scale-110"
+              >
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                  close
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search employees…"
+            className="mt-4 h-10 w-full shrink-0 rounded-full border border-[#e6ebf2] bg-[#f8faff] px-4 text-sm font-semibold text-[#0D1E4C] outline-none placeholder:text-[#94a3b8] focus:border-[#2563EB]"
+          />
+
+          {error ? (
+            <p className="mt-3 shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+            {filteredEmployees.length ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredEmployees.map((employee) => (
+                  <EmployeeAssignCard
+                    key={employee.user_id}
+                    activeTaskCount={activeTaskCountByEmployeeId.get(employee.user_id) ?? 0}
+                    employee={employee}
+                    isAssigned={assignedIds.has(employee.user_id)}
+                    isSubmitting={assigningId === employee.user_id}
+                    onAssign={handleAssign}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="px-1 py-6 text-center text-sm font-semibold text-[#94a3b8]">
+                No employees match your search.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+function TaskCard({ employees, groupName, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
+  const [isDeciding, setIsDeciding] = useState(false);
+  const isPendingApproval = task.source === "optimus_ai" && task.ai_state !== "accepted";
+  const approvedBy = task.reasons?.approvedBy;
+
+  async function handleApprove(event) {
+    event.stopPropagation();
+    if (isDeciding) return;
+    setIsDeciding(true);
+    try {
+      await onApprove?.(task);
+    } finally {
+      setIsDeciding(false);
+    }
+  }
+
+  async function handleReject(event) {
+    event.stopPropagation();
+    if (isDeciding) return;
+    setIsDeciding(true);
+    try {
+      await onReject?.(task);
+    } finally {
+      setIsDeciding(false);
+    }
+  }
 
   return (
     <div className="group relative z-0 pt-11 hover:z-20">
       <div className="absolute inset-x-0 top-2 bottom-0 z-0 translate-y-0 rounded-3xl border border-white/60 bg-white/10 px-4 pt-3 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out group-hover:-bottom-4 group-hover:-translate-y-4">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between gap-1.5">
           <span className="text-[11px] font-bold text-[#0D1E4C]">{task.owner}</span>
+          {approvedBy ? (
+            <span className="truncate text-[11px] font-bold text-emerald-700">Approved by {approvedBy}</span>
+          ) : null}
         </div>
         <p className="mt-1 text-[11px] font-semibold leading-4 text-[#2563EB] opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           {actionLabels.join(" · ")}
@@ -353,17 +647,59 @@ function TaskCard({ onOpen, task }) {
         </p>
         <TimelineRail start={task.start_datetime} end={task.end_datetime} />
 
-        <div className="mt-4">
-          <AssigneeProfile employee={task.assignee} />
-          <button
-            type="button"
-            onClick={(event) => event.stopPropagation()}
-            className="mt-3 w-full rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-slate-800 transition hover:scale-[1.05] hover:border-slate-300"
-          >
-            Assign
-          </button>
+        <div className="mt-4 space-y-2">
+          {task.assignees?.length ? (
+            task.assignees.map((assignee) => (
+              <AssigneeProfile key={assignee.user_id} employee={assignee} />
+            ))
+          ) : (
+            <AssigneeProfile employee={null} />
+          )}
+          {isPendingApproval ? (
+            <div className="mt-1 flex gap-2">
+              <button
+                type="button"
+                onClick={handleApprove}
+                disabled={isDeciding}
+                className="flex-1 rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-emerald-700 transition hover:scale-[1.05] hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={handleReject}
+                disabled={isDeciding}
+                className="flex-1 rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-rose-700 transition hover:scale-[1.05] hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Reject
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsAssignOpen(true);
+              }}
+              className="mt-1 w-full rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-slate-800 transition hover:scale-[1.05] hover:border-slate-300"
+            >
+              Assign
+            </button>
+          )}
         </div>
       </div>
+
+      {isAssignOpen ? (
+        <AssignEmployeeModal
+          employees={employees}
+          groupName={groupName}
+          task={task}
+          tasks={tasks}
+          onAssign={(employeeId) => onAssignEmployee?.(task, employeeId)}
+          onClose={() => setIsAssignOpen(false)}
+          onUnassign={(employeeId) => onUnassignEmployee?.(task, employeeId)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -388,13 +724,9 @@ function ToggleSwitch({ checked, onChange }) {
 }
 
 function CalendarPicker({ onChange, value }) {
+  // Keyed by `value` at the call site, so a changed value remounts this with
+  // a freshly derived visibleMonth instead of needing an effect to resync it.
   const [visibleMonth, setVisibleMonth] = useState(() => getMonthStart(value));
-
-  useEffect(() => {
-    if (value) {
-      setVisibleMonth(getMonthStart(value));
-    }
-  }, [value]);
 
   const year = visibleMonth.getFullYear();
   const month = visibleMonth.getMonth();
@@ -636,7 +968,7 @@ function DateTimeSection({
           </span>
           <ToggleSwitch checked={dateEnabled} onChange={toggleDate} />
         </div>
-        {dateEnabled ? <CalendarPicker value={dateValue} onChange={onDateChange} /> : null}
+        {dateEnabled ? <CalendarPicker key={dateValue} value={dateValue} onChange={onDateChange} /> : null}
         <div className="mx-4 border-t border-[#e6ebf2]" />
         <div className="flex items-center gap-3 px-4 py-3">
           <span className="material-symbols-outlined text-xl text-[#94a3b8]" aria-hidden="true">
@@ -793,7 +1125,6 @@ function GroupPicker({ groups, onChange, value }) {
 function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [], task }) {
   const startParts = splitDateTime(task?.start_datetime);
   const endParts = splitDateTime(task?.end_datetime);
-  const [isMounted, setIsMounted] = useState(false);
   const [form, setForm] = useState(() => ({
     title: task?.title ?? "",
     description: task?.description ?? "",
@@ -819,30 +1150,9 @@ function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [
   const [isWritingDescription, setIsWritingDescription] = useState(false);
   const [isCreatingSkill, setIsCreatingSkill] = useState(false);
 
-  useEffect(() => {
-    const nextStartParts = splitDateTime(task?.start_datetime);
-    const nextEndParts = splitDateTime(task?.end_datetime);
-    setForm({
-      title: task?.title ?? "",
-      description: task?.description ?? "",
-      status: task?.status ?? "Open",
-      priority: task?.priority ?? "Medium",
-      repeat: "Never",
-      groupId: task?.group_id ?? "",
-      requiredSkillIds: (task?.requiredSkills ?? []).map((skill) => skill.skill_id),
-      startDateEnabled: Boolean(nextStartParts.date),
-      startDate: nextStartParts.date,
-      startTimeEnabled: Boolean(nextStartParts.time),
-      startTime: nextStartParts.time,
-      endDateEnabled: Boolean(nextEndParts.date),
-      endDate: nextEndParts.date,
-      endTimeEnabled: Boolean(nextEndParts.time),
-      endTime: nextEndParts.time,
-    });
-    setError("");
-    setOpenPanel("");
-    setSkillQuery("");
-  }, [task]);
+  // Keyed by task_id at the call site, so switching tasks remounts this panel
+  // with fresh state from the useState initializers above instead of needing
+  // an effect to resync form/error/openPanel/skillQuery on every task change.
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -997,12 +1307,6 @@ function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [
     Boolean(onSkillCreate) &&
     trimmedSkillQuery.length > 0 &&
     !skills.some((skill) => skill.skill_name.toLowerCase() === trimmedSkillQuery.toLowerCase());
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  if (!isMounted) return null;
 
   return createPortal(
     <div className="pointer-events-none fixed inset-y-0 right-0 z-[999] flex w-full items-start justify-end px-7 pb-8 pt-26">
@@ -1258,12 +1562,102 @@ function TaskEditPanel({ groups = [], onClose, onSave, onSkillCreate, skills = [
   );
 }
 
-function ColumnHeader({ groupId, name, count, onRename }) {
+function DeleteGroupModal({ count, name, onCancel, onConfirm }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleConfirm(migrate) {
+    setIsSubmitting(true);
+    setError("");
+
+    try {
+      await onConfirm(migrate);
+    } catch (confirmError) {
+      setError(confirmError.message || "Could not delete group.");
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Portal>
+      <div
+        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/10 p-4 backdrop-blur-sm"
+        onClick={onCancel}
+      >
+        <div
+          className="w-full max-w-sm rounded-[28px] bg-white p-6 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-lg font-black text-[#0D1E4C]">Delete &quot;{name}&quot;?</h2>
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isSubmitting}
+              aria-label="Cancel"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/70 hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
+            </button>
+          </div>
+
+          <p className="mt-3 text-sm font-semibold leading-6 text-[#52627a]">
+            {count > 0
+              ? `${count} task${count === 1 ? "" : "s"} exist in this group. Do you want to migrate them to a new group?`
+              : "This group has no tasks."}
+          </p>
+
+          {error ? (
+            <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-5 flex justify-end gap-2">
+            {count > 0 ? (
+              <button
+                type="button"
+                onClick={() => handleConfirm(true)}
+                disabled={isSubmitting}
+                className="rounded-full bg-[#0D1E4C] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#0a1838] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmitting ? "Migrating…" : "Migrate"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => handleConfirm(false)}
+              disabled={isSubmitting}
+              className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRename }) {
+  // Keyed by `name` at the call site, so a rename (local or external) remounts
+  // this with a fresh draftName instead of needing an effect to resync it.
   const [draftName, setDraftName] = useState(name);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   useEffect(() => {
-    setDraftName(name);
-  }, [name]);
+    if (!isMenuOpen) return undefined;
+
+    function close() {
+      setIsMenuOpen(false);
+    }
+
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [isMenuOpen]);
 
   function saveName() {
     const nextName = draftName.trim();
@@ -1281,6 +1675,17 @@ function ColumnHeader({ groupId, name, count, onRename }) {
     if (nextName !== name) {
       onRename?.(groupId, nextName);
     }
+  }
+
+  async function handleDeleteConfirm(migrate) {
+    if (migrate) {
+      const newGroup = await onGroupCreate?.();
+      await onGroupDelete?.(groupId, { migrateToGroupId: newGroup?.group_id });
+    } else {
+      await onGroupDelete?.(groupId, { deleteTasks: true });
+    }
+
+    setIsConfirmOpen(false);
   }
 
   return (
@@ -1304,9 +1709,51 @@ function ColumnHeader({ groupId, name, count, onRename }) {
         className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-sm font-black text-[#0D1E4C] outline-none transition hover:border-white/60 hover:bg-white/35 focus:border-[#1E40AF]/40 focus:bg-white/70"
         aria-label={`Rename ${name}`}
       />
-      <span className="rounded-full bg-[#eef2f8] px-2 py-0.5 text-xs font-bold text-[#94a3b8]">
+      <span className="mr-1 rounded-full bg-[#eef2f8] px-2 py-0.5 text-xs font-bold text-[#94a3b8]">
         {count}
       </span>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsMenuOpen((current) => !current);
+          }}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-[#94a3b8] transition hover:bg-white/60 hover:text-[#0D1E4C]"
+          aria-label={`${name} group options`}
+        >
+          <span className="material-symbols-outlined text-xl" aria-hidden="true">
+            more_horiz
+          </span>
+        </button>
+
+        {isMenuOpen ? (
+          <div
+            className="absolute right-0 top-8 z-20 w-36 overflow-hidden rounded-2xl border border-white/60 bg-white/60 backdrop-blur-3xl shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsConfirmOpen(true);
+              }}
+              className="block w-full px-4 py-2.5 text-left text-sm font-bold text-red-600 hover:bg-red-50"
+            >
+              Delete
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {isConfirmOpen ? (
+        <DeleteGroupModal
+          count={count}
+          name={name}
+          onCancel={() => setIsConfirmOpen(false)}
+          onConfirm={handleDeleteConfirm}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1318,9 +1765,14 @@ export default function WorkspaceBoard({
   groups = [],
   isLoading = false,
   onGroupCreate,
+  onGroupDelete,
   onGroupRename,
   onSkillCreate,
+  onTaskApprove,
+  onTaskAssignEmployee,
   onTaskCreate,
+  onTaskReject,
+  onTaskUnassignEmployee,
   onTaskUpdate,
   skills = [],
   tasks = [],
@@ -1329,6 +1781,7 @@ export default function WorkspaceBoard({
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const boardScrollRef = useRef(null);
   const previousGroupCountRef = useRef(groups.length);
+  const [handledCreateTaskRequestKey, setHandledCreateTaskRequestKey] = useState(createTaskRequestKey);
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
     [employees],
@@ -1342,10 +1795,14 @@ export default function WorkspaceBoard({
       tasks: column.tasks.map((task) => {
         const owner = employeesById.get(task.owner_id);
         const assignee = employeesById.get(task.assigned_to);
+        const assignees = (task.assigneeIds ?? [])
+          .map((userId) => employeesById.get(userId))
+          .filter(Boolean);
 
         return {
           ...task,
           assignee: assignee ?? null,
+          assignees,
           owner: task.source === "optimus_ai" ? "Optimus AI" : owner ? getDisplayName(owner) : "Manager",
         };
       }),
@@ -1373,25 +1830,6 @@ export default function WorkspaceBoard({
     }
   }, [groups.length]);
 
-  useEffect(() => {
-    if (createTaskRequestKey > 0) {
-      handleOpenNewTask();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [createTaskRequestKey]);
-
-  async function handleCreateGroup() {
-    if (!onGroupCreate || isCreatingGroup) return;
-
-    setIsCreatingGroup(true);
-
-    try {
-      await onGroupCreate();
-    } finally {
-      setIsCreatingGroup(false);
-    }
-  }
-
   function handleOpenNewTask() {
     setEditingTask({
       task_id: "__new_task__",
@@ -1406,6 +1844,29 @@ export default function WorkspaceBoard({
       source: "manual",
       isNew: true,
     });
+  }
+
+  // Respond to the parent's "open a new task" signal. This adjusts state
+  // directly during render (React's sanctioned pattern for "do something when
+  // a prop changes") instead of a useEffect, since it's reacting to an
+  // external trigger rather than syncing derived state.
+  if (createTaskRequestKey !== handledCreateTaskRequestKey) {
+    setHandledCreateTaskRequestKey(createTaskRequestKey);
+    if (createTaskRequestKey > 0) {
+      handleOpenNewTask();
+    }
+  }
+
+  async function handleCreateGroup() {
+    if (!onGroupCreate || isCreatingGroup) return;
+
+    setIsCreatingGroup(true);
+
+    try {
+      await onGroupCreate();
+    } finally {
+      setIsCreatingGroup(false);
+    }
   }
 
   async function handleTaskSave(task, updates) {
@@ -1439,15 +1900,29 @@ export default function WorkspaceBoard({
         {columns.map((column) => (
           <div key={column.id} className="flex w-80 shrink-0 flex-col">
             <ColumnHeader
+              key={column.name}
               groupId={column.id}
               name={column.name}
               count={column.tasks.length}
               onRename={onGroupRename}
+              onGroupCreate={onGroupCreate}
+              onGroupDelete={onGroupDelete}
             />
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4 pt-2">
               {column.tasks.map((task) => (
-                <TaskCard key={task.task_id} task={task} onOpen={setEditingTask} />
+                <TaskCard
+                  key={task.task_id}
+                  employees={employees}
+                  groupName={column.name}
+                  onApprove={onTaskApprove}
+                  onAssignEmployee={onTaskAssignEmployee}
+                  onOpen={setEditingTask}
+                  onReject={onTaskReject}
+                  onUnassignEmployee={onTaskUnassignEmployee}
+                  task={task}
+                  tasks={tasks}
+                />
               ))}
 
               {!column.tasks.length ? (
@@ -1472,6 +1947,7 @@ export default function WorkspaceBoard({
 
       {currentEditingTask ? (
         <TaskEditPanel
+          key={currentEditingTask?.task_id ?? "new"}
           groups={groups}
           skills={skills}
           task={currentEditingTask}

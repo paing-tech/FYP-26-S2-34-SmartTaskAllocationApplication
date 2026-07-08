@@ -42,7 +42,7 @@ export async function GET(request) {
     const { data: rawData, error } = await supabase
       .from("user_account")
       .select(
-        "user_id, username, email, account_status, role:role_id(role_name), department:department_id(department_name)"
+        "user_id, username, email, account_status, created_at, role:role_id(role_name), department:department_id(department_name)"
       )
       .eq("organization_id", organizationId)
       .order("username", { ascending: true });
@@ -62,16 +62,24 @@ export async function GET(request) {
     // real names and roles.
     let fullNameByUserId = new Map();
     let jobTitleByUserId = new Map();
+    let phoneByUserId = new Map();
+    let avatarByUserId = new Map();
     if (employeeIds.length) {
       const { data: profiles } = await supabase
         .from("profile")
-        .select("user_id, full_name, job_title")
+        .select("user_id, full_name, job_title, phone_number, profile_picture_url")
         .in("user_id", employeeIds);
       fullNameByUserId = new Map(
         (profiles ?? []).map((profile) => [profile.user_id, profile.full_name]),
       );
       jobTitleByUserId = new Map(
         (profiles ?? []).map((profile) => [profile.user_id, profile.job_title]),
+      );
+      phoneByUserId = new Map(
+        (profiles ?? []).map((profile) => [profile.user_id, profile.phone_number]),
+      );
+      avatarByUserId = new Map(
+        (profiles ?? []).map((profile) => [profile.user_id, profile.profile_picture_url]),
       );
     }
     const [{ data: skillRows, error: skillError }, { data: availabilityRows, error: availabilityError }] =
@@ -163,6 +171,8 @@ export async function GET(request) {
       ...employee,
       full_name: fullNameByUserId.get(employee.user_id) ?? null,
       job_title: jobTitleByUserId.get(employee.user_id) ?? null,
+      phone_number: phoneByUserId.get(employee.user_id) ?? null,
+      avatar_url: avatarByUserId.get(employee.user_id) ?? null,
       availability: availabilityByUserId.get(employee.user_id) ?? null,
       availabilities: availabilitiesByUserId.get(employee.user_id) ?? [],
       skills: skillsByUserId.get(employee.user_id) ?? [],
