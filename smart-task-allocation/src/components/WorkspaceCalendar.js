@@ -1,9 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AssignEmployeeModal, TaskEditPanel, getDisplayName } from "@/components/WorkspaceBoard";
 
 const DAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PILL_HEIGHT = 44;
+const PILL_GAP = 8;
+const ROW_PADDING = 10;
+const MIN_ROW_HEIGHT = 64;
+const PILL_MIN_WIDTH = 220;
+const MULTIDAY_INSET = 4;
+
+const PRIORITY_PILL_TONES = {
+  low: "border-emerald-200 bg-emerald-50",
+  medium: "border-amber-200 bg-amber-50",
+  high: "border-red-200 bg-red-50",
+  urgent: "border-red-300 bg-red-100",
+};
 
 function startOfWeek(date) {
   const result = new Date(date);
@@ -32,42 +47,164 @@ function isSameDay(a, b) {
   );
 }
 
-function getDisplayName(employee) {
-  return employee?.full_name || employee?.username || employee?.email || "Employee";
-}
-
-function formatTime(value) {
-  if (!value) return "";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  return new Intl.DateTimeFormat("en", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function getTaskDate(task) {
-  const value = task.start_datetime || task.end_datetime;
-  if (!value) return null;
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function getPriorityClasses(priority) {
+function getPriorityKey(priority) {
   const normalized = String(priority || "Medium").toLowerCase();
+  if (normalized === "low") return "low";
+  if (normalized === "high") return "high";
+  if (normalized === "urgent") return "urgent";
+  return "medium";
+}
 
-  if (normalized === "low") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+function initials(name) {
+  if (!name) return "?";
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+// A date with no explicit time is written as a bare "00:00" (see
+// combineDateTime in WorkspaceBoard.js), which the API stores verbatim as
+// UTC — so checking UTC hours (not local) is what reliably detects "no time
+// set" regardless of the viewer's timezone, letting the task expand across
+// the whole day instead of pinning to a sliver at some shifted local hour.
+function hasTimeComponent(date) {
+  return !(date.getUTCHours() === 0 && date.getUTCMinutes() === 0);
+}
+
+// A task occupies a span of time on the calendar. Tasks with only one of
+// start/end are treated as occupying a single hour so they still render.
+function getTaskRange(task) {
+  const rawStart = task.start_datetime ? new Date(task.start_datetime) : null;
+  const rawEnd = task.end_datetime ? new Date(task.end_datetime) : null;
+  const validStart = rawStart && !Number.isNaN(rawStart.getTime()) ? rawStart : null;
+  const validEnd = rawEnd && !Number.isNaN(rawEnd.getTime()) ? rawEnd : null;
+
+  if (!validStart && !validEnd) return null;
+
+  const start = validStart ?? new Date(validEnd.getTime() - 60 * 60 * 1000);
+  const end =
+    validEnd && validEnd.getTime() > start.getTime()
+      ? validEnd
+      : new Date(start.getTime() + 60 * 60 * 1000);
+  const isAllDay = !hasTimeComponent(validStart ?? start);
+
+  return { start, end, isAllDay };
+}
+
+// Greedily packs overlapping items into stacked lanes so none of the pills
+// visually collide. Every returned item shares the same laneCount (the
+// total lanes used), so callers can size a uniform row/band around them.
+function assignLanes(items) {
+  const laneEndTimes = [];
+  return [...items]
+    .sort((a, b) => a.startMs - b.startMs)
+    .map((item) => {
+      let laneIndex = laneEndTimes.findIndex((end) => end <= item.startMs);
+      if (laneIndex === -1) {
+        laneIndex = laneEndTimes.length;
+        laneEndTimes.push(item.endMs);
+      } else {
+        laneEndTimes[laneIndex] = item.endMs;
+      }
+      return { ...item, laneIndex };
+    })
+    .map((item) => ({ ...item, laneCount: laneEndTimes.length }));
+}
+
+function AvatarStack({ assignees }) {
+  if (!assignees.length) {
+    return (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#94a3b8] text-[9px] font-black text-white">
+        ?
+      </span>
+    );
   }
 
-  if (normalized === "urgent" || normalized === "high") {
-    return "border-red-200 bg-red-50 text-red-800";
-  }
+  const shown = assignees.slice(0, 3);
+  const extra = assignees.length - shown.length;
 
-  return "border-amber-200 bg-amber-50 text-amber-800";
+  return (
+    <span className="flex shrink-0 items-center -space-x-2">
+      {shown.map((employee) => (
+        <span
+          key={employee.user_id}
+          title={getDisplayName(employee)}
+          className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#2563EB] text-[9px] font-black text-white"
+        >
+          {initials(getDisplayName(employee))}
+        </span>
+      ))}
+      {extra > 0 ? (
+        <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#0D1E4C] text-[9px] font-black text-white">
+          +{extra}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function TaskPill({ employees, groupName, onAiAssign, onAssignEmployee, onOpen, onUnassignEmployee, style, task, tasks, variant = "timed" }) {
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
+  const tone = PRIORITY_PILL_TONES[getPriorityKey(task.priority)] ?? PRIORITY_PILL_TONES.medium;
+  const isMultiDay = variant === "multiday";
+
+  return (
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(task)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpen(task);
+          }
+        }}
+        title={task.title || "Untitled task"}
+        style={style}
+        className={`pointer-events-auto absolute flex cursor-pointer justify-between gap-3 overflow-hidden border px-4 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone} ${
+          isMultiDay ? "items-start rounded-2xl pt-3" : "items-center rounded-full"
+        }`}
+      >
+        <span className="flex min-w-0 shrink items-center gap-2">
+          <span className="truncate text-xs font-black text-[#0D1E4C]">{task.title || "Untitled task"}</span>
+          <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-[#52627a]">
+            {task.status || "Open"}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-3">
+          <AvatarStack assignees={task.assignees ?? []} />
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsAssignOpen(true);
+            }}
+            className="rounded-full border border-white/70 bg-white/70 px-3 py-1.5 text-[10px] font-black text-[#0D1E4C] transition hover:scale-110 hover:bg-white"
+          >
+            Assign
+          </button>
+        </span>
+      </div>
+
+      {isAssignOpen ? (
+        <AssignEmployeeModal
+          employees={employees}
+          groupName={groupName}
+          task={task}
+          tasks={tasks}
+          onAiAssign={() => onAiAssign?.(task)}
+          onAssign={(employeeId) => onAssignEmployee?.(task, employeeId)}
+          onClose={() => setIsAssignOpen(false)}
+          onUnassign={(employeeId) => onUnassignEmployee?.(task, employeeId)}
+        />
+      ) : null}
+    </>
+  );
 }
 
 export default function WorkspaceCalendar({
@@ -75,14 +212,25 @@ export default function WorkspaceCalendar({
   error = "",
   groups = [],
   isLoading = false,
+  onSkillCreate,
+  onTaskAiAssign,
+  onTaskArchive,
+  onTaskAssignEmployee,
+  onTaskCreate,
+  onTaskDelete,
+  onTaskUnassignEmployee,
+  onTaskUpdate,
+  skills = [],
   tasks = [],
 }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [editingTask, setEditingTask] = useState(null);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
     [weekStart],
   );
+  const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
 
   const monthLabel = useMemo(
     () =>
@@ -99,13 +247,100 @@ export default function WorkspaceCalendar({
     () => new Map(groups.map((group) => [group.group_id, group])),
     [groups],
   );
+
   const scheduledTasks = useMemo(
     () =>
       tasks
-        .map((task) => ({ ...task, calendarDate: getTaskDate(task) }))
-        .filter((task) => task.calendarDate),
-    [tasks],
+        .map((task) => {
+          const assignees = (task.assigneeIds ?? [])
+            .map((userId) => employeesById.get(userId))
+            .filter(Boolean);
+
+          return {
+            task: { ...task, assignees },
+            range: getTaskRange(task),
+          };
+        })
+        .filter(({ range }) => range && range.end > weekStart && range.start < weekEnd),
+    [employeesById, tasks, weekEnd, weekStart],
   );
+
+  const { multiDayBars, multiDayLaneCount, rowHeights, sameDayByDay } = useMemo(() => {
+    const sameDay = new Map();
+    const multiDay = [];
+
+    scheduledTasks.forEach(({ task, range }) => {
+      const clippedStart = range.start < weekStart ? weekStart : range.start;
+      const clippedEnd = range.end > weekEnd ? weekEnd : range.end;
+      const startOffsetMs = clippedStart.getTime() - weekStart.getTime();
+      const endOffsetMs = clippedEnd.getTime() - weekStart.getTime();
+
+      const startDayIndex = Math.min(6, Math.floor(startOffsetMs / DAY_MS));
+      const isMidnightBoundary = endOffsetMs % DAY_MS === 0;
+      const endDayIndex = Math.max(
+        startDayIndex,
+        Math.min(6, isMidnightBoundary ? endOffsetMs / DAY_MS - 1 : Math.floor(endOffsetMs / DAY_MS)),
+      );
+
+      if (startDayIndex === endDayIndex) {
+        const dayStartMs = weekStart.getTime() + startDayIndex * DAY_MS;
+        let startHour = (clippedStart.getTime() - dayStartMs) / (60 * 60 * 1000);
+        let endHour = Math.max(
+          startHour + 0.5,
+          (Math.min(clippedEnd.getTime(), dayStartMs + DAY_MS) - dayStartMs) / (60 * 60 * 1000),
+        );
+
+        if (range.isAllDay) {
+          startHour = 0;
+          endHour = 24;
+        }
+
+        const list = sameDay.get(startDayIndex) ?? [];
+        list.push({ endHour, endMs: dayStartMs + endHour * 3600000, startHour, startMs: clippedStart.getTime(), task });
+        sameDay.set(startDayIndex, list);
+      } else {
+        multiDay.push({
+          endDayIndex,
+          endMs: weekStart.getTime() + (endDayIndex + 1) * DAY_MS,
+          startDayIndex,
+          startMs: weekStart.getTime() + startDayIndex * DAY_MS,
+          task,
+        });
+      }
+    });
+
+    const multiDayLaned = assignLanes(multiDay);
+    const multiDayLaneCount = multiDayLaned[0]?.laneCount ?? 0;
+
+    const laneCountByDay = days.map((_, dayIndex) => {
+      const items = sameDay.get(dayIndex) ?? [];
+      const laned = assignLanes(items);
+      sameDay.set(dayIndex, laned);
+      return laned[0]?.laneCount ?? 0;
+    });
+
+    const heights = laneCountByDay.map((ownLaneCount) => {
+      const totalLanes = multiDayLaneCount + ownLaneCount;
+      if (totalLanes === 0) return MIN_ROW_HEIGHT;
+      const contentHeight = totalLanes * PILL_HEIGHT + (totalLanes - 1) * PILL_GAP;
+      return Math.max(MIN_ROW_HEIGHT, ROW_PADDING * 2 + contentHeight);
+    });
+
+    const tops = [];
+    heights.reduce((acc, height, index) => {
+      tops[index] = acc;
+      return acc + height;
+    }, 0);
+
+    const bars = multiDayLaned.map((item) => ({
+      laneIndex: item.laneIndex,
+      task: item.task,
+      top: tops[item.startDayIndex] + MULTIDAY_INSET,
+      height: tops[item.endDayIndex] + heights[item.endDayIndex] - tops[item.startDayIndex] - MULTIDAY_INSET * 2,
+    }));
+
+    return { multiDayBars: bars, multiDayLaneCount, rowHeights: heights, sameDayByDay: sameDay };
+  }, [days, scheduledTasks, weekEnd, weekStart]);
 
   function goToPreviousWeek() {
     setWeekStart((current) => addDays(current, -7));
@@ -113,6 +348,15 @@ export default function WorkspaceCalendar({
 
   function goToNextWeek() {
     setWeekStart((current) => addDays(current, 7));
+  }
+
+  async function handleTaskSave(task, updates) {
+    if (task?.isNew) {
+      await onTaskCreate?.(updates);
+      return;
+    }
+
+    await onTaskUpdate?.(task, updates);
   }
 
   if (isLoading) {
@@ -144,7 +388,7 @@ export default function WorkspaceCalendar({
           >
             ‹
           </button>
-          <span className="min-w-[7rem] text-center">{monthLabel}</span>
+          <span className="min-w-28 text-center">{monthLabel}</span>
           <button
             type="button"
             onClick={goToNextWeek}
@@ -159,94 +403,121 @@ export default function WorkspaceCalendar({
       {/* Calendar card */}
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/60 bg-white/40 backdrop-blur-3xl">
         <div className="h-full overflow-auto">
-          {/* Day header row (sticky) */}
-          <div
-            className="sticky top-0 z-20 grid bg-gray-100"
-            style={{ gridTemplateColumns: "64px repeat(7, minmax(0, 1fr))" }}
-          >
-            {/* Spacer for the time-label column so SUN aligns with the grid */}
-            <div aria-hidden="true" />
-            {days.map((day, index) => {
+          {/* Hour header row (sticky) */}
+          <div className="sticky top-0 z-20 flex bg-gray-100">
+            <div className="w-28 shrink-0" aria-hidden="true" />
+            <div className="grid flex-1" style={{ gridTemplateColumns: "repeat(24, 1fr)" }}>
+              {HOURS.map((hour) => (
+                <div
+                  key={hour}
+                  className="truncate border-l border-[#E0E5E9] py-2 text-center text-[9px] font-semibold text-[#98a2b3]"
+                >
+                  {formatHour(hour)}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Day rows + multi-day overlay */}
+          <div className="relative">
+            {days.map((day, dayIndex) => {
+              const dayPills = sameDayByDay.get(dayIndex) ?? [];
               const isToday = isSameDay(day, today);
+
               return (
-                <div key={day.toISOString()} className="py-2 text-center">
-                  <p className="text-[11px] font-semibold tracking-wide text-[#98a2b3]">
-                    {DAY_LABELS[index]}
-                  </p>
-                  <p
-                    className={`mx-auto mt-1 flex h-9 w-9 items-center justify-center rounded-full text-xl font-medium ${
-                      isToday ? "bg-[#1E40AF] text-white" : "text-[#1f2937]"
-                    }`}
-                  >
-                    {day.getDate()}
-                  </p>
+                <div
+                  key={day.toISOString()}
+                  className="flex border-t border-[#E0E5E9]"
+                  style={{ height: `${rowHeights[dayIndex]}px` }}
+                >
+                  <div className="flex w-28 shrink-0 flex-col items-center justify-center gap-1 py-2">
+                    <span className="text-[10px] font-semibold tracking-wide text-[#98a2b3]">
+                      {DAY_LABELS[dayIndex]}
+                    </span>
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-base font-medium ${
+                        isToday ? "bg-[#1E40AF] text-white" : "text-[#1f2937]"
+                      }`}
+                    >
+                      {day.getDate()}
+                    </span>
+                  </div>
+
+                  <div className="pointer-events-none relative z-10 flex-1">
+                    <div
+                      className="pointer-events-none absolute inset-0 grid"
+                      style={{ gridTemplateColumns: "repeat(24, 1fr)" }}
+                    >
+                      {HOURS.map((hour) => (
+                        <div key={hour} className="border-l border-[#E0E5E9]" />
+                      ))}
+                    </div>
+
+                    {dayPills.map((pill) => (
+                      <TaskPill
+                        key={pill.task.task_id}
+                        employees={employees}
+                        groupName={groupsById.get(pill.task.group_id)?.group_name ?? "Ungrouped"}
+                        onAiAssign={onTaskAiAssign}
+                        onAssignEmployee={onTaskAssignEmployee}
+                        onOpen={setEditingTask}
+                        onUnassignEmployee={onTaskUnassignEmployee}
+                        task={pill.task}
+                        tasks={tasks}
+                        style={{
+                          left: `${(pill.startHour / 24) * 100}%`,
+                          width: `max(${((pill.endHour - pill.startHour) / 24) * 100}%, ${PILL_MIN_WIDTH}px)`,
+                          top: `${ROW_PADDING + (multiDayLaneCount + pill.laneIndex) * (PILL_HEIGHT + PILL_GAP)}px`,
+                          height: `${PILL_HEIGHT}px`,
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
               );
             })}
-          </div>
 
-          {/* Time grid */}
-          <div
-            className="grid"
-            style={{ gridTemplateColumns: "64px repeat(7, minmax(0, 1fr))" }}
-          >
-            {HOURS.map((hour) => (
-              <div key={hour} className="contents">
-                {/* Time label column — no divider line */}
-                <div className="relative h-14 pr-2 text-right">
-                  {hour > 0 ? (
-                    <span className="absolute -top-2 right-2 text-[11px] font-medium text-[#98a2b3]">
-                      {formatHour(hour)}
-                    </span>
-                  ) : null}
-                </div>
-                {days.map((day) => (
-                  <div
-                    key={`${day.toISOString()}-${hour}`}
-                    className={`min-h-14 border-l border-[#E0E5E9] p-1 ${
-                      hour > 0 ? "border-t" : ""
-                    }`}
-                  >
-                    <div className="space-y-1">
-                      {scheduledTasks
-                        .filter(
-                          (task) =>
-                            isSameDay(task.calendarDate, day) &&
-                            task.calendarDate.getHours() === hour,
-                        )
-                        .map((task) => {
-                          const assignee = employeesById.get(task.assigned_to);
-                          const group = groupsById.get(task.group_id);
-
-                          return (
-                            <div
-                              key={task.task_id}
-                              className={`rounded-lg border px-2 py-1 shadow-sm ${getPriorityClasses(task.priority)}`}
-                              title={task.title}
-                            >
-                              <p className="truncate text-[11px] font-black">
-                                {task.title || "Untitled task"}
-                              </p>
-                              <p className="truncate text-[10px] font-semibold opacity-80">
-                                {formatTime(task.start_datetime || task.end_datetime)}
-                                {assignee ? ` · ${getDisplayName(assignee)}` : ""}
-                              </p>
-                              {group ? (
-                                <p className="truncate text-[10px] font-semibold opacity-70">
-                                  {group.group_name}
-                                </p>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
+            {multiDayBars.length ? (
+              <div className="pointer-events-none absolute inset-y-0 left-28 right-0">
+                {multiDayBars.map((bar) => (
+                  <TaskPill
+                    key={bar.task.task_id}
+                    employees={employees}
+                    groupName={groupsById.get(bar.task.group_id)?.group_name ?? "Ungrouped"}
+                    onAiAssign={onTaskAiAssign}
+                    onAssignEmployee={onTaskAssignEmployee}
+                    onOpen={setEditingTask}
+                    onUnassignEmployee={onTaskUnassignEmployee}
+                    task={bar.task}
+                    tasks={tasks}
+                    variant="multiday"
+                    style={{
+                      left: "8px",
+                      right: "8px",
+                      top: `${bar.top}px`,
+                      height: `${bar.height}px`,
+                    }}
+                  />
                 ))}
               </div>
-            ))}
+            ) : null}
           </div>
         </div>
       </div>
+
+      {editingTask ? (
+        <TaskEditPanel
+          key={editingTask?.task_id ?? "new"}
+          groups={groups}
+          skills={skills}
+          task={editingTask}
+          onArchive={onTaskArchive}
+          onClose={() => setEditingTask(null)}
+          onDelete={onTaskDelete}
+          onSave={handleTaskSave}
+          onSkillCreate={onSkillCreate}
+        />
+      ) : null}
     </div>
   );
 }

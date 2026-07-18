@@ -36,7 +36,7 @@ function initials(name) {
     .toUpperCase();
 }
 
-function getDisplayName(employee) {
+export function getDisplayName(employee) {
   return employee?.full_name || employee?.username || employee?.email || "Employee";
 }
 
@@ -125,10 +125,14 @@ function toDateTimeInputValue(value) {
 
 function splitDateTime(value) {
   const inputValue = toDateTimeInputValue(value);
+  const time = inputValue.slice(11, 16);
 
+  // combineDateTime always writes "00:00" when time is disabled, so a
+  // stored "00:00" is indistinguishable from "no time set" — treat it as
+  // no time so the Time toggle doesn't silently re-enable itself on reopen.
   return {
     date: inputValue.slice(0, 10),
-    time: inputValue.slice(11, 16),
+    time: time === "00:00" ? "" : time,
   };
 }
 
@@ -223,7 +227,7 @@ function buildBoardColumns({ groups, tasks }) {
   }));
 }
 
-function getOccupation(employee) {
+export function getOccupation(employee) {
   return (
     employee?.job_title ||
     employee?.department?.department_name ||
@@ -448,7 +452,7 @@ function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isA
   );
 }
 
-function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign, onClose, onUnassign, task, tasks = [] }) {
+export function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign, onClose, onUnassign, task, tasks = [] }) {
   const [query, setQuery] = useState("");
   const [assigningId, setAssigningId] = useState(null);
   const [unassigningId, setUnassigningId] = useState(null);
@@ -640,7 +644,7 @@ function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign, onClo
   );
 }
 
-function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
+export function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
@@ -1200,7 +1204,7 @@ function GroupPicker({ groups, onChange, value }) {
   );
 }
 
-function TaskEditPanel({
+export function TaskEditPanel({
   groups = [],
   onArchive,
   onClose,

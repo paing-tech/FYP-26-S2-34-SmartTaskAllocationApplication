@@ -887,6 +887,15 @@ export default function WorkspaceView() {
             error={error}
             groups={groups}
             isLoading={isLoading}
+            onSkillCreate={createSkill}
+            onTaskAiAssign={aiAssignTask}
+            onTaskArchive={archiveTask}
+            onTaskAssignEmployee={assignEmployeeToTask}
+            onTaskCreate={createTask}
+            onTaskDelete={deleteTask}
+            onTaskUnassignEmployee={unassignEmployeeFromTask}
+            onTaskUpdate={updateTask}
+            skills={skills}
             tasks={tasks}
           />
         ) : (
