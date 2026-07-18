@@ -675,7 +675,12 @@ function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssignEmploye
     <div className="group relative z-0 pt-11 hover:z-20">
       <div className="absolute inset-x-0 top-2 bottom-0 z-0 translate-y-0 rounded-3xl border border-white/60 bg-white/10 px-4 pt-3 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out group-hover:-bottom-4 group-hover:-translate-y-4">
         <div className="flex items-center justify-between gap-1.5">
-          <span className="text-[11px] font-bold text-[#0D1E4C]">{task.owner}</span>
+          <span className="truncate text-[11px] font-bold text-[#0D1E4C]">
+            {task.owner}
+            {task.ownerJobTitle ? (
+              <span className="font-semibold text-[#667085]"> • {task.ownerJobTitle}</span>
+            ) : null}
+          </span>
           {approvedBy ? (
             <span className="truncate text-[11px] font-bold text-emerald-700">Approved by {approvedBy}</span>
           ) : null}
@@ -1945,6 +1950,7 @@ export default function WorkspaceBoard({
           assignee: assignee ?? null,
           assignees,
           owner: task.source === "optimus_ai" ? "Optimus AI" : owner ? getDisplayName(owner) : "Manager",
+          ownerJobTitle: task.source === "optimus_ai" ? "" : owner ? getOccupation(owner) : "",
         };
       }),
     }));
