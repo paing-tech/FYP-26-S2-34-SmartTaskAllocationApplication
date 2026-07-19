@@ -14,10 +14,10 @@ const PILL_MIN_WIDTH = 220;
 const MULTIDAY_INSET = 4;
 
 const PRIORITY_PILL_TONES = {
-  low: "border-emerald-200 bg-emerald-50",
-  medium: "border-amber-200 bg-amber-50",
-  high: "border-red-200 bg-red-50",
-  urgent: "border-red-300 bg-red-100",
+  low: "border-amber-50 bg-amber-300",
+  medium: "border-orange-200 bg-orange-400",
+  high: "border-red-200 bg-red-500",
+  urgent: "border-red-200 bg-red-500",
 };
 
 function startOfWeek(date) {
@@ -133,13 +133,13 @@ function AvatarStack({ assignees }) {
         <span
           key={employee.user_id}
           title={getDisplayName(employee)}
-          className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#2563EB] text-[9px] font-black text-white"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-[#2563EB] text-[9px] font-black text-white"
         >
           {initials(getDisplayName(employee))}
         </span>
       ))}
       {extra > 0 ? (
-        <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#0D1E4C] text-[9px] font-black text-white">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0D1E4C] text-[9px] font-black text-white">
           +{extra}
         </span>
       ) : null}
@@ -171,8 +171,8 @@ function TaskPill({ employees, groupName, onAiAssign, onAssignEmployee, onOpen, 
         }`}
       >
         <span className="flex min-w-0 shrink items-center gap-2">
-          <span className="truncate text-xs font-black text-[#0D1E4C]">{task.title || "Untitled task"}</span>
-          <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-[#52627a]">
+          <span className="truncate text-xs font-black text-white">{task.title || "Untitled task"}</span>
+          <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-700">
             {task.status || "Open"}
           </span>
         </span>
@@ -443,7 +443,8 @@ export default function WorkspaceCalendar({
                     </span>
                   </div>
 
-                  <div className="pointer-events-none relative z-10 flex-1">
+                  <div className="pointer-events-none relative flex-1">
+                    {/* Grid lines: lowest layer, behind the multi-day overlay */}
                     <div
                       className="pointer-events-none absolute inset-0 grid"
                       style={{ gridTemplateColumns: "repeat(24, 1fr)" }}
@@ -453,32 +454,35 @@ export default function WorkspaceCalendar({
                       ))}
                     </div>
 
-                    {dayPills.map((pill) => (
-                      <TaskPill
-                        key={pill.task.task_id}
-                        employees={employees}
-                        groupName={groupsById.get(pill.task.group_id)?.group_name ?? "Ungrouped"}
-                        onAiAssign={onTaskAiAssign}
-                        onAssignEmployee={onTaskAssignEmployee}
-                        onOpen={setEditingTask}
-                        onUnassignEmployee={onTaskUnassignEmployee}
-                        task={pill.task}
-                        tasks={tasks}
-                        style={{
-                          left: `${(pill.startHour / 24) * 100}%`,
-                          width: `max(${((pill.endHour - pill.startHour) / 24) * 100}%, ${PILL_MIN_WIDTH}px)`,
-                          top: `${ROW_PADDING + (multiDayLaneCount + pill.laneIndex) * (PILL_HEIGHT + PILL_GAP)}px`,
-                          height: `${PILL_HEIGHT}px`,
-                        }}
-                      />
-                    ))}
+                    {/* Same-day pills: topmost layer, above the multi-day overlay */}
+                    <div className="pointer-events-none absolute inset-0 z-20">
+                      {dayPills.map((pill) => (
+                        <TaskPill
+                          key={pill.task.task_id}
+                          employees={employees}
+                          groupName={groupsById.get(pill.task.group_id)?.group_name ?? "Ungrouped"}
+                          onAiAssign={onTaskAiAssign}
+                          onAssignEmployee={onTaskAssignEmployee}
+                          onOpen={setEditingTask}
+                          onUnassignEmployee={onTaskUnassignEmployee}
+                          task={pill.task}
+                          tasks={tasks}
+                          style={{
+                            left: `${(pill.startHour / 24) * 100}%`,
+                            width: `max(${((pill.endHour - pill.startHour) / 24) * 100}%, ${PILL_MIN_WIDTH}px)`,
+                            top: `${ROW_PADDING + (multiDayLaneCount + pill.laneIndex) * (PILL_HEIGHT + PILL_GAP)}px`,
+                            height: `${PILL_HEIGHT}px`,
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               );
             })}
 
             {multiDayBars.length ? (
-              <div className="pointer-events-none absolute inset-y-0 left-28 right-0">
+              <div className="pointer-events-none absolute inset-y-0 left-28 right-0 z-10">
                 {multiDayBars.map((bar) => (
                   <TaskPill
                     key={bar.task.task_id}
@@ -492,8 +496,8 @@ export default function WorkspaceCalendar({
                     tasks={tasks}
                     variant="multiday"
                     style={{
-                      left: "8px",
-                      right: "8px",
+                      left: "0px",
+                      right: "0px",
                       top: `${bar.top}px`,
                       height: `${bar.height}px`,
                     }}
