@@ -89,7 +89,7 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
   }
 
   return (
-    <section className="mt-0 shrink-0 rounded-[1.75rem] border border-white/50 bg-white/20 px-5 py-4 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
+    <section className="mt-2 shrink-0 rounded-[1.75rem] border border-white/50 bg-white/20 px-5 py-4 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-black text-[#0D1E4C]">Allocation History</h3>
         <div className="flex items-center gap-2">

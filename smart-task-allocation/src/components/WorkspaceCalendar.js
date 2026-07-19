@@ -410,12 +410,15 @@ export default function WorkspaceCalendar({
               {HOURS.map((hour) => (
                 <div
                   key={hour}
-                  className="truncate border-l border-[#E0E5E9] py-2 text-center text-[9px] font-semibold text-[#98a2b3]"
+                  className={`truncate border-l border-[#E0E5E9] py-2 text-center text-[9px] font-semibold text-[#98a2b3] ${
+                    hour === HOURS.length - 1 ? "border-r" : ""
+                  }`}
                 >
                   {formatHour(hour)}
                 </div>
               ))}
             </div>
+            <div className="w-3 shrink-0" aria-hidden="true" />
           </div>
 
           {/* Day rows + multi-day overlay */}
@@ -450,7 +453,10 @@ export default function WorkspaceCalendar({
                       style={{ gridTemplateColumns: "repeat(24, 1fr)" }}
                     >
                       {HOURS.map((hour) => (
-                        <div key={hour} className="border-l border-[#E0E5E9]" />
+                        <div
+                          key={hour}
+                          className={`border-l border-[#E0E5E9] ${hour === HOURS.length - 1 ? "border-r" : ""}`}
+                        />
                       ))}
                     </div>
 
@@ -477,12 +483,14 @@ export default function WorkspaceCalendar({
                       ))}
                     </div>
                   </div>
+
+                  <div className="w-3 shrink-0" aria-hidden="true" />
                 </div>
               );
             })}
 
             {multiDayBars.length ? (
-              <div className="pointer-events-none absolute inset-y-0 left-28 right-0 z-10">
+              <div className="pointer-events-none absolute inset-y-0 left-28 right-3 z-10">
                 {multiDayBars.map((bar) => (
                   <TaskPill
                     key={bar.task.task_id}

@@ -2060,7 +2060,15 @@ export default function WorkspaceBoard({
               onGroupDelete={onGroupDelete}
             />
 
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4 pt-2">
+            <div
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-2 pt-2"
+              style={{
+                maskImage:
+                  "linear-gradient(to bottom, transparent 0, black 28px, black calc(100% - 28px), transparent 100%)",
+                WebkitMaskImage:
+                  "linear-gradient(to bottom, transparent 0, black 28px, black calc(100% - 28px), transparent 100%)",
+              }}
+            >
               {column.tasks.map((task) => (
                 <TaskCard
                   key={task.task_id}
