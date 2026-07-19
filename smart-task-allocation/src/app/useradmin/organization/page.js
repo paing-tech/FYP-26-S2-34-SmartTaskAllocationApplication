@@ -5,7 +5,7 @@ import GlassSurface from "@/components/ui/glass-surface";
 export default function UserAdminOrganizationPage() {
   return (
     <SideMenuLayout actor="useradmin">
-      <GlassSurface className="max-h-full overflow-y-auto p-8">
+      <GlassSurface className="h-full overflow-y-auto p-8">
         <UserAdminOrganizationBuilder />
       </GlassSurface>
     </SideMenuLayout>

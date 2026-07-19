@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import OrganizationCanvas from "@/components/OrganizationCanvas";
 
 const emptyForm = {
   organizationName: "",
@@ -50,31 +51,12 @@ function AccountAvatar({ account, size = "h-10 w-10", textSize = "text-sm" }) {
 export default function UserAdminOrganizationBuilder() {
   const [organization, setOrganization] = useState(null);
   const [departments, setDepartments] = useState([]);
-  const [accounts, setAccounts] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [isSetupOpen, setIsSetupOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [draggingUserId, setDraggingUserId] = useState("");
   const [error, setError] = useState("");
-
-  const accountsByDepartment = useMemo(() => {
-    const grouped = new Map();
-
-    departments.forEach((department) => {
-      grouped.set(department.department_id, []);
-    });
-
-    accounts.forEach((account) => {
-      if (grouped.has(account.department_id)) {
-        grouped.get(account.department_id).push(account);
-      }
-    });
-
-    return grouped;
-  }, [accounts, departments]);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -88,7 +70,6 @@ export default function UserAdminOrganizationBuilder() {
   function applyPayload(payload) {
     setOrganization(payload.organization ?? null);
     setDepartments(payload.departments ?? []);
-    setAccounts(payload.accounts ?? []);
   }
 
   async function loadOrganization() {
@@ -199,153 +180,52 @@ export default function UserAdminOrganizationBuilder() {
     }
   }
 
-  async function assignAccountToDepartment(userId, departmentId) {
-    if (!organization) {
-      return;
-    }
-
-    setError("");
-
-    try {
-      const response = await fetch("/api/my-organization", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(await authHeaders()),
-        },
-        body: JSON.stringify({
-          action: "assignDepartment",
-          userId,
-          departmentId,
-        }),
-      });
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Could not assign department.");
-      }
-
-      applyPayload(result);
-    } catch (assignError) {
-      setError(assignError.message);
-    } finally {
-      setDraggingUserId("");
-    }
-  }
-
-  function handleDrop(event, departmentId) {
-    event.preventDefault();
-    const userId = event.dataTransfer.getData("text/plain") || draggingUserId;
-
-    if (userId) {
-      assignAccountToDepartment(userId, departmentId);
-    }
-  }
-
   return (
-    <div
-      className={`grid h-full min-h-0 overflow-hidden rounded-2xl transition-[grid-template-columns] ${
-        isSidebarCollapsed
-          ? "lg:grid-cols-[40px_minmax(0,1fr)]"
-          : "lg:grid-cols-[300px_minmax(0,1fr)]"
-      }`}
-    >
-      <aside className="relative overflow-visible border-r border-white/40 px-3 py-4">
-        <button
-          type="button"
-          onClick={() => setIsSidebarCollapsed((current) => !current)}
-          className="absolute right-1.5 top-6.5 flex items-center justify-center font-bold text-[#1E293B] hover:text-[#1E40AF]"
-          aria-label={isSidebarCollapsed ? "Expand users menu" : "Collapse users menu"}
-          title={isSidebarCollapsed ? "Expand users menu" : "Collapse users menu"}
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{ fontSize: "26px" }}
-            aria-hidden="true"
-          >
-            {isSidebarCollapsed ? "left_panel_open" : "left_panel_close"}
-          </span>
-        </button>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl">
+      {error ? (
+        <p className="mx-6 mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {error}
+        </p>
+      ) : null}
 
-        {isSidebarCollapsed ? (
-          <div className="flex h-full flex-col items-center pt-20 text-[#07183b]">
-            <span className="rotate-90 whitespace-nowrap text-md font-semibold tracking-widest">
-              Users
-            </span>
-          </div>
-        ) : (
-          <>
-            <h2 className="pt-2 text-lg font-medium text-[#0D1E4C]">Users</h2>
-
-            <div className="mt-6 space-y-3 overflow-y-auto pr-1">
-              {accounts.map((account) => (
-                <button
-                  key={account.user_id}
-                  type="button"
-                  draggable
-                  onClick={() => setSelectedAccount(account)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("text/plain", account.user_id);
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggingUserId(account.user_id);
-                  }}
-                  onDragEnd={() => setDraggingUserId("")}
-                  className={`flex h-12 w-full items-center gap-3 rounded-full bg-white px-2.5 text-left text-sm font-semibold text-[#0f172a] shadow-sm transition hover:bg-[#eef6ff] ${
-                    draggingUserId === account.user_id ? "opacity-50" : ""
-                  }`}
-                >
-                  <AccountAvatar account={account} size="h-9 w-9" textSize="text-xs" />
-                  <span className="min-w-0 truncate">{displayName(account)}</span>
-                </button>
-              ))}
-
-              {!accounts.length && !isLoading ? (
-                <p className="rounded-md border border-dashed border-white/80 px-3 py-4 text-sm text-[#667085]">
-                  No accounts found.
-                </p>
-              ) : null}
-            </div>
-          </>
-        )}
-      </aside>
-
-      <section className="flex min-h-0 min-w-0 flex-col">
-        {error ? (
-          <p className="mx-6 mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="min-h-0 flex-1 overflow-auto px-6 py-6">
-          {isLoading ? (
-            <div className="flex h-full items-center justify-center text-sm font-semibold text-[#52627a]">
-              Loading organization...
-            </div>
-          ) : organization ? (
-            <OrganizationChart
-              accountsByDepartment={accountsByDepartment}
-              departments={departments}
-              organization={organization}
-              onAccountClick={setSelectedAccount}
-              onEditOrganization={openOrganizationEditor}
-              onDrop={handleDrop}
-            />
-          ) : (
-            <div className="flex h-full min-h-[520px] items-center justify-center rounded-[32px] bg-[#fffafa]">
-              <div className="text-center">
-                <h1 className="text-4xl font-medium text-black">Organization</h1>
-                <button
-                  type="button"
-                  onClick={() => setIsSetupOpen(true)}
-                  className="mt-8 rounded-full bg-black/10 px-6 py-2 text-sm font-semibold text-black transition hover:bg-black/15"
-                >
-                  Set up
-                </button>
-              </div>
-            </div>
-          )}
+      {isLoading ? (
+        <div className="flex h-full items-center justify-center text-sm font-semibold text-[#52627a]">
+          Loading organization...
         </div>
-      </section>
+      ) : organization ? (
+        <div className="flex min-h-0 flex-1 flex-col px-6 py-6">
+          <div className="shrink-0 text-center">
+            <button
+              type="button"
+              onClick={openOrganizationEditor}
+              className="inline-flex items-center gap-2 rounded-md px-2 text-4xl font-semibold text-black transition hover:bg-[#e8f3ff]"
+            >
+              {organization.organization_name}
+              <span className="text-2xl text-[#667085]">⌄</span>
+            </button>
+            <p className="mt-2 text-sm text-[#667085]">
+              Drag people to reposition them, drag from a dot to connect two people freely.
+            </p>
+          </div>
+
+          <div className="mt-6 min-h-0 flex-1">
+            <OrganizationCanvas onAccountClick={setSelectedAccount} />
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-full min-h-[520px] items-center justify-center rounded-[32px] bg-[#fffafa]">
+          <div className="text-center">
+            <h1 className="text-4xl font-medium text-black">Organization</h1>
+            <button
+              type="button"
+              onClick={() => setIsSetupOpen(true)}
+              className="mt-8 rounded-full bg-black/10 px-6 py-2 text-sm font-semibold text-black transition hover:bg-black/15"
+            >
+              Set up
+            </button>
+          </div>
+        </div>
+      )}
 
       {isSetupOpen ? (
         <OrganizationSetupModal
@@ -367,83 +247,6 @@ export default function UserAdminOrganizationBuilder() {
           onClose={() => setSelectedAccount(null)}
         />
       ) : null}
-    </div>
-  );
-}
-
-function OrganizationChart({
-  accountsByDepartment,
-  departments,
-  organization,
-  onAccountClick,
-  onEditOrganization,
-  onDrop,
-}) {
-  return (
-    <div className="min-h-full rounded-[32px] px-8 py-8">
-      <div className="text-center">
-        <button
-          type="button"
-          onClick={onEditOrganization}
-          className="inline-flex items-center gap-2 rounded-md px-2 text-4xl font-semibold text-black transition hover:bg-[#e8f3ff]"
-        >
-          {organization.organization_name}
-          <span className="text-2xl text-[#667085]">⌄</span>
-        </button>
-        <p className="mt-2 text-sm text-[#667085]">
-          Drag users into a department to update their organization placement.
-        </p>
-      </div>
-
-      {departments.length ? (
-        <div className="mt-10 flex min-w-max gap-4 overflow-x-auto pb-4">
-          {departments.map((department) => {
-            const departmentAccounts =
-              accountsByDepartment.get(department.department_id) ?? [];
-
-            return (
-              <section
-                key={department.department_id}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => onDrop(event, department.department_id)}
-                className="flex min-h-[440px] w-64 shrink-0 flex-col rounded-[24px] border-t border-white/60 bg-gradient-to-b from-[#d8efff] via-[#f8fcff] via-white to-white shadow-xs"
-              >
-                <div className="px-4 py-4 text-center">
-                  <h2 className="truncate text-lg font-bold text-[#061a40]">
-                    {department.department_name}
-                  </h2>
-                </div>
-                <div className="flex flex-1 flex-col gap-3 p-4">
-                  {departmentAccounts.map((account) => (
-                    <button
-                      key={account.user_id}
-                      type="button"
-                      onClick={() => onAccountClick(account)}
-                      className="flex items-center gap-3 rounded-2xl border border-[#e2e8f0] bg-white px-3 py-3 text-left shadow-sm transition hover:border-[#93C5FD] hover:bg-[#f8fbff]"
-                    >
-                      <AccountAvatar account={account} size="h-10 w-10" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-bold text-[#1f2937]">
-                          {displayName(account)}
-                        </span>
-                        <span className="block truncate text-xs text-[#667085]">
-                          {account.role?.role_name ?? "User"}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-
-                  
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="mt-10 rounded-2xl border border-dashed border-[#bfd0e8] px-6 py-12 text-center text-sm font-medium text-[#667085]">
-          No departments yet. Add departments by updating your organization setup.
-        </div>
-      )}
     </div>
   );
 }

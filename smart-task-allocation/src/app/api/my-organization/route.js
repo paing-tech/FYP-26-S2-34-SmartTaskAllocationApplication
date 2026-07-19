@@ -88,7 +88,7 @@ async function syncDepartments(supabase, organizationId, departments) {
   return null;
 }
 
-async function getUserAccount(supabase, user) {
+export async function getUserAccount(supabase, user) {
   const { data, error } = await supabase
     .from("user_account")
     .select("user_id, organization_id")
@@ -115,13 +115,14 @@ function normalizeAccount(account, profilesByUserId) {
   return {
     ...account,
     full_name: fullName,
+    job_title: profile.job_title ?? "",
     profile_picture_url: profile.profile_picture_url ?? "",
     phone_number: profile.phone_number ?? "",
     bio: profile.bio ?? "",
   };
 }
 
-async function getAccountsWithProfiles(supabase, organizationId) {
+export async function getAccountsWithProfiles(supabase, organizationId) {
   // Only ever surface accounts within the requester's organization, and never
   // platform admins (developer-side, org-agnostic accounts).
   if (!organizationId) {
@@ -152,7 +153,7 @@ async function getAccountsWithProfiles(supabase, organizationId) {
 
   const { data: profiles, error: profilesError } = await supabase
     .from("profile")
-    .select("user_id, full_name, phone_number, bio, profile_picture_url")
+    .select("user_id, full_name, job_title, phone_number, bio, profile_picture_url")
     .in("user_id", userIds);
 
   if (profilesError) {
