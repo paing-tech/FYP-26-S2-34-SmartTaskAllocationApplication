@@ -8,8 +8,8 @@ import Portal from "@/components/Portal";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 const VIEWS = [
-  { id: "calendar", label: "Calendar" },
   { id: "board", label: "Board" },
+  { id: "calendar", label: "Calendar" },
 ];
 
 function formatHistoryTime(value) {
@@ -209,7 +209,7 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
 }
 
 export default function WorkspaceView() {
-  const [view, setView] = useState("calendar");
+  const [view, setView] = useState("board");
   const [tasks, setTasks] = useState([]);
   const [groups, setGroups] = useState([]);
   const [employees, setEmployees] = useState([]);
