@@ -27,8 +27,7 @@ const roleActions = {
       group: "Workspace",
       actionId: "create-workspace-item",
     },
-    { label: "Review team capacity", href: "/manager/team", group: "Team" },
-    { label: "View organization", href: "/manager/organization", group: "Organization" },
+    { label: "View team", href: "/manager/team", group: "Team" },
     { label: "Open inbox", href: "/manager/inbox", group: "Inbox" },
     { label: "Open my space", href: "/manager/my-space", group: "My Space" },
     { label: "Review archive", href: "/manager/archive", group: "Archive" },
@@ -42,7 +41,6 @@ const roleActions = {
   ],
   employee: [
     { label: "Open workspace", href: "/employee/workspace", group: "Workspace" },
-    { label: "Review team", href: "/employee/team", group: "Team" },
     { label: "Open inbox", href: "/employee/inbox", group: "Inbox" },
     { label: "Open my space", href: "/employee/my-space", group: "My Space" },
     { label: "Get support", href: "/employee/support", group: "Support" },
@@ -288,35 +286,26 @@ export default function TopInformationBar({ actor }) {
 
     try {
       if (actor === "manager") {
-        const [workspaceResult, taskResult, teamResult, employeeResult] = await Promise.allSettled([
+        const [workspaceResult, taskResult, employeeResult] = await Promise.allSettled([
           fetchJson("/api/workspaces"),
           fetchJson("/api/tasks"),
-          fetchJson("/api/teams"),
           fetchJson("/api/employees"),
         ]);
 
         setAccountSearchItems([
           ...itemsFromWorkspaces(settledValue(workspaceResult), "/manager/workspace"),
           ...itemsFromTasks(settledValue(taskResult), "/manager/workspace"),
-          ...itemsFromTeams(settledValue(teamResult), "/manager/team"),
           ...itemsFromMembers(settledValue(employeeResult), "/manager/team"),
         ]);
         return;
       }
 
       if (actor === "employee") {
-        const [workspaceResult, teamResult, invitationResult] = await Promise.allSettled([
-          fetchJson("/api/employee-workspaces"),
-          fetchJson("/api/teams"),
-          fetchJson("/api/team-invitations"),
-        ]);
+        const [workspaceResult] = await Promise.allSettled([fetchJson("/api/employee-workspaces")]);
 
         setAccountSearchItems([
           ...itemsFromWorkspaces(settledValue(workspaceResult), "/employee/workspace"),
           ...itemsFromTasks(settledValue(workspaceResult), "/employee/workspace"),
-          ...itemsFromTeams(settledValue(teamResult), "/employee/team"),
-          ...itemsFromMembers(settledValue(teamResult), "/employee/team"),
-          ...itemsFromInvitations(settledValue(invitationResult), "/employee/team"),
         ]);
         return;
       }
@@ -805,17 +794,6 @@ function itemsFromTasks(payload, href) {
   }));
 }
 
-function itemsFromTeams(payload, href) {
-  return (payload?.teams ?? []).map((team) => ({
-    id: team.team_id,
-    label: team.team_name,
-    description: "Team",
-    href,
-    group: "Team",
-    type: "Team",
-  }));
-}
-
 function itemsFromMembers(payload, href) {
   const members = payload?.members ?? payload?.employees ?? payload?.user_accounts ?? [];
 
@@ -832,17 +810,6 @@ function itemsFromMembers(payload, href) {
     href,
     group: "Team",
     type: "Member",
-  }));
-}
-
-function itemsFromInvitations(payload, href) {
-  return (payload?.invitations ?? []).map((invitation) => ({
-    id: invitation.invitation_id,
-    label: `Invitation: ${invitation.team?.team_name ?? "Team"}`,
-    description: "Accept or reject team invitation",
-    href,
-    group: "Team",
-    type: "Action",
   }));
 }
 

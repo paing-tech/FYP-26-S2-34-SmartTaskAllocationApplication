@@ -18,8 +18,6 @@ function isEmployeeRole(roleName) {
 const STEPS = [
   { label: "Investigating organization structure", icon: "org" },
   { label: "Choosing suitable employees", icon: "users" },
-  { label: "Creating a team", icon: "team" },
-  { label: "Inviting employees to team", icon: "invite" },
   { label: "Creating a workspace", icon: "workspace" },
   { label: "Adding required tasks", icon: "tasks" },
   { label: "Assigning tasks to suitable employees", icon: "assign" },
@@ -65,23 +63,6 @@ function StepIcon({ name }) {
         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
         <circle cx="9" cy="7" r="4" />
         <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      </svg>
-    );
-  if (name === "team")
-    return (
-      <svg {...p}>
-        <circle cx="12" cy="8" r="3" />
-        <circle cx="5" cy="17" r="2" />
-        <circle cx="19" cy="17" r="2" />
-        <path d="M12 11v3M9.5 16l-2.5-1M14.5 16l2.5-1" />
-      </svg>
-    );
-  if (name === "invite")
-    return (
-      <svg {...p}>
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M19 8v6M22 11h-6" />
       </svg>
     );
   if (name === "workspace")
@@ -278,29 +259,8 @@ export default function AgentDeployModal({ agent, roster = [], onClose }) {
         )
         .slice(0, size);
 
-      // 2 — Creating a team
+      // 2 — Creating a workspace
       setCurrentStep(2);
-      const teamRes = await fetch("/api/teams", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ teamName: `${base} Team` }),
-      });
-      const teamData = await teamRes.json();
-      if (!teamRes.ok) throw new Error(teamData.error || "Could not create the team.");
-      const teamId = teamData.team?.team_id;
-
-      // 3 — Inviting employees to the team
-      setCurrentStep(3);
-      for (const member of chosen) {
-        await fetch("/api/team-invitations", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ teamId, inviteeUserId: member.user_id }),
-        });
-      }
-
-      // 4 — Creating a workspace
-      setCurrentStep(4);
       const wsRes = await fetch("/api/workspaces", {
         method: "POST",
         headers,
@@ -310,8 +270,8 @@ export default function AgentDeployModal({ agent, roster = [], onClose }) {
       if (!wsRes.ok) throw new Error(wsData.error || "Could not create the workspace.");
       const workspaceId = wsData.workspace?.workspace_id;
 
-      // 5 — Adding required tasks (AI-generated plan → groups + tasks)
-      setCurrentStep(5);
+      // 3 — Adding required tasks (AI-generated plan → groups + tasks)
+      setCurrentStep(3);
       const planRes = await fetch("/api/agent/generate-plan", {
         method: "POST",
         headers,
@@ -340,8 +300,8 @@ export default function AgentDeployModal({ agent, roster = [], onClose }) {
         }
       }
 
-      // 6 — Assigning tasks to suitable employees (round-robin, keeps group)
-      setCurrentStep(6);
+      // 4 — Assigning tasks to suitable employees (round-robin, keeps group)
+      setCurrentStep(4);
       if (chosen.length) {
         const tasksRes = await fetch(`/api/tasks?workspaceId=${workspaceId}`, { headers });
         const tasksData = await tasksRes.json();
@@ -367,10 +327,9 @@ export default function AgentDeployModal({ agent, roster = [], onClose }) {
         }
       }
 
-      // 7 — Completion
-      setCurrentStep(7);
+      // 5 — Completion
+      setCurrentStep(5);
       setSummary({
-        team: `${base} Team`,
         members: chosen.length,
         workspace: base,
         tasks: taskCount,
@@ -461,7 +420,7 @@ export default function AgentDeployModal({ agent, roster = [], onClose }) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label htmlFor="teamSize" className="block text-sm font-bold text-[#0D1E4C]">
-                  Team size
+                  Group size
                 </label>
                 <input
                   id="teamSize"
@@ -620,9 +579,8 @@ export default function AgentDeployModal({ agent, roster = [], onClose }) {
 
             {summary ? (
               <p className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
-                Deployed <strong>{summary.team}</strong> with {summary.members} member
-                {summary.members === 1 ? "" : "s"}, workspace <strong>{summary.workspace}</strong>, and{" "}
-                {summary.tasks} tasks assigned.
+                Deployed workspace <strong>{summary.workspace}</strong> with {summary.members} member
+                {summary.members === 1 ? "" : "s"} and {summary.tasks} tasks assigned.
               </p>
             ) : null}
 

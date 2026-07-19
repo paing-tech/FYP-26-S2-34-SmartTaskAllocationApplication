@@ -9,7 +9,7 @@ export default function EmployeeInboxPage() {
         <ManagerPlaceholderPage
           eyebrow="Employee"
           title="Inbox"
-          description="Review workspace updates, team invitations, and direct messages."
+          description="Review workspace updates and direct messages."
         />
       </GlassSurface>
     </SideMenuLayout>

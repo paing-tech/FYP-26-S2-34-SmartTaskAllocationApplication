@@ -98,7 +98,6 @@ export async function GET(request) {
         organization: null,
         departments: [],
         accounts: [],
-        teams: [],
         currentUserId: account?.user_id ?? null,
       });
     }
@@ -106,7 +105,6 @@ export async function GET(request) {
     const [
       { data: organization, error: organizationError },
       { data: departments, error: departmentsError },
-      { data: teams, error: teamsError },
       accountsResult,
     ] = await Promise.all([
       supabase
@@ -119,12 +117,6 @@ export async function GET(request) {
         .select("department_id, organization_id, department_name, description")
         .eq("organization_id", account.organization_id)
         .order("department_name", { ascending: true }),
-      supabase
-        .from("team")
-        .select("team_id, team_name, created_by")
-        .eq("organization_id", account.organization_id)
-        .eq("created_by", account.user_id)
-        .order("team_name", { ascending: true }),
       getOrganizationAccounts(supabase, account.organization_id),
     ]);
 
@@ -136,10 +128,6 @@ export async function GET(request) {
       return NextResponse.json({ error: departmentsError.message }, { status: 400 });
     }
 
-    if (teamsError) {
-      return NextResponse.json({ error: teamsError.message }, { status: 400 });
-    }
-
     if (accountsResult.error) {
       return NextResponse.json({ error: accountsResult.error.message }, { status: 400 });
     }
@@ -148,7 +136,6 @@ export async function GET(request) {
       organization,
       departments: departments ?? [],
       accounts: accountsResult.accounts ?? [],
-      teams: teams ?? [],
       currentUserId: account.user_id,
     });
   } catch (error) {

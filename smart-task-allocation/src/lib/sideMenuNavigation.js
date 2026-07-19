@@ -14,8 +14,7 @@ export const sideMenuNavigation = {
     homeHref: "/manager/workspace",
     items: [
       { label: "Workspace", href: "/manager/workspace", icon: "workspace" },
-      { label: "Team", href: "/manager/team", icon: "users" },
-      { label: "Organization", href: "/manager/organization", icon: "organization" },
+      { label: "Team", href: "/manager/team", icon: "organization" },
       { label: "Inbox", href: "/manager/inbox", icon: "inbox" },
       { label: "My Space", href: "/manager/my-space", icon: "home" },
       { label: "Archive", href: "/manager/archive", icon: "archive" },
@@ -28,7 +27,6 @@ export const sideMenuNavigation = {
     homeHref: "/employee/workspace",
     items: [
       { label: "Workspace", href: "/employee/workspace", icon: "workspace" },
-      { label: "Team", href: "/employee/team", icon: "users" },
       { label: "Inbox", href: "/employee/inbox", icon: "inbox" },
       { label: "My Space", href: "/employee/my-space", icon: "home" },
       { label: "Agents", href: "/employee/agents", icon: "agents" },

@@ -38,8 +38,6 @@ export default function ManagerOrganizationChart() {
   const [organization, setOrganization] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [accounts, setAccounts] = useState([]);
-  const [teams, setTeams] = useState([]);
-  const [currentUserId, setCurrentUserId] = useState("");
   const [menu, setMenu] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -86,8 +84,6 @@ export default function ManagerOrganizationChart() {
       setOrganization(result.organization ?? null);
       setDepartments(result.departments ?? []);
       setAccounts(result.accounts ?? []);
-      setTeams(result.teams ?? []);
-      setCurrentUserId(result.currentUserId ?? "");
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -128,40 +124,6 @@ export default function ManagerOrganizationChart() {
     setMessage(`Message action ready for ${displayName(account)}. Inbox messaging can be connected here.`);
   }
 
-  async function inviteToTeam(team, account) {
-    setMenu(null);
-    setMessage("");
-    setError("");
-
-    if (account.user_id === currentUserId) {
-      setError("You cannot invite yourself to your own team.");
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/team-invitations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(await authHeaders()),
-        },
-        body: JSON.stringify({
-          teamId: team.team_id,
-          inviteeUserId: account.user_id,
-        }),
-      });
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Could not send team invitation.");
-      }
-
-      setMessage(`Invitation sent to ${displayName(account)} for ${team.team_name}.`);
-    } catch (inviteError) {
-      setError(inviteError.message);
-    }
-  }
-
   return (
     <div className="h-full min-h-0 overflow-hidden rounded-2xl">
       <section className="flex h-full min-h-0 flex-col">
@@ -189,7 +151,7 @@ export default function ManagerOrganizationChart() {
                   {organization.organization_name}
                 </h1>
                 <p className="mt-2 text-sm text-[#667085]">
-                  View assigned departments and invite people into your teams.
+                  View assigned departments and team members.
                 </p>
               </div>
 
@@ -262,11 +224,8 @@ export default function ManagerOrganizationChart() {
       {menu ? (
         <OrganizationContextMenu
           account={menu.account}
-          currentUserId={currentUserId}
-          teams={teams}
           x={menu.x}
           y={menu.y}
-          onInvite={inviteToTeam}
           onSendMessage={sendMessage}
         />
       ) : null}
@@ -274,15 +233,7 @@ export default function ManagerOrganizationChart() {
   );
 }
 
-function OrganizationContextMenu({
-  account,
-  currentUserId,
-  teams,
-  x,
-  y,
-  onInvite,
-  onSendMessage,
-}) {
+function OrganizationContextMenu({ account, x, y, onSendMessage }) {
   return (
     <div
       className="fixed z-50 w-64 rounded-2xl border border-white/60 bg-white/80 p-2 text-sm font-bold text-[#1f2937] shadow-2xl backdrop-blur-md"
@@ -296,38 +247,6 @@ function OrganizationContextMenu({
       >
         Send message
       </button>
-
-      <div className="group relative">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left hover:bg-[#e8f3ff]"
-        >
-          Invite to my team
-          <span aria-hidden="true">›</span>
-        </button>
-
-        <div className="invisible absolute left-full top-0 pl-2 opacity-0 transition group-hover:visible group-hover:opacity-100">
-          <div className="min-w-56 rounded-2xl border border-white/60 bg-white/90 p-2 shadow-2xl backdrop-blur-md">
-            {teams.length ? (
-              teams.map((team) => (
-                <button
-                  key={team.team_id}
-                  type="button"
-                  disabled={account.user_id === currentUserId}
-                  onClick={() => onInvite(team, account)}
-                  className="block w-full rounded-xl px-3 py-3 text-left hover:bg-[#e8f3ff] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {team.team_name}
-                </button>
-              ))
-            ) : (
-              <p className="px-3 py-3 text-sm font-semibold text-[#667085]">
-                No owned teams yet.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
