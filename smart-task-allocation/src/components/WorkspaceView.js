@@ -12,6 +12,41 @@ const VIEWS = [
   { id: "calendar", label: "Calendar" },
 ];
 
+const COLUMN_LAYOUT_STORAGE_KEY = "optima-board-columns";
+
+// Material Symbols only ships "view_column" (3 bars). These 4/5-bar variants
+// reuse its exact outer frame and gap so they read as the same icon family.
+const COLUMN_LAYOUT_OPTIONS = [
+  {
+    count: 3,
+    description: "3 large task groups",
+    path: "M200-280h133v-400H200v400ZM413-280h133v-400H413v400ZM626-280h133v-400H626v400Z",
+  },
+  {
+    count: 4,
+    description: "4 task groups (default)",
+    path: "M200-280h80v-400H200v400ZM360-280h80v-400H360v400ZM520-280h80v-400H520v400ZM680-280h80v-400H680v400Z",
+  },
+  {
+    count: 5,
+    description: "5 compact task groups",
+    path: "M200-280h48v-400H200v400ZM328-280h48v-400H328v400ZM456-280h48v-400H456v400ZM584-280h48v-400H584v400ZM712-280h48v-400H712v400Z",
+  },
+];
+
+const COLUMN_ICON_FRAME =
+  "M121-280v-400q0-33 23.5-56.5T201-760h559q33 0 56.5 23.5T840-680v400q0 33-23.5 56.5T760-200H201q-33 0-56.5-23.5T121-280Z";
+
+function ColumnLayoutIcon({ count, className = "h-5 w-5" }) {
+  const option = COLUMN_LAYOUT_OPTIONS.find((item) => item.count === count) ?? COLUMN_LAYOUT_OPTIONS[1];
+
+  return (
+    <svg viewBox="0 -960 960 960" className={className} fill="currentColor" aria-hidden="true">
+      <path d={COLUMN_ICON_FRAME + option.path} fillRule="evenodd" />
+    </svg>
+  );
+}
+
 function formatHistoryTime(value) {
   if (!value) return "";
 
@@ -210,6 +245,7 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
 
 export default function WorkspaceView() {
   const [view, setView] = useState("board");
+  const [columnLayout, setColumnLayoutState] = useState(4);
   const [tasks, setTasks] = useState([]);
   const [groups, setGroups] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -312,6 +348,17 @@ export default function WorkspaceView() {
     loadWorkspaceData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(COLUMN_LAYOUT_STORAGE_KEY));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time read of a browser-only API on mount
+    if ([3, 4, 5].includes(stored)) setColumnLayoutState(stored);
+  }, []);
+
+  function selectColumnLayout(count) {
+    setColumnLayoutState(count);
+    window.localStorage.setItem(COLUMN_LAYOUT_STORAGE_KEY, String(count));
+  }
 
   useEffect(() => {
     async function handleOptimusSettingChange(event) {
@@ -876,6 +923,28 @@ export default function WorkspaceView() {
             >
               Add task
             </button>
+
+            <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 p-1 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
+              {COLUMN_LAYOUT_OPTIONS.map((option) => {
+                const isSelected = option.count === columnLayout;
+
+                return (
+                  <button
+                    type="button"
+                    key={option.count}
+                    onClick={() => selectColumnLayout(option.count)}
+                    aria-label={`${option.count} columns`}
+                    aria-pressed={isSelected}
+                    title={`${option.count} columns — ${option.description}`}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                      isSelected ? "bg-[#0D1E4C] text-white" : "text-[#0D1E4C] hover:bg-white/60"
+                    }`}
+                  >
+                    <ColumnLayoutIcon count={option.count} className="h-4 w-4" />
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ) : null}
       </div>
@@ -900,6 +969,7 @@ export default function WorkspaceView() {
           />
         ) : (
           <WorkspaceBoard
+            columnLayout={columnLayout}
             employees={employees}
             error={error}
             groups={groups}

@@ -241,6 +241,46 @@ function sameId(left, right) {
   return String(left ?? "") === String(right ?? "");
 }
 
+function formatCompactTimeline(start, end) {
+  const endLabel = formatDate(end);
+  if (endLabel) return `Due ${endLabel}`;
+
+  const startLabel = formatDate(start);
+  return startLabel || "No timeline";
+}
+
+// Compact-column variant of AssigneeProfile: timeline text on the left,
+// avatar-only stack on the right (no name/occupation text).
+function CompactAssigneeRow({ assignees, end, start }) {
+  const shown = (assignees?.length ? assignees : [null]).slice(0, 3);
+  const extra = (assignees?.length ?? 0) - shown.length;
+
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-2xl bg-white/45 px-3 py-2">
+      <span className="truncate text-[11px] font-bold text-[#94a3b8]">
+        {formatCompactTimeline(start, end)}
+      </span>
+      <span className="flex shrink-0 items-center -space-x-2">
+        {shown.map((employee, index) => (
+          <span
+            key={employee?.user_id ?? `unassigned-${index}`}
+            title={employee ? getDisplayName(employee) : "Unassigned"}
+            className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-[10px] font-black text-white"
+            style={{ backgroundColor: employee ? AVATAR_COLORS[0] : "#94a3b8" }}
+          >
+            {employee ? initials(getDisplayName(employee)) : "?"}
+          </span>
+        ))}
+        {extra > 0 ? (
+          <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#0D1E4C] text-[10px] font-black text-white">
+            +{extra}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
 function AssigneeProfile({ employee }) {
   if (!employee) {
     return (
@@ -644,7 +684,7 @@ export function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign
   );
 }
 
-export function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
+export function TaskCard({ compact = false, employees, groupName, onAiAssign, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
@@ -704,31 +744,41 @@ export function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssign
             onOpen?.(task);
           }
         }}
-        className="relative z-10 cursor-pointer rounded-3xl border border-[#e6ebf2] bg-white/40 p-4 shadow-sm backdrop-blur-2xl transition duration-200 group-hover:shadow-lg"
+        className={`relative z-10 cursor-pointer rounded-3xl border border-[#e6ebf2] bg-white/40 shadow-sm backdrop-blur-2xl transition duration-200 group-hover:shadow-lg ${
+          compact ? "p-3" : "p-4"
+        }`}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
+            className={`inline-flex items-center gap-1.5 rounded-full font-black tracking-wide ${statusTone.chip} ${
+              compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
+            }`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
             {formatPillLabel(task.status, "Open")}
           </span>
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${priorityTone.chip}`}
+            className={`inline-flex items-center gap-1.5 rounded-full font-black tracking-wide ${priorityTone.chip} ${
+              compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
+            }`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
             {formatPillLabel(task.priority, "Medium")} PRIORITY
           </span>
         </div>
 
-        <h4 className="mt-3 text-base font-black text-[#0D1E4C]">{task.title || "Untitled task"}</h4>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#667085]">
+        <h4 className={`font-black text-[#0D1E4C] ${compact ? "mt-2 text-sm" : "mt-3 text-base"}`}>
+          {task.title || "Untitled task"}
+        </h4>
+        <p className={`line-clamp-2 leading-5 text-[#667085] ${compact ? "mt-0.5 text-[11px]" : "mt-1 text-xs"}`}>
           {task.description || "No description added."}
         </p>
-        <TimelineRail start={task.start_datetime} end={task.end_datetime} />
+        {compact ? null : <TimelineRail start={task.start_datetime} end={task.end_datetime} />}
 
-        <div className="mt-4 space-y-2">
-          {task.assignees?.length ? (
+        <div className={`space-y-2 ${compact ? "mt-3" : "mt-4"}`}>
+          {compact ? (
+            <CompactAssigneeRow assignees={task.assignees} start={task.start_datetime} end={task.end_datetime} />
+          ) : task.assignees?.length ? (
             task.assignees.map((assignee) => (
               <AssigneeProfile key={assignee.user_id} employee={assignee} />
             ))
@@ -741,7 +791,9 @@ export function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssign
                 type="button"
                 onClick={handleApprove}
                 disabled={isDeciding}
-                className="flex h-11 flex-1 items-center justify-center text-[11px] font-black text-emerald-700 transition hover:bg-white/50 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`flex flex-1 items-center justify-center text-[11px] font-black text-emerald-700 transition hover:bg-white/50 disabled:cursor-not-allowed disabled:opacity-60 ${
+                  compact ? "h-9" : "h-11"
+                }`}
               >
                 Approve
               </button>
@@ -750,7 +802,9 @@ export function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssign
                 type="button"
                 onClick={handleReject}
                 disabled={isDeciding}
-                className="flex h-11 flex-1 items-center justify-center text-[11px] font-black text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`flex flex-1 items-center justify-center text-[11px] font-black text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 ${
+                  compact ? "h-9" : "h-11"
+                }`}
               >
                 Reject
               </button>
@@ -762,7 +816,9 @@ export function TaskCard({ employees, groupName, onAiAssign, onApprove, onAssign
                 event.stopPropagation();
                 setIsAssignOpen(true);
               }}
-              className="mt-1 w-full rounded-2xl border border-white/60 bg-slate-200 px-3 py-2.5 text-[11px] font-black text-slate-800 transition hover:scale-[1.05] hover:border-slate-300"
+              className={`mt-1 w-full rounded-2xl border border-white/60 bg-slate-200 text-[11px] font-black text-slate-800 transition hover:scale-[1.05] hover:border-slate-300 ${
+                compact ? "px-3 py-2" : "px-3 py-2.5"
+              }`}
             >
               Assign
             </button>
@@ -1905,7 +1961,17 @@ function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRe
   );
 }
 
+const BOARD_COLUMN_GAP_PX = 16; // matches the board scroll row's gap-4
+
+// Sizes each column to exactly 1/N of the board's visible width (accounting
+// for the gaps between columns), so switching to N columns shows exactly N
+// full columns at rest instead of a partial glimpse of the next one.
+function getColumnWidthStyle(columnLayout) {
+  return { width: `calc((100% - ${(columnLayout - 1) * BOARD_COLUMN_GAP_PX}px) / ${columnLayout})` };
+}
+
 export default function WorkspaceBoard({
+  columnLayout = 4,
   createTaskRequestKey = 0,
   employees = [],
   error = "",
@@ -1981,6 +2047,12 @@ export default function WorkspaceBoard({
     }
   }, [groups.length]);
 
+  // Column widths change with the layout, so a stale scroll offset would
+  // otherwise land mid-column and show a partial sliver at the left edge.
+  useEffect(() => {
+    boardScrollRef.current?.scrollTo({ left: 0 });
+  }, [columnLayout]);
+
   function handleOpenNewTask() {
     setEditingTask({
       task_id: "__new_task__",
@@ -2047,9 +2119,13 @@ export default function WorkspaceBoard({
 
   return (
     <div className="relative h-full min-h-0">
-      <div ref={boardScrollRef} className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2 pr-20">
+      <div ref={boardScrollRef} className="flex h-full min-h-0 gap-4 overflow-x-auto pb-2">
         {columns.map((column) => (
-          <div key={column.id} className="flex w-80 shrink-0 flex-col">
+          <div
+            key={column.id}
+            className="flex shrink-0 flex-col"
+            style={getColumnWidthStyle(columnLayout)}
+          >
             <ColumnHeader
               key={column.name}
               groupId={column.id}
@@ -2072,6 +2148,7 @@ export default function WorkspaceBoard({
               {column.tasks.map((task) => (
                 <TaskCard
                   key={task.task_id}
+                  compact={columnLayout === 5}
                   employees={employees}
                   groupName={column.name}
                   onAiAssign={onTaskAiAssign}
@@ -2093,6 +2170,13 @@ export default function WorkspaceBoard({
             </div>
           </div>
         ))}
+
+        {columns.length > columnLayout ? (
+          // Reserves scroll-end clearance for the floating "add group" button as
+          // its own flex item — CSS padding on the scroll row won't do here,
+          // since overflowing columns render straight through padding space.
+          <div className="w-16 shrink-0" aria-hidden="true" />
+        ) : null}
       </div>
 
       <button
