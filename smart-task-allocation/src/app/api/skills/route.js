@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireManager } from "@/lib/serverAuth";
+import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 // Skills are a global catalog (not organization-scoped), used to populate the
-// required-skills picker on tasks.
+// required-skills picker on tasks as well as the skill list on a user's own
+// profile card, so any authenticated role (not just managers) can read it.
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireManager(request, supabase);
+    const { error: authError } = await getAuthenticatedUser(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
@@ -33,7 +34,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireManager(request, supabase);
+    const { error: authError } = await getAuthenticatedUser(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });

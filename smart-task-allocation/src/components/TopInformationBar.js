@@ -1,11 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
+import ProfileDetailCard from "@/components/ProfileDetailCard";
 import {
   DEMO_ROLES,
   clearDemoSession,
@@ -182,6 +182,7 @@ export default function TopInformationBar({ actor }) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isProfileCardOpen, setIsProfileCardOpen] = useState(false);
   const [isOptimusPanelOpen, setIsOptimusPanelOpen] = useState(false);
   const [optimusSettings, setOptimusSettings] = useState({
     smartTaskCreation: false,
@@ -403,18 +404,6 @@ export default function TopInformationBar({ actor }) {
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
-  }
-
-  function profileHref() {
-    if (actor === "manager") {
-      return "/manager/my-space";
-    }
-
-    if (actor === "employee") {
-      return "/employee/my-space";
-    }
-
-    return "/useradmin/accounts";
   }
 
   function logoHref() {
@@ -657,12 +646,16 @@ export default function TopInformationBar({ actor }) {
 
               <div className="mt-3 grid gap-2">
                 {isDemo ? null : (
-                  <Link
-                    href={profileHref()}
-                    className="rounded-md px-3 py-2 text-sm font-bold text-[#07183b] hover:bg-[#eef6ff]"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileCardOpen(true);
+                      setIsProfileOpen(false);
+                    }}
+                    className="rounded-md px-3 py-2 text-left text-sm font-bold text-[#07183b] hover:bg-[#eef6ff]"
                   >
                     View profile
-                  </Link>
+                  </button>
                 )}
                 <button
                   type="button"
@@ -749,6 +742,8 @@ export default function TopInformationBar({ actor }) {
           </div>
         </div>
       ) : null}
+
+      {isProfileCardOpen ? <ProfileDetailCard onClose={() => setIsProfileCardOpen(false)} /> : null}
     </>
   );
 }
