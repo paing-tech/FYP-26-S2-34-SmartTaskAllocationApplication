@@ -156,7 +156,7 @@ export async function GET(request) {
       supabase.from("org_chart_node").select("user_id, pos_x, pos_y").eq("organization_id", organizationId),
       supabase
         .from("org_chart_connection")
-        .select("connection_id, from_user_id, to_user_id")
+        .select("connection_id, from_user_id, to_user_id, from_handle, to_handle")
         .eq("organization_id", organizationId),
       supabase.from("department").select("department_id, department_name").eq("organization_id", organizationId),
       supabase
@@ -209,7 +209,7 @@ export async function GET(request) {
         const { data: insertedConnections, error: insertConnectionsError } = await supabase
           .from("org_chart_connection")
           .insert(defaultConnections)
-          .select("connection_id, from_user_id, to_user_id");
+          .select("connection_id, from_user_id, to_user_id, from_handle, to_handle");
 
         if (insertConnectionsError) {
           return NextResponse.json({ error: insertConnectionsError.message }, { status: 400 });

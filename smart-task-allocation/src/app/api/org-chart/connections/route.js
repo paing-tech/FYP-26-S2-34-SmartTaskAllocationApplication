@@ -19,7 +19,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "No organization to update." }, { status: 400 });
     }
 
-    const { fromUserId, toUserId } = await request.json();
+    const { fromUserId, toUserId, fromHandle, toHandle } = await request.json();
     if (!fromUserId || !toUserId || fromUserId === toUserId) {
       return NextResponse.json({ error: "A connection needs two different people." }, { status: 400 });
     }
@@ -40,10 +40,16 @@ export async function POST(request) {
     const { data: connection, error: insertError } = await supabase
       .from("org_chart_connection")
       .upsert(
-        { organization_id: account.organization_id, from_user_id: fromUserId, to_user_id: toUserId },
+        {
+          organization_id: account.organization_id,
+          from_user_id: fromUserId,
+          to_user_id: toUserId,
+          from_handle: fromHandle ?? null,
+          to_handle: toHandle ?? null,
+        },
         { onConflict: "organization_id,from_user_id,to_user_id" },
       )
-      .select("connection_id, from_user_id, to_user_id")
+      .select("connection_id, from_user_id, to_user_id, from_handle, to_handle")
       .single();
 
     if (insertError) {

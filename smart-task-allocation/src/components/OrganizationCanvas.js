@@ -84,7 +84,7 @@ function PersonNode({ data }) {
         style={{ top: AVATAR_CENTER_Y, left: AVATAR_SIDE_OFFSET, transform: "translate(-50%, -50%)" }}
       />
 
-      <span className="relative flex h-21 w-21 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-[#6b7280] text-2xl font-black text-white shadow-[0_10px_22px_rgba(15,23,42,0.28)] ring-1 ring-black/10">
+      <span className="relative flex h-21 w-21 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#6b7280] text-2xl font-black text-white shadow-[0_10px_22px_rgba(15,23,42,0.28)]">
         {account.profile_picture_url ? (
           <Image src={account.profile_picture_url} alt="" fill sizes="84px" className="object-cover" />
         ) : (
@@ -553,8 +553,8 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
           id: connection.connection_id,
           source: connection.from_user_id,
           target: connection.to_user_id,
-          sourceHandle: "bottom",
-          targetHandle: "top",
+          sourceHandle: connection.from_handle ?? "bottom",
+          targetHandle: connection.to_handle ?? "top",
           type: "default",
           style: { stroke: "#94A3B8", strokeWidth: 2 },
           markerEnd: { type: MarkerType.ArrowClosed, color: "#94A3B8" },
@@ -710,7 +710,12 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
       const response = await fetch("/api/org-chart/connections", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ fromUserId: params.source, toUserId: params.target }),
+        body: JSON.stringify({
+          fromUserId: params.source,
+          toUserId: params.target,
+          fromHandle: params.sourceHandle,
+          toHandle: params.targetHandle,
+        }),
       });
       const result = await response.json();
       if (!response.ok) {
