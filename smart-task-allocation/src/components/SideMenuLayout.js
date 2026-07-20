@@ -238,7 +238,7 @@ export default function SideMenuLayout({ actor, children }) {
               onClick={() => setIsAutomationChatOpen(true)}
               title="Optimus AI"
               aria-label="Open Optimus AI chat"
-              className="flex h-16 w-16 shrink-0 items-center justify-center self-center rounded-full border border-white/60 bg-gradient-to-br from-[#2563EB] to-transparent text-white shadow-sm backdrop-blur-md transition hover:scale-105"
+              className="flex h-16 w-16 shrink-0 items-center justify-center self-center rounded-full border border-white/60 bg-white/20 text-[#2563EB] shadow-sm backdrop-blur-sm transition hover:scale-105 [&>svg]:h-7 [&>svg]:w-7"
             >
               <NavIcon name="agents" />
             </button>

@@ -100,7 +100,7 @@ async function createAndAllocateTasks(tasks, groupId, message) {
 
 function WelcomeBanner() {
   return (
-    <div className="rounded-[28px] bg-gradient-to-br from-[#2563EB] to-transparent px-6 py-8 text-white backdrop-blur-md">
+    <div className="rounded-[28px] border border-white/25 bg-gradient-to-br from-white/25 to-white/10 px-6 py-8 text-white backdrop-blur-md">
       <div className="flex items-start gap-3">
         <span className="material-symbols-outlined mt-0.5 shrink-0 text-3xl" aria-hidden="true">
           auto_awesome
@@ -268,10 +268,10 @@ export default function AIAutomationChat({ onClose }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-end bg-black/10 p-6" onClick={onClose}>
       <div
-        className="flex h-[75vh] w-full max-w-md flex-col overflow-hidden rounded-[32px] bg-white shadow-[0_28px_80px_rgba(0,0,0,0.35)]"
+        className="flex h-[75vh] w-full max-w-md flex-col overflow-hidden rounded-[32px] bg-gradient-to-b from-[#2563EB] from-0% to-white/10 to-50%  backdrop-blur-xs shadow-[0_28px_80px_rgba(0,0,0,0.35)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-[#0D1E4C] to-[#2563EB] px-5 py-4">
+        <div className="flex items-center justify-between gap-3 border-b border-white/15 bg-transparent px-5 py-4">
           <div className="flex items-center gap-2.5 text-white">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15">
               <AgentIcon className="h-5 w-5" />
@@ -304,7 +304,7 @@ export default function AIAutomationChat({ onClose }) {
           ) : null}
         </div>
 
-        <div className="border-t border-slate-100 p-4">
+        <div className="p-4">
           {attachedFile ? (
             <div className="mb-2 flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-[#0D1E4C]">
               <span className="material-symbols-outlined text-sm" aria-hidden="true">
