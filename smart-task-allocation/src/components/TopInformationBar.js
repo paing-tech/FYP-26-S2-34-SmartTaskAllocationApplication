@@ -186,7 +186,7 @@ export default function TopInformationBar({ actor }) {
   const [optimusSettings, setOptimusSettings] = useState({
     smartTaskCreation: false,
     smartTaskAllocation: false,
-    workflowAutomation: false,
+    promptToAutomation: false,
   });
   const [accountSearchItems, setAccountSearchItems] = useState([]);
   const [isLoadingSearchItems, setIsLoadingSearchItems] = useState(false);
@@ -447,6 +447,18 @@ export default function TopInformationBar({ actor }) {
         }),
       );
     }
+
+    if (key === "promptToAutomation") {
+      window.dispatchEvent(
+        new CustomEvent("optima:optimus-setting-change", {
+          detail: {
+            actor,
+            feature: "prompt_to_automation",
+            enabled: nextValue,
+          },
+        }),
+      );
+    }
   }
 
   function runSearchResult(item) {
@@ -540,9 +552,9 @@ export default function TopInformationBar({ actor }) {
                   onChange={() => toggleOptimusSetting("smartTaskAllocation")}
                 />
                 <OptimusToggle
-                  checked={optimusSettings.workflowAutomation}
-                  label="Workflow Automation"
-                  onChange={() => toggleOptimusSetting("workflowAutomation")}
+                  checked={optimusSettings.promptToAutomation}
+                  label="Prompt to Automation"
+                  onChange={() => toggleOptimusSetting("promptToAutomation")}
                 />
               </div>
             ) : null}

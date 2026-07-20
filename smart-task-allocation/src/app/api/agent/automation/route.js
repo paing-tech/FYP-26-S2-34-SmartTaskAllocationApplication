@@ -2,6 +2,17 @@ import { NextResponse } from "next/server";
 import Papa from "papaparse";
 import { requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { ensureAiRecommendationsGroup } from "@/lib/taskGroups";
+
+async function getManagerOrganizationId(supabase, user) {
+  const { data } = await supabase
+    .from("user_account")
+    .select("organization_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return data?.organization_id ?? null;
+}
 
 const PRIORITIES = new Set(["Low", "Medium", "High", "Urgent"]);
 const MAX_CSV_ROWS = 60;
@@ -94,10 +105,19 @@ function normalizeTasks(raw) {
     .slice(0, MAX_TASKS);
 }
 
+// Resolves the reserved "AI Recommendations" group only when there are tasks
+// to place in it — a pure conversational reply shouldn't create/rename groups.
+async function resolveGroupIdIfNeeded(supabase, user, tasks) {
+  if (!tasks.length) return null;
+  const organizationId = await getManagerOrganizationId(supabase, user);
+  if (!organizationId) return null;
+  return ensureAiRecommendationsGroup(supabase, organizationId);
+}
+
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await requireManager(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -115,7 +135,9 @@ export async function POST(request) {
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(fallbackAutomation(csvPreview, message));
+      const fallback = fallbackAutomation(csvPreview, message);
+      const groupId = await resolveGroupIdIfNeeded(supabase, user, fallback.tasks);
+      return NextResponse.json({ ...fallback, groupId });
     }
 
     const csvSection = csvPreview.rows.length
@@ -162,9 +184,9 @@ Keep "tasks" to at most ${MAX_TASKS} items, and merge similar items into one tas
     const tasks = normalizeTasks(parsed.tasks);
     const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : "Done.";
 
-    return NextResponse.json({ reply, tasks });
+    const groupId = await resolveGroupIdIfNeeded(supabase, user, tasks);
+    return NextResponse.json({ reply, tasks, groupId });
   } catch (error) {
-    const fallback = fallbackAutomation({ headers: [], rows: [] }, "");
-    return NextResponse.json({ ...fallback, warning: error.message });
+    return NextResponse.json({ reply: "I couldn't process that request. Please try again.", tasks: [], groupId: null, warning: error.message });
   }
 }

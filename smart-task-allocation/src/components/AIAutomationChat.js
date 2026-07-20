@@ -3,7 +3,32 @@
 import { useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
-const AUTOMATION_GROUP_NAME = "AI Automation";
+const AI_RECOMMENDATIONS_GROUP_NAME = "AI Recommendations";
+
+// Matches the robot glyph used for the "Agents" nav item (SideMenuLayout.js's
+// NavIcon) so the chat header/floating trigger read as the same feature.
+function AgentIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="8" width="16" height="11" rx="3" />
+      <path d="M12 4v4" />
+      <circle cx="12" cy="3" r="1" />
+      <path d="M9 13h.01" />
+      <path d="M15 13h.01" />
+      <path d="M2 13v2" />
+      <path d="M22 13v2" />
+    </svg>
+  );
+}
 
 async function authHeaders() {
   const supabase = getSupabaseBrowserClient();
@@ -12,26 +37,6 @@ async function authHeaders() {
     "Content-Type": "application/json",
     Authorization: `Bearer ${data.session?.access_token ?? ""}`,
   };
-}
-
-async function getOrCreateAutomationGroup(headers) {
-  const listResponse = await fetch("/api/task-groups", { headers });
-  const listResult = await listResponse.json();
-  if (!listResponse.ok) throw new Error(listResult.error || "Could not read task groups.");
-
-  const existing = (listResult.groups ?? []).find(
-    (group) => group.group_name?.toLowerCase() === AUTOMATION_GROUP_NAME.toLowerCase(),
-  );
-  if (existing) return existing.group_id;
-
-  const createResponse = await fetch("/api/task-groups", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ groupName: AUTOMATION_GROUP_NAME }),
-  });
-  const createResult = await createResponse.json();
-  if (!createResponse.ok) throw new Error(createResult.error || "Could not create the automation group.");
-  return createResult.group.group_id;
 }
 
 async function resolveSkillIds(skillNames, headers) {
@@ -50,9 +55,8 @@ async function resolveSkillIds(skillNames, headers) {
   return ids;
 }
 
-async function createAndAllocateTasks(tasks, message) {
+async function createAndAllocateTasks(tasks, groupId, message) {
   const headers = await authHeaders();
-  const groupId = await getOrCreateAutomationGroup(headers);
   const created = [];
 
   for (const task of tasks) {
@@ -92,6 +96,29 @@ async function createAndAllocateTasks(tasks, message) {
   }
 
   return created;
+}
+
+function WelcomeBanner() {
+  return (
+    <div className="rounded-[28px] bg-gradient-to-br from-[#2563EB] to-transparent px-6 py-8 text-white backdrop-blur-md">
+      <div className="flex items-start gap-3">
+        <span className="material-symbols-outlined mt-0.5 shrink-0 text-3xl" aria-hidden="true">
+          auto_awesome
+        </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-base font-black">Prompt to Automation</p>
+            <span className="rounded-full border border-white/65 bg-white/40 px-2.5 py-1 text-[10px] font-black tracking-wide text-white">
+              New AI feature
+            </span>
+          </div>
+          <p className="mt-3 max-w-xs text-left text-sm font-medium text-white/85">
+            Prompt me to analyze, create, allocate or automate tasks effortlessly.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MessageBubble({ message }) {
@@ -134,13 +161,7 @@ function MessageBubble({ message }) {
 }
 
 export default function AIAutomationChat({ onClose }) {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content:
-        "Hi, I'm Optimus AI. Prompt me to create and auto-allocate tasks — attach an inventory CSV and I'll draft tasks for expired or out-of-stock items.",
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [attachedFile, setAttachedFile] = useState(null);
   const [attachedText, setAttachedText] = useState("");
@@ -180,7 +201,7 @@ export default function AIAutomationChat({ onClose }) {
     setAttachedText("");
   }
 
-  async function handlePromptToAutomation() {
+  async function handleSend() {
     const trimmed = input.trim();
     if (!trimmed && !attachedFile) return;
 
@@ -213,19 +234,19 @@ export default function AIAutomationChat({ onClose }) {
       }
 
       const tasks = Array.isArray(result.tasks) ? result.tasks : [];
+      setMessages((current) => [...current, { role: "assistant", content: result.reply }]);
+
       if (!tasks.length) {
-        setMessages((current) => [...current, { role: "assistant", content: result.reply }]);
         return;
       }
 
-      setMessages((current) => [...current, { role: "assistant", content: result.reply }]);
-      const created = await createAndAllocateTasks(tasks, userMessage.content);
+      const created = result.groupId ? await createAndAllocateTasks(tasks, result.groupId, userMessage.content) : [];
       setMessages((current) => [
         ...current,
         {
           role: "assistant",
           content: created.length
-            ? `Created and auto-allocated ${created.length} task${created.length === 1 ? "" : "s"} in "${AUTOMATION_GROUP_NAME}":`
+            ? `Created and auto-allocated ${created.length} task${created.length === 1 ? "" : "s"} in "${AI_RECOMMENDATIONS_GROUP_NAME}" — pending your approval:`
             : "I drafted tasks but couldn't save them — please try again.",
           createdTasks: created,
         },
@@ -240,7 +261,7 @@ export default function AIAutomationChat({ onClose }) {
   function handleKeyDown(event) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      handlePromptToAutomation();
+      handleSend();
     }
   }
 
@@ -251,19 +272,16 @@ export default function AIAutomationChat({ onClose }) {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-[#0D1E4C] to-[#2563EB] px-5 py-4">
-          <div className="flex items-center gap-2 text-white">
-            <span className="material-symbols-outlined text-2xl" aria-hidden="true">
-              smart_toy
+          <div className="flex items-center gap-2.5 text-white">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15">
+              <AgentIcon className="h-5 w-5" />
             </span>
-            <div>
-              <p className="text-sm font-black">AI Automation</p>
-              <p className="text-xs font-medium text-white/70">Prompt to create &amp; allocate tasks</p>
-            </div>
+            <p className="text-sm font-black">Optimus AI</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close AI Automation chat"
+            aria-label="Close Optimus AI chat"
             className="flex h-9 w-9 items-center justify-center rounded-full text-white/80 transition hover:bg-white/15 hover:text-white"
           >
             <span className="material-symbols-outlined text-xl" aria-hidden="true">
@@ -273,6 +291,7 @@ export default function AIAutomationChat({ onClose }) {
         </div>
 
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          {messages.length === 0 ? <WelcomeBanner /> : null}
           {messages.map((message, index) => (
             <MessageBubble key={index} message={message} />
           ))}
@@ -305,13 +324,13 @@ export default function AIAutomationChat({ onClose }) {
             </div>
           ) : null}
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white pl-1.5 pr-1.5">
             <button
               type="button"
               onClick={handleAttachClick}
               disabled={isSending}
               aria-label="Attach a CSV file"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 text-[#0D1E4C] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-xl" aria-hidden="true">
                 attach_file
@@ -325,20 +344,20 @@ export default function AIAutomationChat({ onClose }) {
               onKeyDown={handleKeyDown}
               disabled={isSending}
               rows={1}
-              placeholder="Ask Optimus AI to create and allocate tasks…"
-              className="min-h-11 flex-1 resize-none rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-[#0D1E4C] outline-none focus:border-[#2563EB]"
+              placeholder="Ask me anything"
+              className="min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-sm font-medium text-[#0D1E4C] outline-none"
             />
 
             <button
               type="button"
-              onClick={handlePromptToAutomation}
+              onClick={handleSend}
               disabled={isSending || (!input.trim() && !attachedFile)}
-              className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-[#0D1E4C] px-4 text-sm font-bold text-white transition hover:bg-[#0a1638] disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Send"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0D1E4C] text-white transition hover:bg-[#0a1638] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-lg" aria-hidden="true">
-                auto_awesome
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                arrow_upward
               </span>
-              Prompt to Automation
             </button>
           </div>
         </div>

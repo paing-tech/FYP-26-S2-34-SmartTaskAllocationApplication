@@ -371,6 +371,7 @@ export default function WorkspaceView() {
       const actionByFeature = {
         smart_task_creation: "set-ai-task-visibility",
         smart_task_allocation: "auto-allocate-tasks",
+        prompt_to_automation: "set-prompt-automation-visibility",
       };
       const action = actionByFeature[detail.feature];
 

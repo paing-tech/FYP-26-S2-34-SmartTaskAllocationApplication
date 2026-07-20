@@ -211,12 +211,16 @@ function buildBoardColumns({ groups, tasks }) {
     group_name: "To-do",
   };
   const baseGroups = groups.length ? groups : [fallbackGroup];
-  const firstGroupId = baseGroups[0]?.group_id;
+  // Orphaned tasks (group deleted, etc.) land in "Untitled" if the org has
+  // one, rather than silently landing in whichever group happens to sort
+  // first (which may be the reserved "AI Recommendations" group).
+  const untitledGroup = baseGroups.find((group) => (group.group_name || "").trim().toLowerCase() === "untitled");
+  const orphanGroupId = untitledGroup?.group_id ?? baseGroups[0]?.group_id;
   const tasksByGroup = new Map(baseGroups.map((group) => [group.group_id, []]));
 
   for (const task of tasks) {
     const matchingGroup = baseGroups.find((group) => sameId(group.group_id, task.group_id));
-    const key = matchingGroup?.group_id ?? firstGroupId;
+    const key = matchingGroup?.group_id ?? orphanGroupId;
     tasksByGroup.get(key)?.push(task);
   }
 
@@ -1193,12 +1197,19 @@ function SelectRow({ icon, isLast = false, label, onChange, options, value }) {
   );
 }
 
-function GroupPicker({ groups, onChange, value }) {
+function GroupPicker({ groups, onChange, value, restrictedGroupId, locked = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedGroup = groups.find((group) => sameId(group.group_id, value));
   const selectedName = selectedGroup?.group_name || "No group";
+  // Manual moves can't target the reserved AI Recommendations group — it's
+  // only ever populated by Optimus AI — unless a task is already sitting
+  // there (so its current value still renders as a valid option).
+  const selectableGroups = groups.filter(
+    (group) => !restrictedGroupId || !sameId(group.group_id, restrictedGroupId) || sameId(group.group_id, value),
+  );
 
   function selectGroup(groupId) {
+    if (locked) return;
     onChange(groupId);
     setIsOpen(false);
   }
@@ -1207,8 +1218,14 @@ function GroupPicker({ groups, onChange, value }) {
     <section className="relative z-20 overflow-hidden rounded-3xl bg-white/60 backdrop-blur-3xl shadow-sm">
       <button
         type="button"
-        onClick={() => setIsOpen((current) => !current)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition hover:bg-white/35"
+        onClick={() => {
+          if (!locked) setIsOpen((current) => !current);
+        }}
+        disabled={locked}
+        title={locked ? "Approve this AI-generated task before moving it to a different group." : undefined}
+        className={`flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition ${
+          locked ? "cursor-not-allowed opacity-60" : "hover:bg-white/35"
+        }`}
         aria-expanded={isOpen}
       >
         <span className="material-symbols-outlined text-xl text-[#94a3b8]" aria-hidden="true">
@@ -1218,19 +1235,19 @@ function GroupPicker({ groups, onChange, value }) {
         <span className="inline-flex min-w-0 max-w-40 shrink-0 items-center justify-end gap-1 text-right text-sm font-black text-[#52627a]">
           <span className="truncate">{selectedName}</span>
           <span
-            className={`material-symbols-outlined text-xl transition-transform ${isOpen ? "rotate-180" : ""}`}
+            className={`material-symbols-outlined text-xl ${locked ? "" : `transition-transform ${isOpen ? "rotate-180" : ""}`}`}
             aria-hidden="true"
           >
-            arrow_drop_down
+            {locked ? "lock" : "arrow_drop_down"}
           </span>
         </span>
       </button>
 
-      {isOpen ? (
+      {isOpen && !locked ? (
         <>
           <div className="mx-4 border-t border-[#e6ebf2]" />
           <div className="space-y-1 px-3 py-2">
-            {groups.map((group) => {
+            {selectableGroups.map((group) => {
               const isSelected = sameId(group.group_id, value);
 
               return (
@@ -1289,6 +1306,10 @@ export function TaskEditPanel({
     endTimeEnabled: Boolean(endParts.time),
     endTime: endParts.time,
   }));
+  const isPendingApproval = task?.source === "optimus_ai" && task?.ai_state !== "accepted";
+  const aiRecommendationsGroupId = groups.find(
+    (group) => (group.group_name || "").trim().toLowerCase() === "ai recommendations",
+  )?.group_id;
   const [isSaving, setIsSaving] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1607,6 +1628,8 @@ export function TaskEditPanel({
             groups={groups}
             value={form.groupId}
             onChange={(value) => updateField("groupId", value)}
+            restrictedGroupId={aiRecommendationsGroupId}
+            locked={isPendingApproval}
           />
 
           <section className="relative z-0 overflow-hidden rounded-3xl bg-white/70 shadow-sm">

@@ -178,7 +178,7 @@ export default function SideMenuLayout({ actor, children }) {
     <main className="h-screen overflow-hidden text-[#07183b]" style={backgroundStyle}>
       <TopInformationBar actor={actor} />
       <div className="flex h-[calc(100vh-3.5rem)] w-full gap-2 overflow-hidden pt-6 pl-1 pb-6 pr-2 sm:pl-2 sm:pr-2 lg:pl-2 lg:pr-2">
-        <div className="hidden w-16 shrink-0 flex-col z-50 justify-between md:flex">
+        <div className="z-50 hidden w-16 shrink-0 flex-col gap-2 md:flex">
           <aside className="group flex w-16 flex-col items-center rounded-[34px] bg-white/20 border border-white/60 py-6 backdrop-blur-sm shadow-sm transition-all duration-300 hover:w-56">
             <div className="flex w-full flex-col items-center gap-8">
 
@@ -228,27 +228,21 @@ export default function SideMenuLayout({ actor, children }) {
                     Appearance
                   </span>
                 </Link>
-
-                {actor === "manager" ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsAutomationChatOpen(true)}
-                    title="AI Automation"
-                    aria-label="Open AI Automation chat"
-                    className="flex h-12 w-full items-center gap-3 rounded-full bg-gradient-to-r from-[#0D1E4C] to-[#2563EB] px-3 text-white shadow-[0_10px_24px_rgba(37,99,235,0.35)] transition hover:brightness-110"
-                  >
-                    <span className="material-symbols-outlined shrink-0 text-[22px]" aria-hidden="true">
-                      smart_toy
-                    </span>
-
-                    <span className="hidden whitespace-nowrap text-sm font-bold group-hover:block">
-                      AI Automation
-                    </span>
-                  </button>
-                ) : null}
               </nav>
             </div>
           </aside>
+
+          {actor === "manager" ? (
+            <button
+              type="button"
+              onClick={() => setIsAutomationChatOpen(true)}
+              title="Optimus AI"
+              aria-label="Open Optimus AI chat"
+              className="flex h-16 w-16 shrink-0 items-center justify-center self-center rounded-full border border-white/60 bg-gradient-to-br from-[#2563EB] to-transparent text-white shadow-sm backdrop-blur-md transition hover:scale-105"
+            >
+              <NavIcon name="agents" />
+            </button>
+          ) : null}
         </div>
 
         <div className="min-h-0 min-w-0 flex-1">

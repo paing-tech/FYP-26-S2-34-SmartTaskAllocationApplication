@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser, requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { AI_RECOMMENDATIONS_GROUP_NAME, ensureAiRecommendationsGroup, ensureUntitledGroup } from "@/lib/taskGroups";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -90,47 +91,6 @@ async function syncTaskSkills(supabase, taskId, skillIds) {
   if (insertError) {
     throw new Error(insertError.message);
   }
-}
-
-async function ensureNewTaskGroup(supabase, organizationId) {
-  const { data: existingGroups, error: groupError } = await supabase
-    .from("task_group")
-    .select("group_id, group_name, sort_order")
-    .eq("organization_id", organizationId)
-    .order("sort_order", { ascending: true });
-
-  if (groupError) {
-    throw new Error(groupError.message);
-  }
-
-  const existingNewGroup = (existingGroups ?? []).find(
-    (group) => cleanString(group.group_name).toLowerCase() === "new",
-  );
-
-  if (existingNewGroup) {
-    return existingNewGroup.group_id;
-  }
-
-  const lastSortOrder = (existingGroups ?? []).reduce((maxOrder, group) => {
-    const sortOrder = Number(group.sort_order);
-    return Number.isFinite(sortOrder) ? Math.max(maxOrder, sortOrder) : maxOrder;
-  }, -1);
-
-  const { data: createdGroup, error: createGroupError } = await supabase
-    .from("task_group")
-    .insert({
-      organization_id: organizationId,
-      group_name: "New",
-      sort_order: lastSortOrder + 1,
-    })
-    .select("group_id")
-    .single();
-
-  if (createGroupError) {
-    throw new Error(createGroupError.message);
-  }
-
-  return createdGroup.group_id;
 }
 
 // Most-recently-assigned distinct task titles for the organization, newest first.
@@ -246,7 +206,7 @@ async function getInferredSkillIdsByTitle(supabase, organizationId, titles) {
 }
 
 async function createInitialOptimusTasks(supabase, { organizationId, userId }) {
-  const groupId = await ensureNewTaskGroup(supabase, organizationId);
+  const groupId = await ensureAiRecommendationsGroup(supabase, organizationId);
   const { data: organization } = await supabase
     .from("organization")
     .select("organization_name")
@@ -334,6 +294,155 @@ async function createInitialOptimusTasks(supabase, { organizationId, userId }) {
     if (skillIds?.length) {
       await syncTaskSkills(supabase, createdTasks[index].task_id, skillIds);
     }
+  }
+}
+
+// A small set of common "what naturally happens next" patterns, used when
+// OpenAI is unavailable — same fallback spirit as the other src/app/api/agent
+// routes. Matched as a case-insensitive substring against the completed
+// task's title.
+const COMPLETION_FOLLOWUP_PATTERNS = [
+  { match: /pack(ed|ing)?\b/i, title: "Book delivery service", description: "Arrange delivery/courier pickup for the packed order." },
+  { match: /\border(s|ed)?\b/i, title: "Confirm order fulfillment", description: "Confirm the order was fulfilled and notify the customer." },
+  { match: /\bship(ped|ping)?\b/i, title: "Confirm delivery tracking", description: "Share tracking details and confirm delivery status." },
+  { match: /\bdeploy(ed|ment)?\b/i, title: "Notify stakeholders of deployment", description: "Let stakeholders know the deployment is live and monitor for issues." },
+  { match: /\b(hire|onboard(ed|ing)?)\b/i, title: "Schedule 30-day check-in", description: "Schedule a check-in with the new hire after their first month." },
+];
+
+function fallbackCompletionFollowUp(completedTitle) {
+  const match = COMPLETION_FOLLOWUP_PATTERNS.find((pattern) => pattern.match.test(completedTitle));
+  if (!match) return null;
+  return { title: match.title, description: match.description, priority: "Medium", requiredSkillNames: [] };
+}
+
+// Resolves skill names (from AI output) to skill_ids, creating any that don't
+// already exist in the shared skill catalog — same get-or-create pattern used
+// by /api/skills and /api/my-profile.
+async function resolveSkillIdsByName(supabase, names) {
+  const ids = [];
+  for (const name of names ?? []) {
+    const trimmed = cleanString(name);
+    if (!trimmed) continue;
+
+    const { data: existingSkill } = await supabase
+      .from("skill")
+      .select("skill_id")
+      .ilike("skill_name", trimmed)
+      .maybeSingle();
+
+    if (existingSkill?.skill_id) {
+      ids.push(existingSkill.skill_id);
+      continue;
+    }
+
+    const { data: createdSkill } = await supabase
+      .from("skill")
+      .insert({ skill_name: trimmed })
+      .select("skill_id")
+      .single();
+
+    if (createdSkill?.skill_id) {
+      ids.push(createdSkill.skill_id);
+    }
+  }
+  return ids;
+}
+
+// Smart Task Creation's completion hook: when a task is marked Completed,
+// suggest one natural follow-up task (e.g. "Pack orders" -> "Book delivery
+// service"), landing it in AI Recommendations pending manager approval just
+// like every other Optimus AI task.
+async function generateCompletionFollowUpTask(supabase, { organizationId, userId, completedTitle }) {
+  if (!organizationId) return;
+
+  let followUp = null;
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (apiKey) {
+    try {
+      const prompt = `A manager just marked the task "${completedTitle}" as Completed in a task-allocation app.
+If there is an obvious, common-sense next step that should happen after this specific task (for example: "Pack orders" -> "Book delivery service", "Deploy to production" -> "Notify stakeholders", "Onboard new hire" -> "Schedule 30-day check-in"), propose exactly one short follow-up task.
+If there's no obvious follow-up, return an empty tasks array — do not force one.
+Return ONLY JSON of the form:
+{"tasks":[{"title":"<short actionable title>","description":"<one sentence>","priority":"Low"|"Medium"|"High"|"Urgent","requiredSkillNames":["<skill>","..."]}]}`;
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" },
+          temperature: 0.4,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "OpenAI request failed.");
+
+      const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
+      const candidate = Array.isArray(parsed.tasks) ? parsed.tasks[0] : null;
+
+      if (candidate?.title) {
+        followUp = {
+          title: cleanString(candidate.title),
+          description: cleanString(candidate.description),
+          priority: ["Low", "Medium", "High", "Urgent"].includes(candidate.priority) ? candidate.priority : "Medium",
+          requiredSkillNames: Array.isArray(candidate.requiredSkillNames)
+            ? candidate.requiredSkillNames.map((name) => cleanString(name)).filter(Boolean).slice(0, 5)
+            : [],
+        };
+      }
+    } catch {
+      followUp = fallbackCompletionFollowUp(completedTitle);
+    }
+  } else {
+    followUp = fallbackCompletionFollowUp(completedTitle);
+  }
+
+  if (!followUp?.title) return;
+
+  const groupId = await ensureAiRecommendationsGroup(supabase, organizationId);
+  const requiredSkillIds = await resolveSkillIdsByName(supabase, followUp.requiredSkillNames);
+
+  const { data: lastTask } = await supabase
+    .from("task")
+    .select("sort_order")
+    .eq("organization_id", organizationId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextSortOrder = Number.isFinite(Number(lastTask?.sort_order)) ? Number(lastTask.sort_order) + 1 : 0;
+
+  const { data: createdTask, error: createError } = await supabase
+    .from("task")
+    .insert({
+      organization_id: organizationId,
+      group_id: groupId,
+      title: followUp.title,
+      description: followUp.description || null,
+      owner_id: userId,
+      status: "Open",
+      priority: followUp.priority,
+      source: "optimus_ai",
+      ai_state: "active",
+      reasons: {
+        creation: [`"${completedTitle}" was completed — suggested a natural follow-up`],
+        creationKind: "completion_followup",
+      },
+      sort_order: nextSortOrder,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select("task_id")
+    .single();
+
+  if (createError) {
+    throw new Error(createError.message);
+  }
+
+  if (requiredSkillIds.length) {
+    await syncTaskSkills(supabase, createdTask.task_id, requiredSkillIds);
   }
 }
 
@@ -935,6 +1044,10 @@ export async function POST(request) {
       return NextResponse.json({ error: "Organization ID is required." }, { status: 400 });
     }
 
+    // Tasks created without a group land in the reserved "Untitled" group
+    // (rendered as the board's last column) instead of a silent null group_id.
+    const resolvedGroupId = groupId || (await ensureUntitledGroup(supabase, organizationId));
+
     const { data: lastTask } = await supabase
       .from("task")
       .select("sort_order")
@@ -950,7 +1063,7 @@ export async function POST(request) {
       .from("task")
       .insert({
         organization_id: organizationId,
-        group_id: groupId ?? null,
+        group_id: resolvedGroupId,
         title: cleanString(title),
         description: cleanString(description) || null,
         owner_id: user.id,
@@ -1065,6 +1178,34 @@ export async function PATCH(request) {
         })
         .eq("organization_id", organizationId)
         .eq("source", "optimus_ai")
+        .in("ai_state", isEnabled ? ["hidden"] : ["active"]);
+
+      if (visibilityError) {
+        return NextResponse.json({ error: visibilityError.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Same show/hide mechanic as "set-ai-task-visibility", but scoped only to
+    // tasks created from the Optimus AI chat ("Prompt to Automation"), not
+    // the recurring allocation-history follow-ups that toggle covers.
+    if (action === "set-prompt-automation-visibility") {
+      const isEnabled = Boolean(body.enabled);
+      const organizationId = await getManagerOrganizationId(supabase, user);
+      if (!organizationId) {
+        return NextResponse.json({ error: "Organization ID is required." }, { status: 400 });
+      }
+
+      const { error: visibilityError } = await supabase
+        .from("task")
+        .update({
+          ai_state: isEnabled ? "active" : "hidden",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("organization_id", organizationId)
+        .eq("source", "optimus_ai")
+        .eq("reasons->>creationKind", "chat_automation")
         .in("ai_state", isEnabled ? ["hidden"] : ["active"]);
 
       if (visibilityError) {
@@ -1362,6 +1503,45 @@ export async function PATCH(request) {
       return NextResponse.json({ success: true });
     }
 
+    // Fetched up front (rather than after building taskUpdates) so a
+    // requested group change can be validated against the task's current
+    // group/approval state before it's applied.
+    const { data: existingTask } = await supabase
+      .from("task")
+      .select("assigned_to, source, ai_state, group_id, title, status")
+      .eq("task_id", taskId)
+      .maybeSingle();
+
+    const isChangingGroup = groupId !== undefined && String(groupId ?? "") !== String(existingTask?.group_id ?? "");
+
+    if (isChangingGroup) {
+      const isPendingAiTask =
+        existingTask?.source === "optimus_ai" &&
+        !["accepted", "dismissed"].includes(String(existingTask?.ai_state || "").toLowerCase());
+
+      if (isPendingAiTask) {
+        return NextResponse.json(
+          { error: "Approve this AI-generated task before moving it to a different group." },
+          { status: 400 },
+        );
+      }
+
+      if (groupId) {
+        const { data: targetGroup } = await supabase
+          .from("task_group")
+          .select("group_name")
+          .eq("group_id", groupId)
+          .maybeSingle();
+
+        if (cleanString(targetGroup?.group_name).toLowerCase() === AI_RECOMMENDATIONS_GROUP_NAME.toLowerCase()) {
+          return NextResponse.json(
+            { error: "Tasks can only be placed in AI Recommendations by Optimus AI." },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     const taskUpdates = {
       title: cleanString(title),
       description: cleanString(description) || null,
@@ -1379,16 +1559,11 @@ export async function PATCH(request) {
       taskUpdates.assigned_to = assignedTo || null;
     }
     // Only change the group when explicitly provided (move between groups).
+    // Clearing it back to "no group" lands the task in "Untitled" rather than
+    // a bare null group_id.
     if (groupId !== undefined) {
-      taskUpdates.group_id = groupId;
+      taskUpdates.group_id = groupId || (await ensureUntitledGroup(supabase, await getManagerOrganizationId(supabase, user)));
     }
-
-    // Detect a real assignment change so we can log it in the allocation history.
-    const { data: existingTask } = await supabase
-      .from("task")
-      .select("assigned_to, source, ai_state")
-      .eq("task_id", taskId)
-      .maybeSingle();
 
     if (aiState !== undefined) {
       taskUpdates.ai_state = aiState;
@@ -1412,6 +1587,17 @@ export async function PATCH(request) {
     if (assignedTo && assignedTo !== existingTask?.assigned_to) {
       const actor = assignedBy || (await getActorName(supabase, user));
       await recordAssignment(supabase, { taskId, userId: assignedTo, assignedBy: actor });
+    }
+
+    const isCompletingNow = existingTask?.status !== "Completed" && cleanString(status) === "Completed";
+    if (isCompletingNow && existingTask?.title) {
+      // Best-effort — a follow-up suggestion is a nice-to-have, never worth
+      // failing the "mark complete" action over.
+      await generateCompletionFollowUpTask(supabase, {
+        organizationId: await getManagerOrganizationId(supabase, user),
+        userId: user.id,
+        completedTitle: existingTask.title,
+      }).catch(() => {});
     }
 
     return NextResponse.json({ success: true });
