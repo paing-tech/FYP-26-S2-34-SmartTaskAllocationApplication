@@ -64,7 +64,7 @@ function InfoRow({ icon, placeholder, value, isEditMode, onChange, type = "text"
           />
         )
       ) : (
-        <span className="min-w-0 flex-1 truncate text-base font-bold text-[#061a40]">
+        <span className="min-w-0 flex-1 truncate text-base font-medium text-[#061a40]">
           {value ? (displayValue ?? value) : <span className="text-[#94a3b8]">{placeholder}</span>}
         </span>
       )}
@@ -72,8 +72,24 @@ function InfoRow({ icon, placeholder, value, isEditMode, onChange, type = "text"
   );
 }
 
+const EMPTY_PROFILE = {
+  username: "",
+  email: "",
+  full_name: "",
+  job_title: "",
+  phone_number: "",
+  address: "",
+  date_of_birth: "",
+  gender: "",
+  profile_picture_url: "",
+  role_name: "",
+  department_name: "",
+  skills: [],
+  qualifications: [],
+};
+
 export default function ProfileDetailCard({ onClose }) {
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -144,13 +160,6 @@ export default function ProfileDetailCard({ onClose }) {
     setQualificationDraft([...profile.qualifications]);
     setQualificationInput("");
     setIsEditMode(true);
-  }
-
-  function cancelEditMode() {
-    setIsEditMode(false);
-    setDraft(null);
-    setSkillInput("");
-    setQualificationInput("");
   }
 
   function updateDraftField(field, value) {
@@ -254,67 +263,56 @@ export default function ProfileDetailCard({ onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4">
       <div className="relative w-full max-w-sm max-h-[90vh] overflow-hidden rounded-[40px] shadow-2xl">
-        {isLoading || loadError ? (
+        {loadError ? (
           <div className="bg-white p-6">
-            {isLoading ? (
-              <p className="py-10 text-center text-sm font-semibold text-[#52627a]">Loading profile...</p>
-            ) : (
-              <div className="py-6 text-center">
-                <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-                  {loadError}
-                </p>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="mt-4 rounded-full bg-black/10 px-5 py-2 text-sm font-bold text-black hover:bg-black/15"
-                >
-                  Close
-                </button>
-              </div>
-            )}
+            <div className="py-6 text-center">
+              <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {loadError}
+              </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-4 rounded-full bg-black/10 px-5 py-2 text-sm font-bold text-black hover:bg-black/15"
+              >
+                Close
+              </button>
+            </div>
           </div>
         ) : (
           <>
             <div
-              className="pointer-events-none absolute inset-0 z-0"
+              className="pointer-events-none absolute inset-0 z-0 rounded-[40px] border border-white/65 backdrop-blur-xs"
               style={{
-                background: "linear-gradient(to bottom, #ffffff 0px, #ffffff 210px, rgba(255,255,255,0) 380px)",
+                background: "linear-gradient(to bottom, #ffffff 0px, #ffffff 240px, rgba(255,255,255,0) 440px)",
               }}
             />
 
             <button
               type="button"
               onClick={onClose}
-              className="absolute left-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-bold text-[#667085] shadow-sm hover:bg-black/5"
+              className="absolute left-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-120 hover:bg-white/70"
               aria-label="Close profile"
             >
-              x
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
             </button>
 
-            <div className="absolute right-4 top-4 z-20 flex items-center gap-1">
-              {isEditMode ? (
-                <button
-                  type="button"
-                  onClick={cancelEditMode}
-                  className="rounded-full px-3 py-1 text-xs font-bold text-[#667085] hover:bg-black/5"
-                >
-                  Cancel
-                </button>
-              ) : null}
+            <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
               <button
                 type="button"
-                disabled={isSaving}
+                disabled={isSaving || isLoading}
                 onClick={isEditMode ? saveAndExitEditMode : enterEditMode}
-                className="rounded-full p-1.5 text-[#667085] hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-120 hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
                 aria-label={isEditMode ? "Save profile" : "Edit profile"}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">
                   {isEditMode ? "edit_off" : "edit"}
                 </span>
               </button>
             </div>
 
-            <div className="relative z-10 max-h-[90vh] overflow-y-auto">
+            <div className="relative z-10 max-h-[90vh] overflow-y-auto rounded-[40px]">
               <div className="flex flex-col items-center px-6 pb-2 pt-10">
                 <button
                   type="button"
@@ -391,7 +389,7 @@ export default function ProfileDetailCard({ onClose }) {
                 </p>
               ) : null}
 
-              <div className="mt-6 space-y-4 pl-10 pr-6">
+              <div className="mt-6 space-y-4 pl-12 pr-6">
                 <InfoRow
                   icon="alternate_email"
                   placeholder="Username"
@@ -416,13 +414,6 @@ export default function ProfileDetailCard({ onClose }) {
                   onChange={(value) => updateDraftField("phone_number", value)}
                 />
                 <InfoRow
-                  icon="home_pin"
-                  placeholder="Address"
-                  value={isEditMode ? draft.address : profile.address}
-                  isEditMode={isEditMode}
-                  onChange={(value) => updateDraftField("address", value)}
-                />
-                <InfoRow
                   icon="cake"
                   placeholder="Date of birth"
                   type="date"
@@ -439,6 +430,13 @@ export default function ProfileDetailCard({ onClose }) {
                   value={isEditMode ? draft.gender : profile.gender}
                   isEditMode={isEditMode}
                   onChange={(value) => updateDraftField("gender", value)}
+                />
+                <InfoRow
+                  icon="home_pin"
+                  placeholder="Address"
+                  value={isEditMode ? draft.address : profile.address}
+                  isEditMode={isEditMode}
+                  onChange={(value) => updateDraftField("address", value)}
                 />
               </div>
 
