@@ -6,6 +6,9 @@ import { getAccountsWithProfiles, getUserAccount } from "@/app/api/my-organizati
 const NODE_SPACING_X = 200;
 const TIER_SPACING_Y = 240;
 const CLUSTER_GAP_X = 80;
+const DEPARTMENT_DEFAULT_WIDTH = 420;
+const DEPARTMENT_DEFAULT_HEIGHT = 320;
+const DEPARTMENT_DEFAULT_GAP = 60;
 
 function roleTier(roleName) {
   const normalized = (roleName ?? "").trim().toLowerCase();
@@ -144,20 +147,35 @@ export async function GET(request) {
       return NextResponse.json({ error: accountsError.message }, { status: 400 });
     }
 
-    const [{ data: existingNodes, error: nodesError }, { data: existingConnections, error: connectionsError }] =
-      await Promise.all([
-        supabase.from("org_chart_node").select("user_id, pos_x, pos_y").eq("organization_id", organizationId),
-        supabase
-          .from("org_chart_connection")
-          .select("connection_id, from_user_id, to_user_id")
-          .eq("organization_id", organizationId),
-      ]);
+    const [
+      { data: existingNodes, error: nodesError },
+      { data: existingConnections, error: connectionsError },
+      { data: departmentRows, error: departmentsError },
+      { data: existingBoundaries, error: boundariesError },
+    ] = await Promise.all([
+      supabase.from("org_chart_node").select("user_id, pos_x, pos_y").eq("organization_id", organizationId),
+      supabase
+        .from("org_chart_connection")
+        .select("connection_id, from_user_id, to_user_id")
+        .eq("organization_id", organizationId),
+      supabase.from("department").select("department_id, department_name").eq("organization_id", organizationId),
+      supabase
+        .from("org_chart_department")
+        .select("department_id, pos_x, pos_y, width, height")
+        .eq("organization_id", organizationId),
+    ]);
 
     if (nodesError) {
       return NextResponse.json({ error: nodesError.message }, { status: 400 });
     }
     if (connectionsError) {
       return NextResponse.json({ error: connectionsError.message }, { status: 400 });
+    }
+    if (departmentsError) {
+      return NextResponse.json({ error: departmentsError.message }, { status: 400 });
+    }
+    if (boundariesError) {
+      return NextResponse.json({ error: boundariesError.message }, { status: 400 });
     }
 
     const nodesByUserId = new Map((existingNodes ?? []).map((node) => [node.user_id, node]));
@@ -201,6 +219,35 @@ export async function GET(request) {
       }
     }
 
+    const boundariesByDepartmentId = new Map(
+      (existingBoundaries ?? []).map((boundary) => [boundary.department_id, boundary]),
+    );
+    const missingBoundaryDepartments = (departmentRows ?? []).filter(
+      (department) => !boundariesByDepartmentId.has(department.department_id),
+    );
+
+    if (missingBoundaryDepartments.length) {
+      const rowsToInsert = missingBoundaryDepartments.map((department, index) => ({
+        department_id: department.department_id,
+        organization_id: organizationId,
+        pos_x: index * (DEPARTMENT_DEFAULT_WIDTH + DEPARTMENT_DEFAULT_GAP),
+        pos_y: 0,
+        width: DEPARTMENT_DEFAULT_WIDTH,
+        height: DEPARTMENT_DEFAULT_HEIGHT,
+      }));
+
+      const { data: insertedBoundaries, error: insertBoundaryError } = await supabase
+        .from("org_chart_department")
+        .insert(rowsToInsert)
+        .select("department_id, pos_x, pos_y, width, height");
+
+      if (insertBoundaryError) {
+        return NextResponse.json({ error: insertBoundaryError.message }, { status: 400 });
+      }
+
+      (insertedBoundaries ?? []).forEach((boundary) => boundariesByDepartmentId.set(boundary.department_id, boundary));
+    }
+
     return NextResponse.json({
       accounts,
       nodes: accounts.map((account) => ({
@@ -208,6 +255,16 @@ export async function GET(request) {
         ...(nodesByUserId.get(account.user_id) ?? { pos_x: 0, pos_y: 0 }),
       })),
       connections,
+      departments: (departmentRows ?? []).map((department) => ({
+        department_id: department.department_id,
+        department_name: department.department_name,
+        ...(boundariesByDepartmentId.get(department.department_id) ?? {
+          pos_x: 0,
+          pos_y: 0,
+          width: DEPARTMENT_DEFAULT_WIDTH,
+          height: DEPARTMENT_DEFAULT_HEIGHT,
+        }),
+      })),
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

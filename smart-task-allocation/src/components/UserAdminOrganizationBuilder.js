@@ -11,7 +11,6 @@ const emptyForm = {
   organizationEmail: "",
   organizationType: "",
   logoUrl: "",
-  departments: [{ id: null, name: "" }],
 };
 
 function initialFromName(name) {
@@ -50,7 +49,6 @@ function AccountAvatar({ account, size = "h-10 w-10", textSize = "text-sm" }) {
 
 export default function UserAdminOrganizationBuilder() {
   const [organization, setOrganization] = useState(null);
-  const [departments, setDepartments] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [isSetupOpen, setIsSetupOpen] = useState(false);
@@ -69,7 +67,6 @@ export default function UserAdminOrganizationBuilder() {
 
   function applyPayload(payload) {
     setOrganization(payload.organization ?? null);
-    setDepartments(payload.departments ?? []);
   }
 
   async function loadOrganization() {
@@ -104,50 +101,36 @@ export default function UserAdminOrganizationBuilder() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function updateDepartment(index, value) {
-    setForm((current) => ({
-      ...current,
-      departments: current.departments.map((department, departmentIndex) =>
-        departmentIndex === index ? { ...department, name: value } : department
-      ),
-    }));
-  }
+  async function updateOrganizationField(patch) {
+    if (!organization) return;
 
-  function addDepartmentField() {
-    setForm((current) => ({
-      ...current,
-      departments: [...current.departments, { id: null, name: "" }],
-    }));
-  }
+    setError("");
 
-  function openOrganizationEditor() {
-    setForm({
-      organizationName: organization?.organization_name ?? "",
-      organizationCode: organization?.organization_code ?? "",
-      organizationEmail: organization?.organization_email ?? "",
-      organizationType: organization?.organization_type ?? "",
-      logoUrl: organization?.logo_url ?? "",
-      departments: departments.length
-        ? [
-            ...departments.map((department) => ({
-              id: department.department_id,
-              name: department.department_name,
-            })),
-            { id: null, name: "" },
-          ]
-        : [{ id: null, name: "" }],
-    });
-    setIsSetupOpen(true);
-  }
+    try {
+      const response = await fetch("/api/my-organization", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
+        body: JSON.stringify({
+          organizationName: patch.organization_name ?? organization.organization_name,
+          organizationCode: patch.organization_code ?? organization.organization_code,
+          organizationEmail: patch.organization_email ?? organization.organization_email,
+          organizationType: patch.organization_type ?? organization.organization_type,
+          logoUrl: patch.logo_url ?? organization.logo_url,
+        }),
+      });
+      const result = await response.json();
 
-  function removeDepartmentField(index) {
-    setForm((current) => ({
-      ...current,
-      departments:
-        current.departments.length === 1
-          ? [{ id: null, name: "" }]
-          : current.departments.filter((_, departmentIndex) => departmentIndex !== index),
-    }));
+      if (!response.ok) {
+        throw new Error(result.error || "Could not update organization.");
+      }
+
+      applyPayload(result);
+    } catch (updateError) {
+      setError(updateError.message);
+    }
   }
 
   async function submitOrganization(event) {
@@ -193,24 +176,12 @@ export default function UserAdminOrganizationBuilder() {
           Loading organization...
         </div>
       ) : organization ? (
-        <div className="flex min-h-0 flex-1 flex-col px-6 py-6">
-          <div className="shrink-0 text-center">
-            <button
-              type="button"
-              onClick={openOrganizationEditor}
-              className="inline-flex items-center gap-2 rounded-md px-2 text-4xl font-semibold text-black transition hover:bg-[#e8f3ff]"
-            >
-              {organization.organization_name}
-              <span className="text-2xl text-[#667085]">⌄</span>
-            </button>
-            <p className="mt-2 text-sm text-[#667085]">
-              Drag people to reposition them, drag from a dot to connect two people freely.
-            </p>
-          </div>
-
-          <div className="mt-6 min-h-0 flex-1">
-            <OrganizationCanvas onAccountClick={setSelectedAccount} />
-          </div>
+        <div className="min-h-0 flex-1 px-2 py-2">
+          <OrganizationCanvas
+            organization={organization}
+            onAccountClick={setSelectedAccount}
+            onUpdateOrganization={updateOrganizationField}
+          />
         </div>
       ) : (
         <div className="flex h-full min-h-[520px] items-center justify-center rounded-[32px] bg-[#fffafa]">
@@ -232,11 +203,8 @@ export default function UserAdminOrganizationBuilder() {
           form={form}
           isEditing={Boolean(organization)}
           isSubmitting={isSubmitting}
-          onAddDepartment={addDepartmentField}
           onClose={() => setIsSetupOpen(false)}
-          onRemoveDepartment={removeDepartmentField}
           onSubmit={submitOrganization}
-          onUpdateDepartment={updateDepartment}
           onUpdateForm={updateForm}
         />
       ) : null}
@@ -255,11 +223,8 @@ function OrganizationSetupModal({
   form,
   isEditing,
   isSubmitting,
-  onAddDepartment,
   onClose,
-  onRemoveDepartment,
   onSubmit,
-  onUpdateDepartment,
   onUpdateForm,
 }) {
   return (
@@ -310,52 +275,21 @@ function OrganizationSetupModal({
           className={`mt-3 w-full ${fieldClass()}`}
         />
 
-        <div className="mt-3 space-y-2">
-          {form.departments.map((department, index) => (
-            <div key={`department-${index}`} className="flex gap-2">
-              <input
-                value={department.name}
-                onChange={(event) => onUpdateDepartment(index, event.target.value)}
-                placeholder="Department optional"
-                className={`min-w-0 flex-1 ${fieldClass()}`}
-              />
-              <button
-                type="button"
-                onClick={() => onRemoveDepartment(index)}
-                className="h-10 w-10 rounded-full bg-white text-lg font-bold text-[#061a40] hover:bg-[#eef6ff]"
-                aria-label="Remove department"
-              >
-                -
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
-            onClick={onAddDepartment}
-            className="h-10 rounded-full bg-white px-4 text-xl font-bold text-[#061a40] hover:bg-[#eef6ff]"
-            aria-label="Add department"
+            onClick={onClose}
+            className="h-10 rounded-full bg-white/60 px-5 text-sm font-bold text-[#061a40] hover:bg-white"
           >
-            +
+            Cancel
           </button>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-10 rounded-full bg-white/60 px-5 text-sm font-bold text-[#061a40] hover:bg-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="h-10 rounded-full bg-[#2563EB] px-5 text-sm font-bold text-white hover:bg-[#1E40AF] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSubmitting ? "Saving..." : isEditing ? "Update" : "Create"}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="h-10 rounded-full bg-[#2563EB] px-5 text-sm font-bold text-white hover:bg-[#1E40AF] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmitting ? "Saving..." : isEditing ? "Update" : "Create"}
+          </button>
         </div>
       </form>
     </div>

@@ -6,88 +6,6 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-// Accept departments as {id, name} objects (new format) or plain name strings
-// (legacy). Returns normalized {id, name} entries with a non-empty name.
-function normalizeDepartments(departments) {
-  return (Array.isArray(departments) ? departments : [])
-    .map((department) =>
-      typeof department === "string"
-        ? { id: null, name: cleanString(department) }
-        : { id: department?.id ?? null, name: cleanString(department?.name) },
-    )
-    .filter((department) => department.name);
-}
-
-// Sync an organization's departments to exactly the submitted set: rename the
-// ones with an id, insert the new ones, and delete the removed ones (detaching
-// any users first so the delete doesn't hit a foreign-key error).
-async function syncDepartments(supabase, organizationId, departments) {
-  const incoming = normalizeDepartments(departments);
-
-  const { data: existing, error: existingError } = await supabase
-    .from("department")
-    .select("department_id, department_name")
-    .eq("organization_id", organizationId);
-  if (existingError) {
-    return existingError;
-  }
-
-  const keepIds = new Set(
-    incoming.filter((d) => d.id != null).map((d) => Number(d.id)),
-  );
-  const toDelete = (existing ?? []).filter((d) => !keepIds.has(Number(d.department_id)));
-
-  if (toDelete.length) {
-    const deleteIds = toDelete.map((d) => d.department_id);
-    await supabase.from("user_account").update({ department_id: null }).in("department_id", deleteIds);
-    const { error: deleteError } = await supabase
-      .from("department")
-      .delete()
-      .in("department_id", deleteIds);
-    if (deleteError) {
-      return deleteError;
-    }
-  }
-
-  for (const department of incoming.filter((d) => d.id != null)) {
-    const { error: renameError } = await supabase
-      .from("department")
-      .update({ department_name: department.name, updated_at: new Date().toISOString() })
-      .eq("department_id", department.id)
-      .eq("organization_id", organizationId);
-    if (renameError) {
-      return renameError;
-    }
-  }
-
-  const existingNames = new Set(
-    (existing ?? [])
-      .filter((d) => keepIds.has(Number(d.department_id)))
-      .map((d) => d.department_name.toLowerCase()),
-  );
-  const newNames = Array.from(
-    new Set(
-      incoming
-        .filter((d) => d.id == null)
-        .map((d) => d.name)
-        .filter((name) => !existingNames.has(name.toLowerCase())),
-    ),
-  );
-  if (newNames.length) {
-    const { error: insertError } = await supabase.from("department").insert(
-      newNames.map((name) => ({
-        organization_id: organizationId,
-        department_name: name,
-      })),
-    );
-    if (insertError) {
-      return insertError;
-    }
-  }
-
-  return null;
-}
-
 export async function getUserAccount(supabase, user) {
   const { data, error } = await supabase
     .from("user_account")
@@ -270,7 +188,6 @@ export async function POST(request) {
       organizationEmail,
       organizationType,
       logoUrl,
-      departments = [],
     } = await request.json();
     const payload = {
       organization_name: cleanString(organizationName),
@@ -296,16 +213,6 @@ export async function POST(request) {
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-
-      const departmentSyncError = await syncDepartments(
-        supabase,
-        account.organization_id,
-        departments,
-      );
-
-      if (departmentSyncError) {
-        return NextResponse.json({ error: departmentSyncError.message }, { status: 400 });
       }
 
       const responsePayload = await getOrganizationPayload(supabase, account);
@@ -343,23 +250,6 @@ export async function POST(request) {
 
     if (linkError) {
       return NextResponse.json({ error: linkError.message }, { status: 400 });
-    }
-
-    const departmentNames = Array.from(
-      new Set(normalizeDepartments(departments).map((department) => department.name)),
-    );
-
-    if (departmentNames.length) {
-      const { error: departmentError } = await supabase.from("department").insert(
-        departmentNames.map((departmentName) => ({
-          organization_id: createdOrganization.organization_id,
-          department_name: departmentName,
-        })),
-      );
-
-      if (departmentError) {
-        return NextResponse.json({ error: departmentError.message }, { status: 400 });
-      }
     }
 
     const responsePayload = await getOrganizationPayload(supabase, {

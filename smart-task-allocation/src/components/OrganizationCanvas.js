@@ -1,17 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   ReactFlow,
   ReactFlowProvider,
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
+  Panel,
   Handle,
   Position,
   MarkerType,
+  NodeResizer,
+  useConnection,
+  useReactFlow,
   applyNodeChanges,
   applyEdgeChanges,
 } from "@xyflow/react";
@@ -21,9 +24,9 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 const GRID_SIZE = 24;
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 138;
-const BOUNDARY_PADDING_X = 50;
-const BOUNDARY_PADDING_TOP = 74;
-const BOUNDARY_PADDING_BOTTOM = 34;
+const DEPARTMENT_NODE_PREFIX = "department-";
+const DEPARTMENT_DEFAULT_WIDTH = 420;
+const DEPARTMENT_DEFAULT_HEIGHT = 320;
 
 const BOUNDARY_PALETTE = [
   { border: "#93C5FD", tint: "rgba(191,227,255,0.28)", label: "#1E3A8A" },
@@ -42,26 +45,24 @@ function displayName(account) {
   return account.full_name || account.username || account.email || "User";
 }
 
-function roleTier(roleName) {
-  const normalized = (roleName ?? "").trim().toLowerCase();
-  if (normalized === "user admin") return "ceo";
-  if (normalized === "manager") return "manager";
-  return "employee";
-}
+const ConnectingContext = createContext(false);
 
-const HANDLE_CLASS =
-  "!h-3 !w-3 !border-2 !border-white !bg-[#2563EB] transition-transform hover:!scale-125";
+function handleClass(isConnecting) {
+  const base = "!h-3 !w-3 !border-2 !border-white !bg-[#2563EB] transition-all hover:!scale-125";
+  return isConnecting ? `${base} !opacity-100` : `${base} !opacity-0 group-hover:!opacity-100`;
+}
 
 function PersonNode({ data }) {
   const { account } = data;
   const name = displayName(account);
+  const isConnecting = useContext(ConnectingContext);
 
   return (
-    <div className="flex w-[150px] select-none flex-col items-center gap-1">
-      <Handle type="source" position={Position.Top} id="top" className={HANDLE_CLASS} />
-      <Handle type="source" position={Position.Right} id="right" className={HANDLE_CLASS} />
-      <Handle type="source" position={Position.Bottom} id="bottom" className={HANDLE_CLASS} />
-      <Handle type="source" position={Position.Left} id="left" className={HANDLE_CLASS} />
+    <div className="group flex w-[150px] select-none flex-col items-center gap-1">
+      <Handle type="source" position={Position.Top} id="top" className={handleClass(isConnecting)} />
+      <Handle type="source" position={Position.Right} id="right" className={handleClass(isConnecting)} />
+      <Handle type="source" position={Position.Bottom} id="bottom" className={handleClass(isConnecting)} />
+      <Handle type="source" position={Position.Left} id="left" className={handleClass(isConnecting)} />
 
       <span className="relative flex h-21 w-21 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-[#6b7280] text-2xl font-black text-white shadow-[0_10px_22px_rgba(15,23,42,0.28)]">
         {account.profile_picture_url ? (
@@ -83,96 +84,427 @@ function PersonNode({ data }) {
   );
 }
 
-function BoundaryNode({ data }) {
+function BoundaryNode({ data, selected }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftName, setDraftName] = useState(data.name);
+
+  function commitRename() {
+    setIsEditing(false);
+    const trimmed = draftName.trim();
+    if (trimmed && trimmed !== data.name) {
+      data.onRename(trimmed);
+    } else {
+      setDraftName(data.name);
+    }
+  }
+
   return (
     <div
-      className="pointer-events-none relative rounded-[40px] border-2 border-dashed"
+      className="relative rounded-[40px] border-2 border-dashed"
       style={{ width: data.width, height: data.height, borderColor: data.border, background: data.tint }}
     >
+      <NodeResizer
+        minWidth={220}
+        minHeight={160}
+        isVisible={selected}
+        lineClassName="!border-transparent"
+        handleClassName="!h-3 !w-3 !rounded-sm !border-2 !border-white !bg-[#2563EB]"
+        onResizeEnd={(event, params) => data.onResizeEnd(params)}
+      />
+
+      {isEditing ? (
+        <input
+          autoFocus
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commitRename();
+            if (event.key === "Escape") {
+              setDraftName(data.name);
+              setIsEditing(false);
+            }
+          }}
+          className="nodrag absolute left-1/2 top-4 max-w-[75%] -translate-x-1/2 rounded-full border border-black/10 bg-white px-4 py-1.5 text-center text-lg font-black tracking-wide shadow-sm outline-none"
+          style={{ color: data.label }}
+        />
+      ) : (
+        <button
+          type="button"
+          disabled={data.isLocked}
+          onClick={() => {
+            if (data.isLocked) return;
+            setDraftName(data.name);
+            setIsEditing(true);
+          }}
+          className={`nodrag absolute left-1/2 top-4 max-w-[75%] -translate-x-1/2 truncate rounded-full bg-white/90 px-4 py-1.5 text-center text-lg font-black tracking-wide shadow-sm ${
+            data.isLocked ? "cursor-default" : ""
+          }`}
+          style={{ color: data.label }}
+        >
+          {data.name}
+        </button>
+      )}
+    </div>
+  );
+}
+
+const ORGANIZATION_DETAIL_FIELDS = [
+  { field: "organization_code", label: "Code" },
+  { field: "organization_email", label: "Email" },
+  { field: "organization_type", label: "Industry" },
+  { field: "logo_url", label: "Logo URL" },
+];
+
+function draftFromOrganization(organization) {
+  return {
+    organization_name: organization.organization_name ?? "",
+    organization_code: organization.organization_code ?? "",
+    organization_email: organization.organization_email ?? "",
+    organization_type: organization.organization_type ?? "",
+    logo_url: organization.logo_url ?? "",
+  };
+}
+
+function OrganizationDetailsPanel({ organization, onUpdate, disabled }) {
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [draft, setDraft] = useState(() => draftFromOrganization(organization));
+
+  function updateDraftField(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function enterEditMode() {
+    setDraft(draftFromOrganization(organization));
+    setIsEditMode(true);
+  }
+
+  function saveAndExitEditMode() {
+    setIsEditMode(false);
+    const hasChanges = Object.keys(draft).some(
+      (field) => draft[field].trim() !== (organization[field] ?? ""),
+    );
+    if (hasChanges) {
+      onUpdate(Object.fromEntries(Object.entries(draft).map(([field, value]) => [field, value.trim()])));
+    }
+  }
+
+  return (
+    <div className="w-72 rounded-3xl bg-white/95 p-4 shadow-lg backdrop-blur-sm">
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#6b7280] text-sm font-bold text-white">
+          {organization.logo_url ? (
+            <Image src={organization.logo_url} alt="" fill sizes="40px" className="object-cover" />
+          ) : (
+            initialFromName(organization.organization_name)
+          )}
+        </span>
+
+        {isEditMode ? (
+          <input
+            autoFocus
+            value={draft.organization_name}
+            onChange={(event) => updateDraftField("organization_name", event.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-black/10 px-2 py-1 text-lg font-bold text-[#1E40AF] outline-none"
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-lg font-bold text-[#1E40AF]">
+            {organization.organization_name || "Untitled organization"}
+          </span>
+        )}
+
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={isEditMode ? saveAndExitEditMode : enterEditMode}
+          className="shrink-0 rounded-full p-1.5 text-[#667085] hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+          aria-label={isEditMode ? "Save organization details" : "Edit organization details"}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">
+            {isEditMode ? "edit_off" : "edit_square"}
+          </span>
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-2 border-t border-black/10 pt-3">
+        {ORGANIZATION_DETAIL_FIELDS.map(({ field, label }) => (
+          <div key={field}>
+            <span className="block px-2 text-[10px] font-bold uppercase tracking-wide text-[#94a3b8]">
+              {label}
+            </span>
+            {isEditMode ? (
+              <input
+                value={draft[field]}
+                onChange={(event) => updateDraftField(field, event.target.value)}
+                className="w-full rounded-md border border-black/10 px-2 py-1 text-sm text-[#0D1E4C] outline-none"
+              />
+            ) : (
+              <p className="truncate px-2 py-1 text-sm text-[#0D1E4C]">{organization[field] || "—"}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const KEY_TRACK_WIDTH = 68;
+const KEY_MAX_DRAG = 26;
+
+function LockToggle({ lockState, onRequestUnlock, onRelock }) {
+  const restingDragX = lockState === "locked" ? 0 : KEY_MAX_DRAG;
+  const [dragX, setDragX] = useState(restingDragX);
+  const [isDragging, setIsDragging] = useState(false);
+  const [syncedLockState, setSyncedLockState] = useState(lockState);
+  const dragStartRef = useRef({ pointerX: 0, startDragX: 0 });
+  const dragXRef = useRef(dragX);
+
+  function updateDragX(value) {
+    dragXRef.current = value;
+    setDragX(value);
+  }
+
+  if (lockState !== syncedLockState) {
+    setSyncedLockState(lockState);
+    if (!isDragging) {
+      setDragX(restingDragX);
+    }
+  }
+
+  useEffect(() => {
+    dragXRef.current = dragX;
+  }, [dragX]);
+
+  useEffect(() => {
+    if (!isDragging) return undefined;
+
+    function handleMove(event) {
+      const delta = event.clientX - dragStartRef.current.pointerX;
+      const next = Math.min(KEY_MAX_DRAG, Math.max(0, dragStartRef.current.startDragX + delta));
+      updateDragX(next);
+    }
+
+    function handleUp() {
+      setIsDragging(false);
+      const current = dragXRef.current;
+      const threshold = KEY_MAX_DRAG * 0.55;
+      if (lockState === "locked" && current >= threshold) {
+        updateDragX(KEY_MAX_DRAG);
+        onRequestUnlock();
+      } else if (lockState !== "locked" && current <= KEY_MAX_DRAG - threshold) {
+        updateDragX(0);
+        onRelock();
+      } else {
+        updateDragX(lockState === "locked" ? 0 : KEY_MAX_DRAG);
+      }
+    }
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+  }, [isDragging, lockState, onRequestUnlock, onRelock]);
+
+  function handlePointerDown(event) {
+    event.preventDefault();
+    dragStartRef.current = { pointerX: event.clientX, startDragX: dragXRef.current };
+    setIsDragging(true);
+  }
+
+  const showUnlockIcon = lockState !== "locked" || dragX > KEY_MAX_DRAG / 2;
+
+  return (
+    <div className="relative h-7 shrink-0" style={{ width: KEY_TRACK_WIDTH }}>
       <span
-        className="absolute left-5 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-black tracking-wide shadow-sm"
-        style={{ color: data.label }}
+        onPointerDown={handlePointerDown}
+        className="absolute top-1/2 z-0 flex -translate-y-1/2 cursor-grab select-none items-center text-[#1E40AF] active:cursor-grabbing"
+        style={{ left: dragX, transition: isDragging ? "none" : "left 150ms ease" }}
       >
-        {data.name}
+        <span className="material-symbols-outlined" style={{ fontSize: "30px" }} aria-hidden="true">
+          key
+        </span>
       </span>
+      <span className="absolute right-0 top-1/2 z-10 -translate-y-1/2 text-[#1E40AF]">
+        <span className="material-symbols-outlined" style={{ fontSize: "30px" }} aria-hidden="true">
+          {showUnlockIcon ? "lock_open_right" : "lock"}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function PasswordPanel({ onSubmit, onCancel, isSubmitting, error }) {
+  const [password, setPassword] = useState("");
+
+  return (
+    <div className="w-64 rounded-2xl bg-white/95 p-3 shadow-lg backdrop-blur-sm">
+      <input
+        type="password"
+        autoFocus
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") onSubmit(password);
+          if (event.key === "Escape") onCancel();
+        }}
+        placeholder="Enter password"
+        className="w-full rounded-md border border-black/10 px-3 py-2 text-sm text-[#0D1E4C] outline-none"
+      />
+      {error ? <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p> : null}
+      <div className="mt-2 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-full px-3 py-1 text-xs font-bold text-[#667085] hover:bg-black/5"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(password)}
+          disabled={isSubmitting || !password}
+          className="rounded-full bg-[#2563EB] px-3 py-1 text-xs font-bold text-white transition hover:bg-[#1E40AF] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isSubmitting ? "Checking..." : "Unlock"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CanvasControls({ onAddDepartment, isLocked }) {
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
+
+  return (
+    <div className="flex items-end gap-4">
+      <div className="flex flex-col gap-1 rounded-xl bg-white p-1 shadow-md">
+        <button
+          type="button"
+          onClick={() => zoomIn()}
+          aria-label="Zoom in"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-base font-bold text-[#0D1E4C] hover:bg-black/5"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomOut()}
+          aria-label="Zoom out"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-base font-bold text-[#0D1E4C] hover:bg-black/5"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => fitView()}
+          aria-label="Fit view"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-[#0D1E4C] hover:bg-black/5"
+        >
+          <span className="block h-2.5 w-2.5 rounded-[2px] border-2 border-current" aria-hidden="true" />
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={onAddDepartment}
+        disabled={isLocked}
+        className="flex h-25 w-30 flex-col items-center justify-center gap-1 rounded-xl transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <span className="h-14 w-24 rounded-xl border-2 border-black" aria-hidden="true" />
+        <span className="text-[12px] font-bold text-black">Add department</span>
+      </button>
     </div>
   );
 }
 
 const NODE_TYPES = { person: PersonNode, boundary: BoundaryNode };
 
-function computeBoundaries(accounts, personNodes) {
-  const positionByUserId = new Map(personNodes.map((node) => [node.id, node.position]));
-  const accountByUserId = new Map(accounts.map((account) => [account.user_id, account]));
-  const departmentGroups = new Map();
+function buildDepartmentNode(department, index) {
+  const palette = BOUNDARY_PALETTE[index % BOUNDARY_PALETTE.length];
+  const width = department.width ?? DEPARTMENT_DEFAULT_WIDTH;
+  const height = department.height ?? DEPARTMENT_DEFAULT_HEIGHT;
 
-  accounts.forEach((account) => {
-    if (!account.department_id) return;
-    const tier = roleTier(account.role?.role_name);
-    if (tier === "ceo") return;
-
-    const group = departmentGroups.get(account.department_id) ?? {
-      name: account.department?.department_name ?? "Department",
-      members: [],
-    };
-    group.members.push(account.user_id);
-    departmentGroups.set(account.department_id, group);
-  });
-
-  return Array.from(departmentGroups.entries())
-    .map(([departmentId, group], index) => {
-      const memberPositions = group.members
-        .map((userId) => positionByUserId.get(userId))
-        .filter(Boolean);
-
-      if (memberPositions.length < 1) return null;
-
-      const minX = Math.min(...memberPositions.map((p) => p.x));
-      const maxX = Math.max(...memberPositions.map((p) => p.x + NODE_WIDTH));
-      const minY = Math.min(...memberPositions.map((p) => p.y));
-      const maxY = Math.max(...memberPositions.map((p) => p.y + NODE_HEIGHT));
-
-      const palette = BOUNDARY_PALETTE[index % BOUNDARY_PALETTE.length];
-      const width = maxX - minX + BOUNDARY_PADDING_X * 2;
-      const height = maxY - minY + BOUNDARY_PADDING_TOP + BOUNDARY_PADDING_BOTTOM;
-
-      return {
-        id: `boundary-${departmentId}`,
-        type: "boundary",
-        position: { x: minX - BOUNDARY_PADDING_X, y: minY - BOUNDARY_PADDING_TOP },
-        draggable: false,
-        selectable: false,
-        connectable: false,
-        zIndex: -1,
-        width,
-        height,
-        style: { width, height },
-        data: {
-          name: group.name,
-          width,
-          height,
-          border: palette.border,
-          tint: palette.tint,
-          label: palette.label,
-        },
-      };
-    })
-    .filter(Boolean);
+  return {
+    id: `${DEPARTMENT_NODE_PREFIX}${department.department_id}`,
+    type: "boundary",
+    position: { x: department.pos_x ?? 0, y: department.pos_y ?? 0 },
+    draggable: true,
+    selectable: true,
+    connectable: false,
+    zIndex: -1,
+    width,
+    height,
+    style: { width, height },
+    data: {
+      departmentId: department.department_id,
+      name: department.department_name,
+      width,
+      height,
+      border: palette.border,
+      tint: palette.tint,
+      label: palette.label,
+    },
+  };
 }
 
-function CanvasInner({ onAccountClick }) {
+function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
   const [accounts, setAccounts] = useState([]);
   const [personNodes, setPersonNodes] = useState([]);
+  const [departmentNodes, setDepartmentNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [lockState, setLockState] = useState("locked");
+  const [passwordError, setPasswordError] = useState("");
+  const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
+  const connection = useConnection();
+  const isLocked = lockState !== "unlocked";
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
     const { data } = await supabase.auth.getSession();
     return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
   }
+
+  const handleRequestUnlock = useCallback(() => {
+    setPasswordError("");
+    setLockState("awaiting-password");
+  }, []);
+
+  const handleRelock = useCallback(() => {
+    setPasswordError("");
+    setLockState("locked");
+  }, []);
+
+  const handlePasswordCancel = useCallback(() => {
+    setPasswordError("");
+    setLockState("locked");
+  }, []);
+
+  const handlePasswordSubmit = useCallback(async (password) => {
+    setIsVerifyingPassword(true);
+    setPasswordError("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: userData } = await supabase.auth.getUser();
+      const email = userData?.user?.email;
+      if (!email) {
+        throw new Error("Could not verify your account.");
+      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        throw new Error("Incorrect password.");
+      }
+      setLockState("unlocked");
+    } catch (verifyError) {
+      setPasswordError(verifyError.message);
+    } finally {
+      setIsVerifyingPassword(false);
+    }
+  }, []);
 
   const loadChart = useCallback(async () => {
     setLoadError("");
@@ -195,6 +527,7 @@ function CanvasInner({ onAccountClick }) {
             data: { account: accountByUserId.get(node.user_id) },
           })),
       );
+      setDepartmentNodes((result.departments ?? []).map(buildDepartmentNode));
       setEdges(
         (result.connections ?? []).map((connection) => ({
           id: connection.connection_id,
@@ -219,15 +552,35 @@ function CanvasInner({ onAccountClick }) {
     return () => clearTimeout(timeout);
   }, [loadChart]);
 
-  const boundaryNodes = useMemo(
-    () => computeBoundaries(accounts, personNodes),
-    [accounts, personNodes],
-  );
-
-  const nodes = useMemo(() => [...boundaryNodes, ...personNodes], [boundaryNodes, personNodes]);
+  const nodes = useMemo(() => [...departmentNodes, ...personNodes], [departmentNodes, personNodes]);
 
   const onNodesChange = useCallback((changes) => {
-    setPersonNodes((current) => applyNodeChanges(changes, current));
+    const boundaryChanges = changes.filter((change) => String(change.id).startsWith(DEPARTMENT_NODE_PREFIX));
+    const personChanges = changes.filter(
+      (change) => !String(change.id).startsWith(DEPARTMENT_NODE_PREFIX) && change.type !== "remove",
+    );
+
+    if (personChanges.length) {
+      setPersonNodes((current) => applyNodeChanges(personChanges, current));
+    }
+    if (boundaryChanges.length) {
+      setDepartmentNodes((current) => applyNodeChanges(boundaryChanges, current));
+    }
+
+    boundaryChanges
+      .filter((change) => change.type === "remove")
+      .forEach(async (change) => {
+        const departmentId = Number(change.id.slice(DEPARTMENT_NODE_PREFIX.length));
+        try {
+          await fetch("/api/org-chart/departments", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+            body: JSON.stringify({ departmentId }),
+          });
+        } catch {
+          // best-effort; a stale row can be cleaned up on next load
+        }
+      });
   }, []);
 
   const onEdgesChange = useCallback((changes) => {
@@ -247,20 +600,90 @@ function CanvasInner({ onAccountClick }) {
     });
   }, []);
 
-  const onNodeDragStop = useCallback(async (event, node) => {
-    if (node.type !== "person") return;
-    try {
-      await fetch("/api/org-chart", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ userId: node.id, posX: node.position.x, posY: node.position.y }),
-      });
-    } catch (saveError) {
-      setActionError(saveError.message);
-    }
-  }, []);
+  const assignPersonToContainingDepartment = useCallback(
+    async (personNode) => {
+      const centerX = personNode.position.x + NODE_WIDTH / 2;
+      const centerY = personNode.position.y + NODE_HEIGHT / 2;
+
+      const containing = departmentNodes.find(
+        (dept) =>
+          centerX >= dept.position.x &&
+          centerX <= dept.position.x + dept.width &&
+          centerY >= dept.position.y &&
+          centerY <= dept.position.y + dept.height,
+      );
+      if (!containing) return;
+
+      const account = accounts.find((a) => a.user_id === personNode.id);
+      if (!account || account.department_id === containing.data.departmentId) return;
+
+      try {
+        const response = await fetch("/api/my-organization", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({
+            action: "assignDepartment",
+            userId: personNode.id,
+            departmentId: containing.data.departmentId,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || "Could not assign department.");
+        }
+
+        setAccounts((current) =>
+          current.map((a) =>
+            a.user_id === personNode.id ? { ...a, department_id: containing.data.departmentId } : a,
+          ),
+        );
+      } catch (assignError) {
+        setActionError(assignError.message);
+      }
+    },
+    [departmentNodes, accounts],
+  );
+
+  const onNodeDragStop = useCallback(
+    async (event, node) => {
+      if (isLocked) return;
+
+      if (node.type === "boundary") {
+        try {
+          await fetch("/api/org-chart/departments", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+            body: JSON.stringify({
+              departmentId: node.data.departmentId,
+              posX: node.position.x,
+              posY: node.position.y,
+            }),
+          });
+        } catch (saveError) {
+          setActionError(saveError.message);
+        }
+        return;
+      }
+
+      if (node.type !== "person") return;
+
+      try {
+        await fetch("/api/org-chart", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({ userId: node.id, posX: node.position.x, posY: node.position.y }),
+        });
+      } catch (saveError) {
+        setActionError(saveError.message);
+      }
+
+      assignPersonToContainingDepartment(node);
+    },
+    [isLocked, assignPersonToContainingDepartment],
+  );
 
   const onConnect = useCallback(async (params) => {
+    if (isLocked) return;
     if (!params.source || !params.target || params.source === params.target) return;
 
     try {
@@ -292,7 +715,7 @@ function CanvasInner({ onAccountClick }) {
     } catch (connectError) {
       setActionError(connectError.message);
     }
-  }, []);
+  }, [isLocked]);
 
   const onNodeClick = useCallback(
     (event, node) => {
@@ -301,6 +724,106 @@ function CanvasInner({ onAccountClick }) {
       }
     },
     [onAccountClick],
+  );
+
+  const handleAddDepartment = useCallback(async () => {
+    if (isLocked) return;
+    try {
+      const index = departmentNodes.length;
+      const response = await fetch("/api/org-chart/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({
+          posX: (index % 4) * (DEPARTMENT_DEFAULT_WIDTH + 40),
+          posY: Math.floor(index / 4) * (DEPARTMENT_DEFAULT_HEIGHT + 40),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Could not add department.");
+      }
+
+      setDepartmentNodes((current) => [...current, buildDepartmentNode(result.department, current.length)]);
+    } catch (addError) {
+      setActionError(addError.message);
+    }
+  }, [isLocked, departmentNodes.length]);
+
+  const handleBoundaryRename = useCallback(async (departmentId, newName) => {
+    setDepartmentNodes((current) =>
+      current.map((n) =>
+        n.data.departmentId === departmentId ? { ...n, data: { ...n.data, name: newName } } : n,
+      ),
+    );
+    try {
+      const response = await fetch("/api/org-chart/departments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ departmentId, name: newName }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || "Could not rename department.");
+      }
+    } catch (renameError) {
+      setActionError(renameError.message);
+    }
+  }, []);
+
+  const handleBoundaryResizeEnd = useCallback(async (departmentId, params) => {
+    setDepartmentNodes((current) =>
+      current.map((n) =>
+        n.data.departmentId === departmentId
+          ? {
+              ...n,
+              position: { x: params.x, y: params.y },
+              width: params.width,
+              height: params.height,
+              style: { width: params.width, height: params.height },
+              data: { ...n.data, width: params.width, height: params.height },
+            }
+          : n,
+      ),
+    );
+    try {
+      const response = await fetch("/api/org-chart/departments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({
+          departmentId,
+          posX: params.x,
+          posY: params.y,
+          width: params.width,
+          height: params.height,
+        }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || "Could not resize department.");
+      }
+    } catch (resizeError) {
+      setActionError(resizeError.message);
+    }
+  }, []);
+
+  const nodesWithCallbacks = useMemo(
+    () =>
+      nodes.map((node) =>
+        node.type === "boundary"
+          ? {
+              ...node,
+              draggable: !isLocked,
+              selectable: !isLocked,
+              data: {
+                ...node.data,
+                isLocked,
+                onRename: (newName) => handleBoundaryRename(node.data.departmentId, newName),
+                onResizeEnd: (params) => handleBoundaryResizeEnd(node.data.departmentId, params),
+              },
+            }
+          : node,
+      ),
+    [nodes, isLocked, handleBoundaryRename, handleBoundaryResizeEnd],
   );
 
   if (isLoading) {
@@ -337,35 +860,75 @@ function CanvasInner({ onAccountClick }) {
         </p>
       ) : null}
 
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeDragStop={onNodeDragStop}
-        onConnect={onConnect}
-        onNodeClick={onNodeClick}
-        connectionMode="loose"
-        snapToGrid
-        snapGrid={[GRID_SIZE, GRID_SIZE]}
-        defaultEdgeOptions={{ type: "default" }}
-        deleteKeyCode={["Backspace", "Delete"]}
-        fitView
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Lines} gap={GRID_SIZE} color="#E2E8F0" />
-        <Controls showInteractive={false} />
-        <MiniMap pannable zoomable className="!bg-white" nodeColor="#93C5FD" />
-      </ReactFlow>
+      <ConnectingContext.Provider value={connection.inProgress}>
+        <ReactFlow
+          nodes={nodesWithCallbacks}
+          edges={edges}
+          nodeTypes={NODE_TYPES}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={onNodeDragStop}
+          onConnect={onConnect}
+          onNodeClick={onNodeClick}
+          connectionMode="loose"
+          snapToGrid
+          snapGrid={[GRID_SIZE, GRID_SIZE]}
+          defaultEdgeOptions={{ type: "default" }}
+          nodesDraggable={!isLocked}
+          nodesConnectable={!isLocked}
+          elementsSelectable={!isLocked}
+          deleteKeyCode={isLocked ? [] : ["Backspace", "Delete"]}
+          fitView
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Lines} gap={GRID_SIZE} color="#E2E8F0" />
+          <MiniMap pannable zoomable className="!bg-white" nodeColor="#93C5FD" />
+          {organization ? (
+            <Panel position="top-left">
+              <OrganizationDetailsPanel
+                organization={organization}
+                onUpdate={onUpdateOrganization}
+                disabled={isLocked}
+              />
+            </Panel>
+          ) : null}
+          <Panel position="top-right">
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-3 rounded-full border border-white/65 bg-white/20 px-4 py-4 shadow-md backdrop-blur-sm">
+                <span className="text-xl font-bold text-black">Organization Chart</span>
+                <LockToggle
+                  lockState={lockState}
+                  onRequestUnlock={handleRequestUnlock}
+                  onRelock={handleRelock}
+                />
+              </div>
+              {lockState === "awaiting-password" ? (
+                <PasswordPanel
+                  onSubmit={handlePasswordSubmit}
+                  onCancel={handlePasswordCancel}
+                  isSubmitting={isVerifyingPassword}
+                  error={passwordError}
+                />
+              ) : null}
+            </div>
+          </Panel>
+          <Panel position="bottom-left">
+            <CanvasControls onAddDepartment={handleAddDepartment} isLocked={isLocked} />
+          </Panel>
+        </ReactFlow>
+      </ConnectingContext.Provider>
     </div>
   );
 }
 
-export default function OrganizationCanvas({ onAccountClick }) {
+export default function OrganizationCanvas({ organization, onAccountClick, onUpdateOrganization }) {
   return (
     <ReactFlowProvider>
-      <CanvasInner onAccountClick={onAccountClick} />
+      <CanvasInner
+        organization={organization}
+        onAccountClick={onAccountClick}
+        onUpdateOrganization={onUpdateOrganization}
+      />
     </ReactFlowProvider>
   );
 }
