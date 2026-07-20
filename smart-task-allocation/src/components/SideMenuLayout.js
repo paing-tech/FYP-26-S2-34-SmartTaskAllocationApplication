@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
 import TopInformationBar from "@/components/TopInformationBar";
 import { useAppearance } from "@/components/appearance/AppearanceContext";
+import AIAutomationChat from "@/components/AIAutomationChat";
 
 function NavIcon({ name }) {
   const commonProps = {
@@ -170,6 +172,7 @@ export default function SideMenuLayout({ actor, children }) {
   const pathname = usePathname();
   const navigation = sideMenuNavigation[actor];
   const { backgroundStyle } = useAppearance();
+  const [isAutomationChatOpen, setIsAutomationChatOpen] = useState(false);
 
   return (
     <main className="h-screen overflow-hidden text-[#07183b]" style={backgroundStyle}>
@@ -225,6 +228,24 @@ export default function SideMenuLayout({ actor, children }) {
                     Appearance
                   </span>
                 </Link>
+
+                {actor === "manager" ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsAutomationChatOpen(true)}
+                    title="AI Automation"
+                    aria-label="Open AI Automation chat"
+                    className="flex h-12 w-full items-center gap-3 rounded-full bg-gradient-to-r from-[#0D1E4C] to-[#2563EB] px-3 text-white shadow-[0_10px_24px_rgba(37,99,235,0.35)] transition hover:brightness-110"
+                  >
+                    <span className="material-symbols-outlined shrink-0 text-[22px]" aria-hidden="true">
+                      smart_toy
+                    </span>
+
+                    <span className="hidden whitespace-nowrap text-sm font-bold group-hover:block">
+                      AI Automation
+                    </span>
+                  </button>
+                ) : null}
               </nav>
             </div>
           </aside>
@@ -234,6 +255,10 @@ export default function SideMenuLayout({ actor, children }) {
           {children}
         </div>
       </div>
+
+      {actor === "manager" && isAutomationChatOpen ? (
+        <AIAutomationChat onClose={() => setIsAutomationChatOpen(false)} />
+      ) : null}
     </main>
   );
 }

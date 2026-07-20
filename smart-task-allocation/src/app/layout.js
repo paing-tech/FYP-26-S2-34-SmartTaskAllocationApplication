@@ -28,7 +28,7 @@ export default function RootLayout({ children }) {
       <head>
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add%2Calternate_email%2Camp_stories%2Carrow_drop_down%2Cauto_awesome%2Cbusiness_center%2Ccake%2Ccalendar_month%2Ccall%2Ccheck%2Ccheck_small%2Cclose%2Cedit%2Cedit_off%2Cedit_square%2Cexpand_all%2Cexpand_content%2Chome_pin%2Cinterests%2Ckey%2Ckeyboard_arrow_down%2Ckeyboard_arrow_right%2Ckeyboard_arrow_up%2Cleft_panel_close%2Cleft_panel_open%2Clock%2Clock_open_right%2Cmail%2Cmobile_3%2Cmore_horiz%2Cperson_add%2Cphoto_camera%2Cpriority_high%2Cproductivity%2Crepeat%2Crule%2Cschedule%2Cschool%2Cvisibility%2Cvisibility_off%2Cwc&display=block"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add%2Calternate_email%2Camp_stories%2Carrow_drop_down%2Cattach_file%2Cauto_awesome%2Cbusiness_center%2Ccake%2Ccalendar_month%2Ccall%2Ccheck%2Ccheck_small%2Cclose%2Cedit%2Cedit_off%2Cedit_square%2Cexpand_all%2Cexpand_content%2Chome_pin%2Cinterests%2Ckey%2Ckeyboard_arrow_down%2Ckeyboard_arrow_right%2Ckeyboard_arrow_up%2Cleft_panel_close%2Cleft_panel_open%2Clock%2Clock_open_right%2Cmail%2Cmobile_3%2Cmore_horiz%2Cperson_add%2Cphoto_camera%2Cpriority_high%2Cproductivity%2Crepeat%2Crule%2Cschedule%2Cschool%2Csmart_toy%2Cvisibility%2Cvisibility_off%2Cwc&display=block"
         />
       </head>
       <body className="min-h-full flex flex-col">
