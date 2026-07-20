@@ -17,6 +17,13 @@ async function getMyAccountId(supabase, user) {
   return { userId: byEmail.data?.user_id, error: byEmail.error };
 }
 
+function monthExclusiveEnd(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const nextMonth = monthNumber === 12 ? 1 : monthNumber + 1;
+  const nextYear = monthNumber === 12 ? year + 1 : year;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+}
+
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
@@ -31,6 +38,25 @@ export async function GET(request) {
     }
     if (!userId) {
       return NextResponse.json({ error: "Account not found." }, { status: 404 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const month = searchParams.get("month");
+
+    // Month view — used to compute each day's on-time/late/absent dot.
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const { data: records, error: recordsError } = await supabase
+        .from("attendance")
+        .select("*")
+        .eq("user_id", userId)
+        .gte("work_date", `${month}-01`)
+        .lt("work_date", monthExclusiveEnd(month));
+
+      if (recordsError) {
+        return NextResponse.json({ error: recordsError.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ records: records ?? [] });
     }
 
     const { data: latest, error: latestError } = await supabase

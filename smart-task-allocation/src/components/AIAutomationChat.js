@@ -128,10 +128,10 @@ function MessageBubble({ message }) {
       <div
         className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm font-medium ${
           isUser
-            ? "rounded-br-sm bg-[#0D1E4C] text-white"
+            ? "rounded-br-sm bg-white/20 text-white"
             : message.tone === "error"
               ? "rounded-bl-sm border border-red-200 bg-red-50 text-red-700"
-              : "rounded-bl-sm bg-slate-100 text-[#0D1E4C]"
+              : "rounded-bl-sm bg-[#2563EB]/40 text-white"
         }`}
       >
         {message.attachmentName ? (
@@ -298,7 +298,7 @@ export default function AIAutomationChat({ onClose }) {
           {isSending ? (
             <div className="flex justify-start">
               <div className="rounded-2xl rounded-bl-sm bg-slate-100 px-4 py-2 text-sm font-bold text-[#0D1E4C]">
-                Thinking…
+                Wingardium Leviosa…
               </div>
             </div>
           ) : null}
@@ -306,7 +306,7 @@ export default function AIAutomationChat({ onClose }) {
 
         <div className="p-4">
           {attachedFile ? (
-            <div className="mb-2 flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-[#0D1E4C]">
+            <div className="mb-2 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold text-[#0D1E4C]">
               <span className="material-symbols-outlined text-sm" aria-hidden="true">
                 attach_file
               </span>
@@ -324,13 +324,13 @@ export default function AIAutomationChat({ onClose }) {
             </div>
           ) : null}
 
-          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white pl-1.5 pr-1.5">
+          <div className="flex items-center gap-1 rounded-full border border-white/40 bg-white/10 pl-1.5 pr-1.5">
             <button
               type="button"
               onClick={handleAttachClick}
               disabled={isSending}
               aria-label="Attach a CSV file"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#0D1E4C] transition hover:rotate-30 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-xl" aria-hidden="true">
                 attach_file
@@ -345,7 +345,7 @@ export default function AIAutomationChat({ onClose }) {
               disabled={isSending}
               rows={1}
               placeholder="Ask me anything"
-              className="min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-sm font-medium text-[#0D1E4C] outline-none"
+              className="min-h-9 flex-1 resize-none bg-transparent px-1 py-4 text-sm font-medium text-[#0D1E4C] outline-none"
             />
 
             <button
@@ -353,7 +353,7 @@ export default function AIAutomationChat({ onClose }) {
               onClick={handleSend}
               disabled={isSending || (!input.trim() && !attachedFile)}
               aria-label="Send"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0D1E4C] text-white transition hover:bg-[#0a1638] disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-500 text-white transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-xl" aria-hidden="true">
                 arrow_upward
