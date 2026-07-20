@@ -21,9 +21,12 @@ import {
 import "@xyflow/react/dist/style.css";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
-const GRID_SIZE = 24;
+const GRID_SIZE = 26;
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 138;
+const AVATAR_SIZE = 84;
+const AVATAR_SIDE_OFFSET = (NODE_WIDTH - AVATAR_SIZE) / 2;
+const AVATAR_CENTER_Y = AVATAR_SIZE / 2;
 const DEPARTMENT_NODE_PREFIX = "department-";
 const DEPARTMENT_DEFAULT_WIDTH = 420;
 const DEPARTMENT_DEFAULT_HEIGHT = 320;
@@ -60,11 +63,28 @@ function PersonNode({ data }) {
   return (
     <div className="group flex w-[150px] select-none flex-col items-center gap-1">
       <Handle type="source" position={Position.Top} id="top" className={handleClass(isConnecting)} />
-      <Handle type="source" position={Position.Right} id="right" className={handleClass(isConnecting)} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="right"
+        className={handleClass(isConnecting)}
+        style={{
+          top: AVATAR_CENTER_Y,
+          left: NODE_WIDTH - AVATAR_SIDE_OFFSET,
+          right: "auto",
+          transform: "translate(-50%, -50%)",
+        }}
+      />
       <Handle type="source" position={Position.Bottom} id="bottom" className={handleClass(isConnecting)} />
-      <Handle type="source" position={Position.Left} id="left" className={handleClass(isConnecting)} />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="left"
+        className={handleClass(isConnecting)}
+        style={{ top: AVATAR_CENTER_Y, left: AVATAR_SIDE_OFFSET, transform: "translate(-50%, -50%)" }}
+      />
 
-      <span className="relative flex h-21 w-21 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-[#6b7280] text-2xl font-black text-white shadow-[0_10px_22px_rgba(15,23,42,0.28)]">
+      <span className="relative flex h-21 w-21 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-[#6b7280] text-2xl font-black text-white shadow-[0_10px_22px_rgba(15,23,42,0.28)] ring-1 ring-black/10">
         {account.profile_picture_url ? (
           <Image src={account.profile_picture_url} alt="" fill sizes="84px" className="object-cover" />
         ) : (
@@ -460,7 +480,7 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
   const [lockState, setLockState] = useState("locked");
   const [passwordError, setPasswordError] = useState("");
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
-  const connection = useConnection();
+  const isConnectionInProgress = useConnection((c) => c.inProgress);
   const isLocked = lockState !== "unlocked";
 
   async function authHeaders() {
@@ -853,14 +873,14 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
   }
 
   return (
-    <div className="relative h-full min-h-[560px] w-full overflow-hidden rounded-[32px] bg-[#f6f8fc]">
+    <div className="relative h-full min-h-[560px] w-full overflow-hidden rounded-[32px] bg-white/80 backdrop-blur-md">
       {actionError ? (
         <p className="absolute left-1/2 top-4 z-10 max-w-md -translate-x-1/2 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-center text-sm font-medium text-red-700 shadow-md">
           {actionError}
         </p>
       ) : null}
 
-      <ConnectingContext.Provider value={connection.inProgress}>
+      <ConnectingContext.Provider value={isConnectionInProgress}>
         <ReactFlow
           nodes={nodesWithCallbacks}
           edges={edges}
@@ -895,7 +915,7 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
           <Panel position="top-right">
             <div className="flex flex-col items-end gap-2">
               <div className="flex items-center gap-3 rounded-full border border-white/65 bg-white/20 px-4 py-4 shadow-md backdrop-blur-sm">
-                <span className="text-xl font-bold text-black">Organization Chart</span>
+                <span className="text-lg font-bold text-black">Organization Chart</span>
                 <LockToggle
                   lockState={lockState}
                   onRequestUnlock={handleRequestUnlock}

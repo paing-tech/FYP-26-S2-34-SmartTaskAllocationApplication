@@ -176,7 +176,7 @@ export default function UserAdminOrganizationBuilder() {
           Loading organization...
         </div>
       ) : organization ? (
-        <div className="min-h-0 flex-1 px-2 py-2">
+        <div className="min-h-0 flex-1">
           <OrganizationCanvas
             organization={organization}
             onAccountClick={setSelectedAccount}
