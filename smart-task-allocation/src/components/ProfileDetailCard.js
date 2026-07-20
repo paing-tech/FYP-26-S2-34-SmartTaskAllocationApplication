@@ -440,18 +440,18 @@ export default function ProfileDetailCard({ onClose }) {
                 />
               </div>
 
-              <div className="mt-7 pl-10 pr-6">
-                <div className="flex items-center gap-2 text-base font-bold text-[#0D1E4C]">
+              <div className="mt-7">
+                <div className="flex items-center justify-center gap-2 px-6 text-base font-bold text-[#0D1E4C]">
                   <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">
                     school
                   </span>
                   Qualifications
                 </div>
-                <ul className="mt-2 space-y-1.5">
+                <ul className="mt-2 flex flex-col items-center space-y-1.5 px-6">
                   {(isEditMode ? qualificationDraft : profile.qualifications).map((entry, index) => (
                     <li
                       key={`${entry}-${index}`}
-                      className="flex items-center justify-between gap-2 text-base font-bold text-[#475569]"
+                      className="inline-flex max-w-full items-center gap-2 text-base font- text-[#0D1E4C]"
                     >
                       <span className="min-w-0 truncate">{entry}</span>
                       {isEditMode ? (
@@ -472,7 +472,7 @@ export default function ProfileDetailCard({ onClose }) {
                 </ul>
 
                 {isEditMode ? (
-                  <div className="mt-3 flex gap-2">
+                  <div className="relative mt-2 px-6">
                     <input
                       value={qualificationInput}
                       onChange={(event) => setQualificationInput(event.target.value)}
@@ -483,27 +483,28 @@ export default function ProfileDetailCard({ onClose }) {
                         }
                       }}
                       placeholder="Add a qualification"
-                      className="min-w-0 flex-1 rounded-full border border-black/10 bg-white px-3 py-2 text-base font-bold text-[#061a40] outline-none"
+                      className="w-full rounded-full border border-white/65 bg-white/40 py-2 pl-4 pr-12 text-base font-medium text-[#061a40] outline-none"
                     />
                     <button
                       type="button"
                       onClick={() => addQualification(qualificationInput)}
-                      className="rounded-full bg-[#2563EB] px-4 py-2 text-base font-bold text-white hover:bg-[#1E40AF]"
+                      className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-xl font-bold text-black/80 transition hover:scale-110 hover:bg-white"
+                      aria-label="Add qualification"
                     >
-                      Add
+                      +
                     </button>
                   </div>
                 ) : null}
               </div>
 
-              <div className="mt-7 pb-8 pl-10 pr-6">
-                <div className="flex items-center gap-2 text-base font-bold text-[#0D1E4C]">
+              <div className="mt-7 pb-8">
+                <div className="flex items-center justify-center gap-2 px-6 text-base font-bold text-[#0D1E4C]">
                   <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">
                     interests
                   </span>
                   Skills
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap justify-center gap-2 px-6">
                   {(isEditMode ? skillDraft : profile.skills.map((skill) => skill.skill_name)).map((skillName) => (
                     <span
                       key={skillName}
@@ -528,7 +529,7 @@ export default function ProfileDetailCard({ onClose }) {
                 </div>
 
                 {isEditMode ? (
-                  <div className="mt-3 flex gap-2">
+                  <div className="relative mt-3 px-6">
                     <input
                       list="profile-skill-catalog"
                       value={skillInput}
@@ -540,7 +541,7 @@ export default function ProfileDetailCard({ onClose }) {
                         }
                       }}
                       placeholder="Add a skill"
-                      className="min-w-0 flex-1 rounded-full border border-black/10 bg-white px-3 py-2 text-base font-bold text-[#061a40] outline-none"
+                      className="w-full rounded-full border border-white/65 bg-white/40 py-2 pl-4 pr-12 text-base font-medium text-[#061a40] outline-none"
                     />
                     <datalist id="profile-skill-catalog">
                       {skillCatalog.map((skill) => (
@@ -550,9 +551,10 @@ export default function ProfileDetailCard({ onClose }) {
                     <button
                       type="button"
                       onClick={() => addSkill(skillInput)}
-                      className="rounded-full bg-[#2563EB] px-4 py-2 text-base font-bold text-white hover:bg-[#1E40AF]"
+                      className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-xl font-bold text-black/80 transition hover:scale-110 hover:bg-white"
+                      aria-label="Add skill"
                     >
-                      Add
+                      +
                     </button>
                   </div>
                 ) : null}
