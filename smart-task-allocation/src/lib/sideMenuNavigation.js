@@ -15,8 +15,8 @@ export const sideMenuNavigation = {
     items: [
       { label: "Workspace", href: "/manager/workspace", icon: "workspace" },
       { label: "Team", href: "/manager/team", icon: "organization" },
+      { label: "Attendance", href: "/manager/attendance", icon: "attendance" },
       { label: "Inbox", href: "/manager/inbox", icon: "inbox" },
-      { label: "My Space", href: "/manager/my-space", icon: "home" },
       { label: "Archive", href: "/manager/archive", icon: "archive" },
       { label: "Agents", href: "/manager/agents", icon: "agents" },
       { label: "Support", href: "/manager/support", icon: "support" },
@@ -28,7 +28,6 @@ export const sideMenuNavigation = {
     items: [
       { label: "Workspace", href: "/employee/workspace", icon: "workspace" },
       { label: "Inbox", href: "/employee/inbox", icon: "inbox" },
-      { label: "My Space", href: "/employee/my-space", icon: "home" },
       { label: "Agents", href: "/employee/agents", icon: "agents" },
       { label: "Support", href: "/employee/support", icon: "support" },
     ],

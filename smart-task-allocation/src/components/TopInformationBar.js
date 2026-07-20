@@ -28,8 +28,8 @@ const roleActions = {
       actionId: "create-workspace-item",
     },
     { label: "View team", href: "/manager/team", group: "Team" },
+    { label: "Open attendance", href: "/manager/attendance", group: "Attendance" },
     { label: "Open inbox", href: "/manager/inbox", group: "Inbox" },
-    { label: "Open my space", href: "/manager/my-space", group: "My Space" },
     { label: "Review archive", href: "/manager/archive", group: "Archive" },
     { label: "Get support", href: "/manager/support", group: "Support" },
   ],
@@ -42,7 +42,6 @@ const roleActions = {
   employee: [
     { label: "Open workspace", href: "/employee/workspace", group: "Workspace" },
     { label: "Open inbox", href: "/employee/inbox", group: "Inbox" },
-    { label: "Open my space", href: "/employee/my-space", group: "My Space" },
     { label: "Get support", href: "/employee/support", group: "Support" },
   ],
 };

@@ -313,12 +313,12 @@ export default function ProfileDetailCard({ onClose }) {
             </div>
 
             <div className="relative z-10 max-h-[90vh] overflow-y-auto rounded-[40px]">
-              <div className="flex flex-col items-center px-6 pb-2 pt-10">
+              <div className="flex flex-col items-center px-6 pt-10">
                 <button
                   type="button"
                   onClick={() => (isEditMode ? fileInputRef.current?.click() : null)}
                   disabled={!isEditMode || isUploadingAvatar}
-                  className="group relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#6b7280] text-3xl font-bold text-white ring-1 ring-black/10"
+                  className="group relative flex h-40 w-40 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#6b7280] text-3xl font-bold text-white"
                   aria-label={isEditMode ? "Change profile photo" : undefined}
                 >
                   {profile.profile_picture_url ? (
@@ -326,7 +326,7 @@ export default function ProfileDetailCard({ onClose }) {
                       src={profile.profile_picture_url}
                       alt={`${name} profile`}
                       fill
-                      sizes="112px"
+                      sizes="160px"
                       className="object-cover"
                     />
                   ) : (
@@ -354,7 +354,7 @@ export default function ProfileDetailCard({ onClose }) {
                     className="mt-4 w-full rounded-full border border-black/10 bg-white px-3 py-1.5 text-center text-lg font-bold text-[#061a40] outline-none"
                   />
                 ) : (
-                  <h2 className="mt-4 truncate text-center text-xl font-bold text-[#061a40]">{name}</h2>
+                  <h2 className="mt-4 truncate text-center text-2xl font-bold text-[#061a40]">{name}</h2>
                 )}
 
                 {isEditMode ? (
@@ -374,7 +374,7 @@ export default function ProfileDetailCard({ onClose }) {
                     />
                   </div>
                 ) : (
-                  <div className="mt-1 flex items-center gap-1.5 text-base font-bold text-[#667085]">
+                  <div className="flex items-center gap-1.5 text-base font-medium text-[#667085]">
                     <span className="material-symbols-outlined text-[#0D1E4C]" style={{ fontSize: "22px" }} aria-hidden="true">
                       business_center
                     </span>
@@ -451,7 +451,7 @@ export default function ProfileDetailCard({ onClose }) {
                   {(isEditMode ? qualificationDraft : profile.qualifications).map((entry, index) => (
                     <li
                       key={`${entry}-${index}`}
-                      className="inline-flex max-w-full items-center gap-2 text-base font- text-[#0D1E4C]"
+                      className="inline-flex max-w-full items-center gap-2 text-base font-medium text-[#0D1E4C]"
                     >
                       <span className="min-w-0 truncate">{entry}</span>
                       {isEditMode ? (
