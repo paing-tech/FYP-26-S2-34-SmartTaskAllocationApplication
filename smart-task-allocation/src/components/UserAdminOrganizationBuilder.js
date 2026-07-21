@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import OrganizationCanvas from "@/components/OrganizationCanvas";
+import ProfileDetailCard from "@/components/ProfileDetailCard";
 
 const emptyForm = {
   organizationName: "",
@@ -13,38 +13,8 @@ const emptyForm = {
   logoUrl: "",
 };
 
-function initialFromName(name) {
-  return (name || "User").trim().charAt(0).toUpperCase() || "U";
-}
-
-function displayName(account) {
-  return account.full_name || account.username || account.email || "User";
-}
-
 function fieldClass() {
   return "h-10 rounded-full border border-black/60 bg-white/40 px-4 text-sm text-[#061a40] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20";
-}
-
-function AccountAvatar({ account, size = "h-10 w-10", textSize = "text-sm" }) {
-  const name = displayName(account);
-
-  return (
-    <span
-      className={`relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#6b7280] ${textSize} font-bold text-white`}
-    >
-      {account.profile_picture_url ? (
-        <Image
-          src={account.profile_picture_url}
-          alt={`${name} profile`}
-          fill
-          sizes="48px"
-          className="object-cover"
-        />
-      ) : (
-        initialFromName(name)
-      )}
-    </span>
-  );
 }
 
 export default function UserAdminOrganizationBuilder() {
@@ -210,8 +180,9 @@ export default function UserAdminOrganizationBuilder() {
       ) : null}
 
       {selectedAccount ? (
-        <AccountDetailModal
-          account={selectedAccount}
+        <ProfileDetailCard
+          userId={selectedAccount.user_id}
+          viewOnly
           onClose={() => setSelectedAccount(null)}
         />
       ) : null}
@@ -296,53 +267,3 @@ function OrganizationSetupModal({
   );
 }
 
-function AccountDetailModal({ account, onClose }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4">
-      <div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <AccountAvatar account={account} size="h-16 w-16" textSize="text-xl" />
-            <div>
-              <h2 className="text-2xl font-bold text-[#061a40]">{displayName(account)}</h2>
-              <p className="text-sm text-[#667085]">{account.email}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full px-3 py-1 text-xl font-bold text-[#667085] hover:bg-[#eef6ff]"
-            aria-label="Close profile"
-          >
-            x
-          </button>
-        </div>
-
-        <dl className="mt-6 grid gap-4 text-sm">
-          <div>
-            <dt className="font-bold uppercase tracking-wide text-[#667085]">Role</dt>
-            <dd className="mt-1 text-[#061a40]">{account.role?.role_name ?? "User"}</dd>
-          </div>
-          <div>
-            <dt className="font-bold uppercase tracking-wide text-[#667085]">Department</dt>
-            <dd className="mt-1 text-[#061a40]">
-              {account.department?.department_name ?? "Unassigned"}
-            </dd>
-          </div>
-          <div>
-            <dt className="font-bold uppercase tracking-wide text-[#667085]">Status</dt>
-            <dd className="mt-1 text-[#061a40]">
-              {account.account_status ?? "Unknown"}
-            </dd>
-          </div>
-          {account.bio ? (
-            <div>
-              <dt className="font-bold uppercase tracking-wide text-[#667085]">Bio</dt>
-              <dd className="mt-1 text-[#061a40]">{account.bio}</dd>
-            </div>
-          ) : null}
-        </dl>
-      </div>
-    </div>
-  );
-}

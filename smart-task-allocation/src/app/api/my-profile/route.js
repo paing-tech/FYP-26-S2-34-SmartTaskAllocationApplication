@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/serverAuth";
+import { getAuthenticatedUser, getRequesterOrganizationId } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 function cleanString(value) {
@@ -22,6 +22,29 @@ async function getMyAccount(supabase, user) {
 
   const byEmail = await supabase.from("user_account").select(columns).eq("email", user.email).maybeSingle();
   return { account: byEmail.data, error: byEmail.error };
+}
+
+// Viewing a colleague's card (e.g. from the org chart) instead of your own —
+// only allowed when the target account is in the same organization as you.
+async function getAccountForViewing(supabase, user, targetUserId) {
+  const columns =
+    "user_id, username, email, organization_id, department_id, role:role_id(role_name), department:department_id(department_name)";
+
+  const requesterOrganizationId = await getRequesterOrganizationId(supabase, user);
+  const { data: targetAccount, error } = await supabase
+    .from("user_account")
+    .select(columns)
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (error) {
+    return { error };
+  }
+  if (!targetAccount || !requesterOrganizationId || targetAccount.organization_id !== requesterOrganizationId) {
+    return { account: null };
+  }
+
+  return { account: targetAccount };
 }
 
 async function getMyProfilePayload(supabase, account) {
@@ -85,7 +108,13 @@ export async function GET(request) {
       return NextResponse.json({ error: authError }, { status: 401 });
     }
 
-    const { account, error: accountError } = await getMyAccount(supabase, user);
+    const { searchParams } = new URL(request.url);
+    const targetUserId = searchParams.get("userId");
+
+    const { account, error: accountError } =
+      targetUserId && targetUserId !== user.id
+        ? await getAccountForViewing(supabase, user, targetUserId)
+        : await getMyAccount(supabase, user);
     if (accountError) {
       return NextResponse.json({ error: accountError.message }, { status: 400 });
     }

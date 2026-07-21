@@ -88,7 +88,7 @@ const EMPTY_PROFILE = {
   qualifications: [],
 };
 
-export default function ProfileDetailCard({ onClose }) {
+export default function ProfileDetailCard({ onClose, userId, viewOnly = false }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -113,10 +113,11 @@ export default function ProfileDetailCard({ onClose }) {
   async function loadProfile() {
     setLoadError("");
     try {
-      const response = await fetch("/api/my-profile", { headers: await authHeaders() });
+      const url = userId ? `/api/my-profile?userId=${encodeURIComponent(userId)}` : "/api/my-profile";
+      const response = await fetch(url, { headers: await authHeaders() });
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || "Could not load your profile.");
+        throw new Error(result.error || "Could not load this profile.");
       }
       setProfile(result.profile);
     } catch (error) {
@@ -298,19 +299,21 @@ export default function ProfileDetailCard({ onClose }) {
               </span>
             </button>
 
-            <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
-              <button
-                type="button"
-                disabled={isSaving || isLoading}
-                onClick={isEditMode ? saveAndExitEditMode : enterEditMode}
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-120 hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
-                aria-label={isEditMode ? "Save profile" : "Edit profile"}
-              >
-                <span className="material-symbols-outlined text-xl" aria-hidden="true">
-                  {isEditMode ? "edit_off" : "edit"}
-                </span>
-              </button>
-            </div>
+            {viewOnly ? null : (
+              <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSaving || isLoading}
+                  onClick={isEditMode ? saveAndExitEditMode : enterEditMode}
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-120 hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+                  aria-label={isEditMode ? "Save profile" : "Edit profile"}
+                >
+                  <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                    {isEditMode ? "edit_off" : "edit"}
+                  </span>
+                </button>
+              </div>
+            )}
 
             <div className="relative z-10 max-h-[90vh] overflow-y-auto rounded-[40px]">
               <div className="flex flex-col items-center px-6 pt-10">

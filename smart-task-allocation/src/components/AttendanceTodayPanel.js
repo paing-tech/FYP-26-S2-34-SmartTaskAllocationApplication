@@ -24,12 +24,39 @@ function statusChip(record, todaySchedule) {
   if (!todaySchedule) {
     return { label: "Clocked in", tone: "neutral" };
   }
+
   const [hours, minutes] = todaySchedule.start_time.split(":").map(Number);
   const scheduledStart = new Date(record.clock_in_at);
   scheduledStart.setHours(hours, minutes, 0, 0);
-  const graceMs = 10 * 60 * 1000;
-  const isEarly = new Date(record.clock_in_at).getTime() <= scheduledStart.getTime() + graceMs;
-  return isEarly ? { label: "Early", tone: "success" } : { label: "Late", tone: "warning" };
+
+  const graceMinutes = 10;
+  const diffMinutes = Math.round((scheduledStart.getTime() - new Date(record.clock_in_at).getTime()) / 60000);
+
+  if (diffMinutes >= -graceMinutes) {
+    if (diffMinutes <= 0) {
+      return { label: "On time", tone: "success" };
+    }
+    return { label: `${diffMinutes} min${diffMinutes === 1 ? "" : "s"} early`, tone: "success" };
+  }
+
+  const minutesLate = Math.abs(diffMinutes);
+  return { label: `${minutesLate} min${minutesLate === 1 ? "" : "s"} late`, tone: "warning" };
+}
+
+// "8 hrs 15 mins" — computed straight from the timestamps rather than the
+// server's rounded total_hours, so it reads exact down to the minute.
+function getWorkedDurationLabel(record) {
+  if (!record?.clock_in_at || !record?.clock_out_at) return null;
+  const totalMinutes = Math.max(
+    0,
+    Math.round((new Date(record.clock_out_at).getTime() - new Date(record.clock_in_at).getTime()) / 60000),
+  );
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (hours) parts.push(`${hours} hr${hours === 1 ? "" : "s"}`);
+  parts.push(`${minutes} min${minutes === 1 ? "" : "s"}`);
+  return parts.join(" ");
 }
 
 // A plain solid connector — used between the scheduled start/end times.
@@ -74,6 +101,7 @@ function Dashes({ mode }) {
 export default function AttendanceTodayPanel({ record, todaySchedule, onOpenWebcam }) {
   const isClockedIn = Boolean(record && !record.clock_out_at);
   const chip = statusChip(record, todaySchedule);
+  const workedDuration = getWorkedDurationLabel(record);
   const today = new Date();
 
   return (
@@ -113,6 +141,10 @@ export default function AttendanceTodayPanel({ record, todaySchedule, onOpenWebc
         <span className="text-sm font-bold text-[#0D1E4C]">{formatClockTime(record?.clock_in_at) || "—"}</span>
         <Dashes mode={!record?.clock_in_at ? "neutral" : isClockedIn ? "active" : "complete"} />
         <span className="text-right text-sm font-bold text-[#0D1E4C]">{formatClockTime(record?.clock_out_at) || "—"}</span>
+
+        {workedDuration ? (
+          <p className="col-span-3 text-center text-xs font-bold text-[#52627a]">{workedDuration} worked</p>
+        ) : null}
 
         {record ? (
           <span
