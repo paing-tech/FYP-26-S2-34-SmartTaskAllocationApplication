@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
-import GlassSurface from "@/components/ui/glass-surface";
-
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const REPEAT_OPTIONS = ["Never", "Daily", "Weekdays", "Weekends", "Weekly", "Monthly", "Custom"];
 const TIME_INPUT_CLASS =
@@ -219,29 +217,33 @@ export default function AttendanceScheduleCalendar() {
   }
 
   return (
-    <GlassSurface className="flex h-full flex-col bg-white/40 p-5">
+    <div className="flex h-full flex-col">
       <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => setFullTimeEnabled((current) => !current)}
-          className="flex w-full items-center gap-3 rounded-2xl px-1 py-1 text-left"
-        >
-          <span
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
-              fullTimeEnabled ? "border-[#0D1E4C] bg-[#0D1E4C]" : "border-slate-300 bg-white"
-            }`}
+        <div className="flex h-8 w-full items-center justify-between gap-3">
+          <p className="text-lg font-black text-[#0D1E4C]">Schedule</p>
+
+          <button
+            type="button"
+            onClick={() => setFullTimeEnabled((current) => !current)}
+            className="flex items-center gap-2 rounded-2xl px-1 py-1 text-right"
           >
-            {fullTimeEnabled ? (
-              <span className="material-symbols-outlined text-[14px] text-white" aria-hidden="true">
-                check_small
-              </span>
-            ) : null}
-          </span>
-          <span className="text-sm font-black text-[#0D1E4C]">Full-time</span>
-          <span className="material-symbols-outlined ml-auto text-lg text-[#94a3b8]" aria-hidden="true">
-            {fullTimeEnabled ? "keyboard_arrow_up" : "keyboard_arrow_down"}
-          </span>
-        </button>
+            <span className="text-sm font-black text-[#0D1E4C]">Full-time</span>
+            <span
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                fullTimeEnabled ? "border-[#0D1E4C] bg-[#0D1E4C]" : "border-slate-300 bg-white"
+              }`}
+            >
+              {fullTimeEnabled ? (
+                <span className="material-symbols-outlined text-[14px] text-white" aria-hidden="true">
+                  check_small
+                </span>
+              ) : null}
+            </span>
+            <span className="material-symbols-outlined text-lg text-[#94a3b8]" aria-hidden="true">
+              {fullTimeEnabled ? "keyboard_arrow_up" : "keyboard_arrow_down"}
+            </span>
+          </button>
+        </div>
 
         {fullTimeEnabled ? (
           <div className="mt-3 space-y-3 rounded-2xl bg-white/70 p-3">
@@ -305,7 +307,7 @@ export default function AttendanceScheduleCalendar() {
         ) : null}
       </div>
 
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex h-8 items-center justify-between">
         <button
           type="button"
           onClick={goPrevMonth}
@@ -329,7 +331,7 @@ export default function AttendanceScheduleCalendar() {
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-black text-[#94a3b8]">
+      <div className="grid h-6 grid-cols-7 items-center gap-1 text-center text-[11px] font-black text-[#94a3b8]">
         {WEEKDAY_LABELS.map((label) => (
           <span key={label}>{label}</span>
         ))}
@@ -393,6 +395,6 @@ export default function AttendanceScheduleCalendar() {
           </div>
         </div>
       ) : null}
-    </GlassSurface>
+    </div>
   );
 }

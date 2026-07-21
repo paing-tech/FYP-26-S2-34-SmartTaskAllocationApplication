@@ -170,74 +170,77 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full max-w-md overflow-hidden rounded-[32px] bg-white shadow-[0_28px_80px_rgba(0,0,0,0.4)]"
+        className="relative aspect-square w-full max-w-md overflow-hidden rounded-[32px] bg-black shadow-[0_28px_80px_rgba(0,0,0,0.4)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4">
-          <p className="text-sm font-black text-[#0D1E4C]">Face Verification</p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-slate-100"
-          >
-            <span className="material-symbols-outlined text-xl" aria-hidden="true">
-              close
-            </span>
-          </button>
-        </div>
-
         {loadError ? (
-          <p className="mx-5 mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm font-bold text-white">
             {loadError}
-          </p>
+          </div>
         ) : (
           <>
-            <div className="relative mx-5 aspect-square overflow-hidden rounded-[24px] bg-black/80">
-              <video ref={videoRef} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
-              {isBusy && !cameraError ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60 px-6 text-center text-sm font-bold text-white">
-                  {modelsReady ? "Starting camera…" : "Loading face verification models…"}
-                </div>
-              ) : null}
-              {cameraError ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-6 text-center text-sm font-bold text-white">
-                  {cameraError}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="p-5">
-              <button
-                type="button"
-                onClick={handleCapture}
-                disabled={isBusy || isProcessing}
-                className={`flex w-full items-center justify-center gap-2 rounded-full px-6 py-4 text-lg font-black text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  isClockedIn ? "bg-red-600 hover:bg-red-700" : "bg-[#0D1E4C] hover:bg-[#0a1638]"
-                }`}
-              >
-                <span className="material-symbols-outlined text-2xl" aria-hidden="true">
-                  familiar_face_and_zone
-                </span>
-                {isProcessing ? "Verifying…" : buttonLabel}
-              </button>
-
-              {statusMessage ? (
-                <p
-                  className={`mt-3 rounded-md border px-3 py-2 text-center text-sm font-bold ${
-                    statusTone === "success"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : statusTone === "error"
-                        ? "border-red-200 bg-red-50 text-red-700"
-                        : "border-transparent text-[#52627a]"
-                  }`}
-                >
-                  {statusMessage}
-                </p>
-              ) : null}
-            </div>
+            <video ref={videoRef} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
+            {isBusy && !cameraError ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/60 px-6 text-center text-sm font-bold text-white">
+                {modelsReady ? "Starting camera…" : "Loading face verification models…"}
+              </div>
+            ) : null}
+            {cameraError ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-6 text-center text-sm font-bold text-white">
+                {cameraError}
+              </div>
+            ) : null}
           </>
         )}
+
+        <div className="absolute inset-x-0 top-4 flex justify-center px-4">
+          <span className="rounded-full border border-white/65 bg-white/20 px-4 py-2 text-sm font-black text-white backdrop-blur-md">
+            Face Verification
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full border border-white/65 bg-white/20 text-white backdrop-blur-md transition hover:scale-110"
+        >
+          <span className="material-symbols-outlined text-xl" aria-hidden="true">
+            close
+          </span>
+        </button>
+
+        {!loadError ? (
+          <div className="absolute inset-x-0 bottom-6 flex flex-col items-center gap-3 px-6">
+            {statusMessage ? (
+              <p
+                className={`w-full rounded-full border px-4 py-2 text-center text-sm font-bold backdrop-blur-md ${
+                  statusTone === "success"
+                    ? "border-emerald-300/60 bg-emerald-500/30 text-white"
+                    : statusTone === "error"
+                      ? "border-red-300/60 bg-red-500/30 text-white"
+                      : "border-white/40 bg-black/30 text-white"
+                }`}
+              >
+                {statusMessage}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={handleCapture}
+              disabled={isBusy || isProcessing}
+              className={`flex w-full items-center justify-center gap-2 rounded-full px-6 py-4 text-lg font-black text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                isClockedIn ? "bg-red-600 hover:bg-red-700" : "bg-[#0D1E4C] hover:bg-[#0a1638]"
+              }`}
+            >
+              <span className="material-symbols-outlined text-2xl" aria-hidden="true">
+                familiar_face_and_zone
+              </span>
+              {isProcessing ? "Verifying…" : buttonLabel}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

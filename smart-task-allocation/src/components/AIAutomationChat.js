@@ -146,7 +146,7 @@ function MessageBubble({ message }) {
         {message.createdTasks?.length ? (
           <ul className="mt-2 space-y-1 border-t border-[#0D1E4C]/10 pt-2">
             {message.createdTasks.map((title) => (
-              <li key={title} className="flex items-center gap-1.5 text-xs font-bold text-[#0D1E4C]">
+              <li key={title} className="flex items-center gap-1.5 text-xs font-bold text-white">
                 <span className="material-symbols-outlined text-sm" aria-hidden="true">
                   check
                 </span>
@@ -297,7 +297,7 @@ export default function AIAutomationChat({ onClose }) {
           ))}
           {isSending ? (
             <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-sm bg-slate-100 px-4 py-2 text-sm font-bold text-[#0D1E4C]">
+              <div className="rounded-2xl rounded-bl-sm bg-[#2563EB]/40 px-4 py-2 text-sm font-bold text-white">
                 Wingardium Leviosa…
               </div>
             </div>

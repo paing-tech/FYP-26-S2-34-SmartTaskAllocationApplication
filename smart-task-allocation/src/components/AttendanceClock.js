@@ -69,14 +69,6 @@ export default function AttendanceClock() {
   return (
     <section className="h-full min-h-0 overflow-hidden">
       <div className="flex h-full flex-col gap-4 overflow-y-auto pb-4">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#5d7290]">Team</p>
-          <h1 className="mt-2 text-4xl font-black text-[#07183b]">Attendance</h1>
-          <p className="mt-3 max-w-2xl text-base font-medium text-[#52627a]">
-            Verify your face against your profile picture to clock in and out.
-          </p>
-        </div>
-
         {loadError ? (
           <p className="max-w-xl rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
             {loadError}
@@ -86,11 +78,11 @@ export default function AttendanceClock() {
             {/* Insights — reserved for future analytics, intentionally blank for now. */}
             <div className="min-h-32 rounded-[28px] border border-white/40 bg-transparent" />
 
-            <div className="grid flex-1 gap-4 md:grid-cols-[1fr_2fr]">
+            <div className="grid flex-1 gap-4 md:grid-cols-[1fr_3fr]">
               {/* Request Leave — reserved for a future leave-request flow, intentionally blank for now. */}
               <div className="min-h-64 rounded-[28px] border border-white/40 bg-transparent" />
 
-              <GlassSurface className="grid gap-4 bg-white/30 p-5 sm:grid-cols-[220px_1fr]">
+              <GlassSurface className="grid h-full gap-4 bg-white/30 p-5 sm:grid-cols-[1fr_2fr]">
                 <AttendanceTodayPanel
                   record={record}
                   todaySchedule={todaySchedule}

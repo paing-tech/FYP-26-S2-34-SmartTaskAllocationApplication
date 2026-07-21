@@ -5,7 +5,7 @@ import GlassSurface from "@/components/ui/glass-surface";
 export default function ManagerAttendancePage() {
   return (
     <SideMenuLayout actor="manager">
-      <GlassSurface className="h-full overflow-hidden p-8">
+      <GlassSurface className="h-full overflow-hidden p-6">
         <AttendanceClock />
       </GlassSurface>
     </SideMenuLayout>
