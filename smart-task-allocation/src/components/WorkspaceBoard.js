@@ -144,6 +144,10 @@ function combineDateTime({ date, isDateEnabled, isTimeEnabled, time }) {
 function getSmartCreationLabel(task) {
   const reason = task.reasons ?? task.reason;
 
+  if (reason?.creationKind === "chat_automation") {
+    return "Prompt to Automation";
+  }
+
   if (reason?.creationKind === "skill_match") {
     return "Matched required skills";
   }
