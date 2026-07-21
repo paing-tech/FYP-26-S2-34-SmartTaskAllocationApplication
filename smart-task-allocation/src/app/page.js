@@ -62,13 +62,13 @@ export default function Home() {
 
             <section
               aria-label="Dashboard preview"
-              className="absolute left-1/2 top-[70vh] z-[6] aspect-[1512/940] w-[65%] -translate-x-1/2 overflow-hidden rounded-[20px] border-2 border-[#2563EB] bg-[#120F17] shadow-[0_0_90px_rgba(37,99,235,0.9)]"
+              className="absolute left-1/2 top-[70vh] z-[6] aspect-[3024/1890] w-[65%] -translate-x-1/2 overflow-hidden rounded-[20px] border-2 border-[#2563EB] bg-[#120F17] shadow-[0_0_90px_rgba(37,99,235,0.9)]"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={hero.heroImageUrl}
                 alt="Optima dashboard preview"
-                className="h-full w-full object-contain"
+                className="h-full w-full object-cover"
               />
             </section>
           </>
