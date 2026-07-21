@@ -179,7 +179,13 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
           </div>
         ) : (
           <>
-            <video ref={videoRef} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="h-full w-full -scale-x-100 rounded-[32px] object-cover"
+            />
             {isBusy && !cameraError ? (
               <div className="absolute inset-0 flex items-center justify-center bg-black/60 px-6 text-center text-sm font-bold text-white">
                 {modelsReady ? "Starting camera…" : "Loading face verification models…"}

@@ -49,17 +49,21 @@ function formatDateRanges(dates) {
   return ranges.join(", ");
 }
 
+// Matches the "Full-time" checkbox toggle style used on the Schedule calendar.
 function ToggleSwitch({ checked, onChange, label }) {
   return (
-    <button
-      type="button"
-      onClick={onChange}
-      aria-pressed={checked}
-      className="flex items-center gap-2"
-    >
+    <button type="button" onClick={onChange} aria-pressed={checked} className="flex items-center gap-2">
       <span className="text-sm font-black text-[#0D1E4C]">{label}</span>
-      <span className={`flex h-6 w-11 items-center rounded-full p-1 transition ${checked ? "bg-[#2563EB]" : "bg-slate-300"}`}>
-        <span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${checked ? "translate-x-5" : "translate-x-0"}`} />
+      <span
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+          checked ? "border-[#0D1E4C] bg-[#0D1E4C]" : "border-slate-300 bg-white"
+        }`}
+      >
+        {checked ? (
+          <span className="material-symbols-outlined text-[14px] text-white" aria-hidden="true">
+            check_small
+          </span>
+        ) : null}
       </span>
     </button>
   );
@@ -144,7 +148,7 @@ function NewRequestForm({ onCreated }) {
           <span className="material-symbols-outlined text-base" aria-hidden="true">
             attach_file
           </span>
-          {certificateFile ? certificateFile.name : "Attach certificate"}
+          {certificateFile ? certificateFile.name : "Medical Certificate"}
         </button>
         <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" className="hidden" onChange={handleFileChange} />
 
