@@ -6,6 +6,7 @@ import GlassSurface from "@/components/ui/glass-surface";
 import AttendanceTodayPanel from "@/components/AttendanceTodayPanel";
 import AttendanceScheduleCalendar from "@/components/AttendanceScheduleCalendar";
 import AttendanceWebcamModal from "@/components/AttendanceWebcamModal";
+import LeaveManagementPanel from "@/components/LeaveManagementPanel";
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -79,8 +80,9 @@ export default function AttendanceClock() {
             <div className="min-h-32 rounded-[28px] border border-white/40 bg-transparent" />
 
             <div className="grid flex-1 gap-4 md:grid-cols-[1fr_3fr]">
-              {/* Request Leave — reserved for a future leave-request flow, intentionally blank for now. */}
-              <div className="min-h-64 rounded-[28px] border border-white/40 bg-transparent" />
+              <GlassSurface className="min-h-64 bg-white/30">
+                <LeaveManagementPanel />
+              </GlassSurface>
 
               <GlassSurface className="grid h-full gap-4 bg-white/30 p-5 sm:grid-cols-[1fr_2fr]">
                 <AttendanceTodayPanel
