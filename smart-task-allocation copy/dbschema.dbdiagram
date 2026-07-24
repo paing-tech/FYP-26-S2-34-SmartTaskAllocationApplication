@@ -161,6 +161,12 @@
         "schemaName": "public",
         "x": 434.0302734375,
         "y": 2062
+      },
+      {
+        "name": "task_group",
+        "schemaName": "public",
+        "x": 48,
+        "y": 2720
       }
     ],
     "tableGroupCollapseStates": [],
@@ -777,6 +783,36 @@
           "user_id"
         ],
         "secondTableName": "testimonial",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "workspace_id"
+        ],
+        "firstTableName": "workspace",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "workspace_id"
+        ],
+        "secondTableName": "task_group",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "group_id"
+        ],
+        "firstTableName": "task_group",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "group_id"
+        ],
+        "secondTableName": "task",
         "secondSchemaName": "public",
         "secondRelation": "*",
         "checkPoints": []
