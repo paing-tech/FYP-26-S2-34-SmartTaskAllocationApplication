@@ -70,8 +70,8 @@ function ChevronIcon({ open }) {
 
 function TelegramIcon({ className = "h-5 w-5" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M21.5 4.5 2.7 11.9c-1.2.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.8-.4l2.2-2.1 4.6 3.4c.8.5 1.4.2 1.6-.8l3-14.1c.3-1.2-.5-1.7-1.7-1.2Z" />
+    <svg className={className} viewBox="0 0 448 512" fill="currentColor">
+      <path d="M446.7 98.6l-67.6 318.8c-5.1 22.5-18.4 28.1-37.3 17.5l-103-75.9-49.7 47.8c-5.5 5.5-10.1 10.1-20.7 10.1l7.4-104.9L365.7 130c8.3-7.4-1.8-11.5-12.9-4.1L117.8 284 15.7 252.1c-22.3-7-22.7-22.3 4.6-33l394.7-152.1c18.6-6.9 35 4.1 29 32.6z" />
     </svg>
   );
 }
@@ -740,9 +740,25 @@ export default function AgentWorkspace() {
           </button>
           {integrationsOpen ? (
             <div className="space-y-3 pt-1">
-              <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/40 bg-white/40 p-4">
+              <div className="relative flex flex-col items-center gap-2 rounded-2xl border border-white/40 bg-white/40 p-4">
+                <span className="group absolute right-4 top-4 flex h-2 w-2 cursor-help items-center justify-center rounded-full text-[#0D1E4C]/50 hover:text-[#0D1E4C]">
+                  <span className="material-symbols-outlined text-xs" aria-hidden="true">
+                    help
+                  </span>
+                  <span className="pointer-events-none absolute -right-6 top-5 z-10 hidden w-56 rounded-xl border border-white/65 bg-white/40 backdrop-blur-md p-3 text-left text-[10px] font-medium leading-relaxed text-[#0D1E4C] shadow-[0_16px_40px_rgba(0,0,0,0.2)] group-hover:block">
+                    <strong className="block text-xs font-bold">Setting up a Telegram bot</strong>
+                    <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+                      <li>Open Telegram and message @BotFather</li>
+                      <li>
+                        Send <code>/newbot</code> and follow the prompts
+                      </li>
+                      <li>Copy the token it gives you</li>
+                      <li>Paste it below and hit Connect</li>
+                    </ol>
+                  </span>
+                </span>
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#26A5E4] text-white">
-                  <TelegramIcon />
+                  <TelegramIcon className="h-4 w-4" />
                 </span>
                 <span className="text-xs font-bold text-[#0D1E4C]">Telegram</span>
                 {telegram ? (
