@@ -1,10 +1,10 @@
 import SideMenuLayout from "@/components/SideMenuLayout";
-import AgentSelection from "@/components/AgentSelection";
+import AgentWorkspace from "@/components/AgentWorkspace";
 
 export default function ManagerAgentsPage() {
   return (
     <SideMenuLayout actor="manager">
-      <AgentSelection />
+      <AgentWorkspace />
     </SideMenuLayout>
   );
 }

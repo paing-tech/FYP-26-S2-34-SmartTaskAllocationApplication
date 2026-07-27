@@ -1,0 +1,98 @@
+import { NextResponse } from "next/server";
+import { requireManager } from "@/lib/serverAuth";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { listThreadMessages, sendMessageAndGetReply } from "@/lib/foundryAgent";
+
+function extractMessageText(message) {
+  return (message.content ?? [])
+    .filter((block) => block.type === "text")
+    .map((block) => block.text?.value ?? "")
+    .join("\n")
+    .trim();
+}
+
+async function getMyThread(supabase, user, threadId) {
+  const { data: agent } = await supabase.from("agent").select("*").eq("user_id", user.id).maybeSingle();
+  if (!agent) return { agent: null, thread: null };
+
+  const { data: thread } = await supabase
+    .from("agent_chat_thread")
+    .select("*")
+    .eq("agent_chat_thread_id", threadId)
+    .eq("agent_id", agent.agent_id)
+    .maybeSingle();
+
+  return { agent, thread };
+}
+
+export async function GET(request, { params }) {
+  try {
+    const { threadId } = await params;
+    const supabase = getSupabaseAdminClient();
+    const { user, error: authError } = await requireManager(request, supabase);
+    if (authError) {
+      return NextResponse.json({ error: authError }, { status: 403 });
+    }
+
+    const { thread } = await getMyThread(supabase, user, threadId);
+    if (!thread) {
+      return NextResponse.json({ error: "Chat not found." }, { status: 404 });
+    }
+
+    const messages = await listThreadMessages({ threadId: thread.foundry_thread_id });
+    return NextResponse.json({
+      messages: messages.map((message) => ({
+        role: message.role,
+        content: extractMessageText(message),
+      })),
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request, { params }) {
+  try {
+    const { threadId } = await params;
+    const supabase = getSupabaseAdminClient();
+    const { user, error: authError } = await requireManager(request, supabase);
+    if (authError) {
+      return NextResponse.json({ error: authError }, { status: 403 });
+    }
+
+    const { agent, thread } = await getMyThread(supabase, user, threadId);
+    if (!thread) {
+      return NextResponse.json({ error: "Chat not found." }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const content = typeof body.message === "string" ? body.message.trim() : "";
+    if (!content) {
+      return NextResponse.json({ error: "A message is required." }, { status: 400 });
+    }
+
+    const { reply, usage } = await sendMessageAndGetReply({
+      threadId: thread.foundry_thread_id,
+      foundryAgentId: agent.foundry_agent_id,
+      content,
+    });
+
+    await supabase.from("agent_token_usage").insert({
+      agent_id: agent.agent_id,
+      organization_id: agent.organization_id,
+      prompt_tokens: usage.prompt_tokens ?? 0,
+      completion_tokens: usage.completion_tokens ?? 0,
+      total_tokens: usage.total_tokens ?? 0,
+    });
+
+    const updates = { updated_at: new Date().toISOString() };
+    if (thread.title === "New chat") {
+      updates.title = content.slice(0, 60);
+    }
+    await supabase.from("agent_chat_thread").update(updates).eq("agent_chat_thread_id", thread.agent_chat_thread_id);
+
+    return NextResponse.json({ reply, title: updates.title });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

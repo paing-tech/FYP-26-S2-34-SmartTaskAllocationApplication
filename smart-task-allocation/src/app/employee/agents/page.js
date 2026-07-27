@@ -1,10 +1,10 @@
 import SideMenuLayout from "@/components/SideMenuLayout";
-import AgentSelection from "@/components/AgentSelection";
+import AgentUnavailable from "@/components/AgentUnavailable";
 
 export default function EmployeeAgentsPage() {
   return (
     <SideMenuLayout actor="employee">
-      <AgentSelection />
+      <AgentUnavailable />
     </SideMenuLayout>
   );
 }

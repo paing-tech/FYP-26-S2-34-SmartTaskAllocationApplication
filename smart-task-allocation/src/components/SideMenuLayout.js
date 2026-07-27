@@ -1,12 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
 import TopInformationBar from "@/components/TopInformationBar";
 import { useAppearance } from "@/components/appearance/AppearanceContext";
 import AIAutomationChat from "@/components/AIAutomationChat";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { getAgentAvatarSrc } from "@/lib/agentAvatars";
 
 function NavIcon({ name }) {
   const commonProps = {
@@ -173,6 +176,20 @@ export default function SideMenuLayout({ actor, children }) {
   const navigation = sideMenuNavigation[actor];
   const { backgroundStyle } = useAppearance();
   const [isAutomationChatOpen, setIsAutomationChatOpen] = useState(false);
+  const [agentAvatarKey, setAgentAvatarKey] = useState(null);
+
+  useEffect(() => {
+    if (actor !== "manager") return;
+    (async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      const res = await fetch("/api/agent", {
+        headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+      });
+      const result = await res.json();
+      if (res.ok && result.agent) setAgentAvatarKey(result.agent.avatar_key);
+    })();
+  }, [actor]);
 
   return (
     <main className="h-screen overflow-hidden text-[#07183b]" style={backgroundStyle}>
@@ -238,9 +255,13 @@ export default function SideMenuLayout({ actor, children }) {
               onClick={() => setIsAutomationChatOpen(true)}
               title="Optimus AI"
               aria-label="Open Optimus AI chat"
-              className="flex h-16 w-16 shrink-0 items-center justify-center self-center rounded-full border border-white/60 bg-white/20 text-[#2563EB] shadow-sm backdrop-blur-sm transition hover:scale-105 [&>svg]:h-7 [&>svg]:w-7"
+              className="flex h-16 w-16 shrink-0 items-center justify-center self-center overflow-hidden rounded-full border border-white/60 bg-white/20 text-[#2563EB] shadow-sm backdrop-blur-sm transition hover:scale-105 [&>svg]:h-7 [&>svg]:w-7"
             >
-              <NavIcon name="agents" />
+              {agentAvatarKey ? (
+                <Image src={getAgentAvatarSrc(agentAvatarKey)} alt="" width={64} height={64} className="h-full w-full object-cover" />
+              ) : (
+                <NavIcon name="agents" />
+              )}
             </button>
           ) : null}
         </div>
