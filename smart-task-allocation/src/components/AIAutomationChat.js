@@ -35,9 +35,9 @@ function MessageBubble({ message }) {
 }
 
 // The "quick chat" trigger from the side nav — same agent/threads backend as
-// the full Agent page, just a lighter surface. Every open starts a fresh
-// thread (the full history still lives in the Agent page's Recents list,
-// since it's the same agent_chat_thread row).
+// the full Agent page, just a lighter surface. The thread isn't created
+// until the first message is actually sent, so opening-then-closing without
+// typing anything doesn't litter the Agent page's Recents list.
 export default function AIAutomationChat({ onClose }) {
   const router = useRouter();
   const [agent, setAgent] = useState(null);
@@ -60,9 +60,6 @@ export default function AIAutomationChat({ onClose }) {
       const agentData = await agentRes.json();
       if (agentRes.ok && agentData.agent) {
         setAgent(agentData.agent);
-        const threadRes = await fetch("/api/agent/threads", { method: "POST", headers });
-        const threadData = await threadRes.json();
-        if (threadRes.ok) setThreadId(threadData.thread.agent_chat_thread_id);
       }
       setLoadingAgent(false);
     })();
@@ -70,7 +67,7 @@ export default function AIAutomationChat({ onClose }) {
 
   async function handleSend() {
     const trimmed = input.trim();
-    if (!trimmed || isSending || !threadId) return;
+    if (!trimmed || isSending || !agent) return;
 
     setMessages((current) => [...current, { role: "user", content: trimmed }]);
     setInput("");
@@ -78,7 +75,16 @@ export default function AIAutomationChat({ onClose }) {
 
     try {
       const headers = await authHeaders();
-      const response = await fetch(`/api/agent/threads/${threadId}/messages`, {
+      let currentThreadId = threadId;
+      if (!currentThreadId) {
+        const threadRes = await fetch("/api/agent/threads", { method: "POST", headers });
+        const threadData = await threadRes.json();
+        if (!threadRes.ok) throw new Error(threadData.error || "Could not start a chat.");
+        currentThreadId = threadData.thread.agent_chat_thread_id;
+        setThreadId(currentThreadId);
+      }
+
+      const response = await fetch(`/api/agent/threads/${currentThreadId}/messages`, {
         method: "POST",
         headers,
         body: JSON.stringify({ message: trimmed }),
@@ -108,9 +114,9 @@ export default function AIAutomationChat({ onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-end bg-black/10 p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-end justify-end bg-black/10 pb-6 pr-2" onClick={onClose}>
       <div
-        className="flex h-[75vh] w-full max-w-md flex-col overflow-hidden rounded-[32px] bg-gradient-to-b from-[#2563EB] from-0% to-white/10 to-50% backdrop-blur-xs shadow-[0_28px_80px_rgba(0,0,0,0.35)]"
+        className="flex h-[68vh] w-full max-w-sm flex-col overflow-hidden rounded-[32px] bg-gradient-to-b from-[#2563EB] from-0% to-white/10 to-50% backdrop-blur-xs shadow-[0_28px_80px_rgba(0,0,0,0.35)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-white/15 bg-transparent px-5 py-4">
@@ -178,7 +184,7 @@ export default function AIAutomationChat({ onClose }) {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={isSending || !threadId}
+              disabled={isSending || !agent}
               rows={1}
               placeholder="Ask me anything"
               className="min-h-9 flex-1 resize-none bg-transparent py-4 text-sm font-medium text-[#0D1E4C] outline-none"
@@ -186,7 +192,7 @@ export default function AIAutomationChat({ onClose }) {
             <button
               type="button"
               onClick={handleSend}
-              disabled={isSending || !input.trim() || !threadId}
+              disabled={isSending || !input.trim() || !agent}
               aria-label="Send"
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-500 text-white transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
             >

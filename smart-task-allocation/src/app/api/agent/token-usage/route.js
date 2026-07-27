@@ -8,9 +8,12 @@ function startOfDayIso() {
   return now.toISOString();
 }
 
-function startOfMonthIso() {
+function startOfWeekIso() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const start = new Date(now);
+  start.setDate(now.getDate() - now.getDay());
+  start.setHours(0, 0, 0, 0);
+  return start.toISOString();
 }
 
 function sumTokens(rows) {
@@ -31,7 +34,7 @@ export async function GET(request) {
       .eq("user_id", user.id)
       .maybeSingle();
     if (!agent) {
-      return NextResponse.json({ today: 0, thisMonth: 0, allTime: 0, dailyLimit: 0 });
+      return NextResponse.json({ today: 0, thisWeek: 0, allTime: 0, dailyLimit: 0 });
     }
 
     const { data, error } = await supabase
@@ -45,12 +48,12 @@ export async function GET(request) {
 
     const rows = data ?? [];
     const todayCutoff = startOfDayIso();
-    const monthCutoff = startOfMonthIso();
+    const weekCutoff = startOfWeekIso();
     const today = sumTokens(rows.filter((row) => row.created_at >= todayCutoff));
 
     return NextResponse.json({
       today,
-      thisMonth: sumTokens(rows.filter((row) => row.created_at >= monthCutoff)),
+      thisWeek: sumTokens(rows.filter((row) => row.created_at >= weekCutoff)),
       allTime: sumTokens(rows),
       dailyLimit: agent.daily_token_limit,
       dailyPercent: agent.daily_token_limit ? Math.min(100, Math.round((today / agent.daily_token_limit) * 100)) : 0,

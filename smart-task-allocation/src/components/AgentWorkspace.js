@@ -8,6 +8,25 @@ import { AGENT_AVATARS, getAgentAvatarSrc } from "@/lib/agentAvatars";
 
 const TELEGRAM_SENTINEL = "telegram";
 
+const FEATURE_BANNERS = [
+  {
+    title: "Prompt to Automation",
+    badge: "New AI feature",
+    description: "Prompt me to analyze, create, allocate or automate tasks effortlessly.",
+  },
+  {
+    title: "Knowledge Base",
+    badge: "New",
+    description: "Upload PDFs and docs so your agent can answer from your own company info.",
+  },
+  {
+    title: "Telegram Bot",
+    badge: "New",
+    description: "Connect a Telegram bot to chat with your agent from your phone, anywhere.",
+  },
+];
+const FEATURE_BANNER_INTERVAL_MS = 5000;
+
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-[#0D1E4C] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20";
 
@@ -54,6 +73,57 @@ function TelegramIcon({ className = "h-5 w-5" }) {
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <path d="M21.5 4.5 2.7 11.9c-1.2.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.8-.4l2.2-2.1 4.6 3.4c.8.5 1.4.2 1.6-.8l3-14.1c.3-1.2-.5-1.7-1.7-1.2Z" />
     </svg>
+  );
+}
+
+function PinIcon({ className = "h-3.5 w-3.5" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M14 2a1 1 0 0 1 1 1v6.5l3.4 3.9a1 1 0 0 1-.75 1.6H13v6l-1 2-1-2v-6H6.35a1 1 0 0 1-.75-1.6L9 9.5V3a1 1 0 0 1 1-1Z" />
+    </svg>
+  );
+}
+
+function ThreadRow({
+  thread,
+  isActive,
+  isRenaming,
+  renameDraft,
+  onSelect,
+  onContextMenu,
+  onRenameChange,
+  onRenameCommit,
+  onRenameCancel,
+}) {
+  if (isRenaming) {
+    return (
+      <input
+        autoFocus
+        type="text"
+        value={renameDraft}
+        onChange={(event) => onRenameChange(event.target.value)}
+        onBlur={onRenameCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") onRenameCommit();
+          if (event.key === "Escape") onRenameCancel();
+        }}
+        className="h-10 rounded-xl border border-[#2563EB] bg-white px-3 text-sm text-[#0D1E4C] outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      className={`flex h-10 items-center gap-1.5 truncate rounded-xl px-3 text-left text-sm transition ${
+        isActive ? "bg-white/70 font-semibold text-[#0D1E4C]" : "text-[#0D1E4C]/70 hover:bg-white/40"
+      }`}
+    >
+      {thread.pinned ? <PinIcon className="h-3.5 w-3.5 shrink-0 text-[#2563EB]" /> : null}
+      <span className="truncate">{thread.title}</span>
+    </button>
   );
 }
 
@@ -118,6 +188,19 @@ export default function AgentWorkspace() {
   const [chatInput, setChatInput] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
 
+  const [contextMenu, setContextMenu] = useState(null);
+  const [renamingThreadId, setRenamingThreadId] = useState(null);
+  const [renameDraft, setRenameDraft] = useState("");
+
+  const [bannerIndex, setBannerIndex] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setBannerIndex((current) => (current + 1) % FEATURE_BANNERS.length);
+    }, FEATURE_BANNER_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -130,13 +213,19 @@ export default function AgentWorkspace() {
         setNameDraft(data.agent.name);
         setAvatarKeyDraft(data.agent.avatar_key);
         await Promise.all([loadUsage(), loadFiles(), loadTelegram(), loadThreads()]);
-        const threadParam = searchParams.get("thread");
-        if (threadParam) setActiveThreadId(threadParam);
       }
       setLoading(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Runs on every navigation, not just mount — the quick chat's expand
+  // button pushes ?thread=<id> onto this same route, which doesn't remount
+  // this component, so picking the param up here (keyed on searchParams)
+  // is what actually makes the switch happen.
+  useEffect(() => {
+    const threadParam = searchParams.get("thread");
+    if (threadParam) setActiveThreadId(threadParam);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!activeThreadId || activeThreadId === TELEGRAM_SENTINEL) return;
@@ -318,6 +407,71 @@ export default function AgentWorkspace() {
     setMessages([]);
   }
 
+  function openContextMenu(event, threadId) {
+    event.preventDefault();
+    setContextMenu({ threadId, x: event.clientX, y: event.clientY });
+  }
+
+  function closeContextMenu() {
+    setContextMenu(null);
+  }
+
+  async function handleTogglePin(thread) {
+    closeContextMenu();
+    const headers = await authHeaders();
+    const res = await fetch(`/api/agent/threads/${thread.agent_chat_thread_id}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ pinned: !thread.pinned }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setThreads((current) =>
+        current.map((t) => (t.agent_chat_thread_id === thread.agent_chat_thread_id ? data.thread : t)),
+      );
+    }
+  }
+
+  function startRename(thread) {
+    closeContextMenu();
+    setRenamingThreadId(thread.agent_chat_thread_id);
+    setRenameDraft(thread.title);
+  }
+
+  function cancelRename() {
+    setRenamingThreadId(null);
+  }
+
+  async function commitRename(threadId) {
+    const title = renameDraft.trim();
+    setRenamingThreadId(null);
+    if (!title) return;
+    const headers = await authHeaders();
+    const res = await fetch(`/api/agent/threads/${threadId}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ title }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setThreads((current) => current.map((t) => (t.agent_chat_thread_id === threadId ? data.thread : t)));
+    }
+  }
+
+  async function handleDeleteThread(thread) {
+    closeContextMenu();
+    if (!window.confirm(`Delete "${thread.title}"? This can't be undone.`)) return;
+    const headers = await authHeaders();
+    const res = await fetch(`/api/agent/threads/${thread.agent_chat_thread_id}`, { method: "DELETE", headers });
+    if (res.ok) {
+      setThreads((current) => current.filter((t) => t.agent_chat_thread_id !== thread.agent_chat_thread_id));
+      if (activeThreadId === thread.agent_chat_thread_id) {
+        setActiveThreadId(null);
+        setMessages([]);
+      }
+    }
+  }
+
   async function handleSend() {
     const trimmed = chatInput.trim();
     if (!trimmed || sendingMessage) return;
@@ -444,10 +598,12 @@ export default function AgentWorkspace() {
     );
   }
 
+  const activeMenuThread = contextMenu ? threads.find((t) => t.agent_chat_thread_id === contextMenu.threadId) : null;
+
   return (
     <div className="flex h-full min-h-0 gap-4">
       {/* Left: profile card */}
-      <aside className="hidden w-80 shrink-0 flex-col gap-6 overflow-y-auto rounded-[28px] border border-white/60 bg-white/25 p-6 backdrop-blur-sm lg:flex">
+      <aside className="hidden w-64 shrink-0 flex-col gap-6 overflow-y-auto rounded-[28px] border border-white/60 bg-white/25 p-6 backdrop-blur-sm lg:flex">
         <div className="text-center">
           <div className="relative mx-auto w-fit">
             <Image
@@ -627,16 +783,14 @@ export default function AgentWorkspace() {
       </aside>
 
       <section className="flex min-h-0 flex-1 flex-col gap-4">
-        {/* Top: usage bar */}
-        <div className="flex items-center gap-8 rounded-[28px] border border-white/60 bg-white/25 px-8 py-4 backdrop-blur-sm">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-[#0D1E4C]/70">Today&apos;s usage</h2>
-              <p className="shrink-0 text-xs font-bold text-[#0D1E4C]/70">
-                {(usage?.today ?? 0).toLocaleString()} / {(usage?.dailyLimit ?? 0).toLocaleString()} ({usage?.dailyPercent ?? 0}%)
-              </p>
-            </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/50">
+        {/* Top: token usage (matches Recents width) + rotating feature banner (matches chat panel width) */}
+        <div className="flex items-stretch gap-4">
+          <div className="flex w-80 shrink-0 flex-col justify-center gap-1.5 rounded-[28px] border border-white/60 bg-white/25 px-5 py-3 backdrop-blur-sm">
+            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-[#0D1E4C]/70">Tokens Usage</h2>
+            <p className="text-center text-xs font-bold text-[#0D1E4C]">
+              {(usage?.today ?? 0).toLocaleString()} / {(usage?.dailyLimit ?? 0).toLocaleString()}
+            </p>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-white/50">
               <div
                 className={`h-full rounded-full transition-all ${
                   (usage?.dailyPercent ?? 0) >= 90 ? "bg-red-500" : (usage?.dailyPercent ?? 0) >= 70 ? "bg-amber-500" : "bg-[#2563EB]"
@@ -644,23 +798,40 @@ export default function AgentWorkspace() {
                 style={{ width: `${usage?.dailyPercent ?? 0}%` }}
               />
             </div>
-          </div>
-          <div className="flex shrink-0 gap-8">
-            {[
-              { label: "This month", value: usage?.thisMonth },
-              { label: "All time", value: usage?.allTime },
-            ].map((row) => (
-              <div key={row.label} className="text-right">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">{row.label}</p>
-                <p className="text-lg font-black text-[#0D1E4C]">{(row.value ?? 0).toLocaleString()}</p>
+            <p className="text-center text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">
+              Daily limit
+            </p>
+            <div className="mt-1 flex items-center justify-between border-t border-white/40 pt-1.5">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">This week</p>
+                <p className="text-base font-black text-[#0D1E4C]">{(usage?.thisWeek ?? 0).toLocaleString()}</p>
               </div>
-            ))}
+              <div className="text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">All time</p>
+                <p className="text-base font-black text-[#0D1E4C]">{(usage?.allTime ?? 0).toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-1 items-center gap-3 overflow-hidden rounded-[28px] border border-white/60 bg-gradient-to-br from-[#2563EB]/15 to-white/10 px-6 py-3 backdrop-blur-sm">
+            <span className="material-symbols-outlined shrink-0 text-2xl text-[#2563EB]" aria-hidden="true">
+              auto_awesome
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="truncate text-sm font-black text-[#0D1E4C]">{FEATURE_BANNERS[bannerIndex].title}</p>
+                <span className="shrink-0 rounded-full border border-[#2563EB]/30 bg-[#2563EB]/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-[#2563EB]">
+                  {FEATURE_BANNERS[bannerIndex].badge}
+                </span>
+              </div>
+              <p className="truncate text-xs font-medium text-[#0D1E4C]/70">{FEATURE_BANNERS[bannerIndex].description}</p>
+            </div>
           </div>
         </div>
 
         <div className="flex min-h-0 flex-1 gap-4">
           {/* Middle: chat sessions */}
-          <aside className="hidden w-64 shrink-0 flex-col gap-1 overflow-y-auto rounded-[28px] border border-white/60 bg-white/25 p-4 backdrop-blur-sm md:flex">
+          <aside className="hidden w-80 shrink-0 flex-col gap-1 overflow-y-auto rounded-[28px] border border-white/60 bg-white/25 p-4 backdrop-blur-sm md:flex">
             <button
               type="button"
               onClick={handleNewChat}
@@ -682,21 +853,45 @@ export default function AgentWorkspace() {
               </button>
             ) : null}
 
+            {threads.some((thread) => thread.pinned) ? (
+              <>
+                <p className="mt-3 px-3 text-xs font-bold uppercase tracking-wide text-[#0D1E4C]/50">Pinned</p>
+                {threads
+                  .filter((thread) => thread.pinned)
+                  .map((thread) => (
+                    <ThreadRow
+                      key={thread.agent_chat_thread_id}
+                      thread={thread}
+                      isActive={activeThreadId === thread.agent_chat_thread_id}
+                      isRenaming={renamingThreadId === thread.agent_chat_thread_id}
+                      renameDraft={renameDraft}
+                      onSelect={() => setActiveThreadId(thread.agent_chat_thread_id)}
+                      onContextMenu={(event) => openContextMenu(event, thread.agent_chat_thread_id)}
+                      onRenameChange={setRenameDraft}
+                      onRenameCommit={() => commitRename(thread.agent_chat_thread_id)}
+                      onRenameCancel={cancelRename}
+                    />
+                  ))}
+              </>
+            ) : null}
+
             <p className="mt-3 px-3 text-xs font-bold uppercase tracking-wide text-[#0D1E4C]/50">Recents</p>
-            {threads.map((thread) => (
-              <button
-                key={thread.agent_chat_thread_id}
-                type="button"
-                onClick={() => setActiveThreadId(thread.agent_chat_thread_id)}
-                className={`flex h-10 items-center truncate rounded-xl px-3 text-left text-sm transition ${
-                  activeThreadId === thread.agent_chat_thread_id
-                    ? "bg-white/70 font-semibold text-[#0D1E4C]"
-                    : "text-[#0D1E4C]/70 hover:bg-white/40"
-                }`}
-              >
-                <span className="truncate">{thread.title}</span>
-              </button>
-            ))}
+            {threads
+              .filter((thread) => !thread.pinned)
+              .map((thread) => (
+                <ThreadRow
+                  key={thread.agent_chat_thread_id}
+                  thread={thread}
+                  isActive={activeThreadId === thread.agent_chat_thread_id}
+                  isRenaming={renamingThreadId === thread.agent_chat_thread_id}
+                  renameDraft={renameDraft}
+                  onSelect={() => setActiveThreadId(thread.agent_chat_thread_id)}
+                  onContextMenu={(event) => openContextMenu(event, thread.agent_chat_thread_id)}
+                  onRenameChange={setRenameDraft}
+                  onRenameCommit={() => commitRename(thread.agent_chat_thread_id)}
+                  onRenameCancel={cancelRename}
+                />
+              ))}
           </aside>
 
           {/* Right: chat panel — same look as AIAutomationChat.js */}
@@ -763,6 +958,46 @@ export default function AgentWorkspace() {
           </section>
         </div>
       </section>
+
+      {contextMenu && activeMenuThread ? (
+        <div
+          className="fixed inset-0 z-[80]"
+          onClick={closeContextMenu}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            closeContextMenu();
+          }}
+        >
+          <div
+            className="absolute w-40 overflow-hidden rounded-2xl border border-white/60 bg-white py-1 shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => handleTogglePin(activeMenuThread)}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-slate-100"
+            >
+              <PinIcon className="h-3.5 w-3.5" />
+              {activeMenuThread.pinned ? "Unpin" : "Pin"}
+            </button>
+            <button
+              type="button"
+              onClick={() => startRename(activeMenuThread)}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-slate-100"
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteThread(activeMenuThread)}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

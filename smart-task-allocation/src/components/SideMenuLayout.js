@@ -252,7 +252,9 @@ export default function SideMenuLayout({ actor, children }) {
           {actor === "manager" ? (
             <button
               type="button"
-              onClick={() => setIsAutomationChatOpen(true)}
+              onClick={() => {
+                if (!pathname.startsWith("/manager/agents")) setIsAutomationChatOpen(true);
+              }}
               title="Optimus AI"
               aria-label="Open Optimus AI chat"
               className="flex h-16 w-16 shrink-0 items-center justify-center self-center overflow-hidden rounded-full border border-white/60 bg-white/20 text-[#2563EB] shadow-sm backdrop-blur-sm transition hover:scale-105 [&>svg]:h-7 [&>svg]:w-7"
@@ -271,7 +273,7 @@ export default function SideMenuLayout({ actor, children }) {
         </div>
       </div>
 
-      {actor === "manager" && isAutomationChatOpen ? (
+      {actor === "manager" && isAutomationChatOpen && !pathname.startsWith("/manager/agents") ? (
         <AIAutomationChat onClose={() => setIsAutomationChatOpen(false)} />
       ) : null}
     </main>
