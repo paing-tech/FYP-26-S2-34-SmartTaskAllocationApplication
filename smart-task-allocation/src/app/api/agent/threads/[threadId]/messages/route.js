@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendMessageAndGetReply } from "@/lib/foundryAgent";
+import { ensureAiRecommendationsGroup } from "@/lib/taskGroups";
 
 async function getMyThread(supabase, user, threadId) {
   const { data: agent } = await supabase.from("agent").select("*").eq("user_id", user.id).maybeSingle();
@@ -57,7 +58,7 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "A message is required." }, { status: 400 });
     }
 
-    const { responseId, reply, usage } = await sendMessageAndGetReply({
+    const { responseId, reply, proposedTasks, usage } = await sendMessageAndGetReply({
       instructions: agent.instructions,
       input: content,
       previousResponseId: thread.last_response_id,
@@ -72,17 +73,27 @@ export async function POST(request, { params }) {
       total_tokens: usage.total_tokens,
     });
 
+    let taskProposal = null;
+    if (proposedTasks?.length) {
+      const groupId = await ensureAiRecommendationsGroup(supabase, agent.organization_id);
+      taskProposal = { tasks: proposedTasks, groupId };
+    }
+
     const updates = {
       updated_at: new Date().toISOString(),
       last_response_id: responseId,
-      messages: [...(thread.messages ?? []), { role: "user", content }, { role: "assistant", content: reply }],
+      messages: [
+        ...(thread.messages ?? []),
+        { role: "user", content },
+        { role: "assistant", content: reply, taskProposal },
+      ],
     };
     if (thread.title === "New chat") {
       updates.title = content.slice(0, 60);
     }
     await supabase.from("agent_chat_thread").update(updates).eq("agent_chat_thread_id", thread.agent_chat_thread_id);
 
-    return NextResponse.json({ reply, title: updates.title });
+    return NextResponse.json({ reply, title: updates.title, taskProposal });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

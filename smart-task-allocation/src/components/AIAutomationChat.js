@@ -3,17 +3,9 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { authHeaders } from "@/lib/agentClient";
 import { getAgentAvatarSrc } from "@/lib/agentAvatars";
-
-async function authHeaders() {
-  const supabase = getSupabaseBrowserClient();
-  const { data } = await supabase.auth.getSession();
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${data.session?.access_token ?? ""}`,
-  };
-}
+import AgentTaskProposal from "@/components/AgentTaskProposal";
 
 function MessageBubble({ message }) {
   const isUser = message.role === "user";
@@ -93,7 +85,10 @@ export default function AIAutomationChat({ onClose }) {
       if (!response.ok) {
         throw new Error(result.error || "The agent could not respond.");
       }
-      setMessages((current) => [...current, { role: "assistant", content: result.reply }]);
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: result.reply, taskProposal: result.taskProposal },
+      ]);
     } catch (error) {
       setMessages((current) => [...current, { role: "assistant", tone: "error", content: error.message }]);
     } finally {
@@ -169,7 +164,14 @@ export default function AIAutomationChat({ onClose }) {
           ) : messages.length === 0 ? (
             <p className="text-sm font-medium text-white/70">Ask {agent.name} anything to get started.</p>
           ) : (
-            messages.map((message, index) => <MessageBubble key={index} message={message} />)
+            messages.map((message, index) => (
+              <div key={index} className="space-y-2">
+                {message.content ? <MessageBubble message={message} /> : null}
+                {message.taskProposal ? (
+                  <AgentTaskProposal taskProposal={message.taskProposal} agentName={agent.name} />
+                ) : null}
+              </div>
+            ))
           )}
           {isSending ? (
             <div className="flex justify-start">

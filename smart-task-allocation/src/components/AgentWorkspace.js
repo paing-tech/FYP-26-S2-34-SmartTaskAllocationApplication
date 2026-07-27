@@ -3,8 +3,9 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { authHeaders, authHeaderOnly } from "@/lib/agentClient";
 import { AGENT_AVATARS, getAgentAvatarSrc } from "@/lib/agentAvatars";
+import AgentTaskProposal from "@/components/AgentTaskProposal";
 
 const TELEGRAM_SENTINEL = "telegram";
 
@@ -29,21 +30,6 @@ const FEATURE_BANNER_INTERVAL_MS = 5000;
 
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-[#0D1E4C] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20";
-
-async function authHeaders() {
-  const supabase = getSupabaseBrowserClient();
-  const { data } = await supabase.auth.getSession();
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${data.session?.access_token ?? ""}`,
-  };
-}
-
-async function authHeaderOnly() {
-  const headers = await authHeaders();
-  delete headers["Content-Type"];
-  return headers;
-}
 
 function formatBytes(bytes) {
   if (!bytes) return "";
@@ -500,12 +486,16 @@ export default function AgentWorkspace() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "The agent could not respond.");
-      setMessages((current) => [...current, { role: "assistant", content: data.reply }]);
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: data.reply, taskProposal: data.taskProposal },
+      ]);
       if (data.title) {
         setThreads((current) =>
           current.map((t) => (t.agent_chat_thread_id === threadId ? { ...t, title: data.title } : t)),
         );
       }
+      loadUsage();
     } catch (error) {
       setMessages((current) => [...current, { role: "assistant", tone: "error", content: error.message }]);
     } finally {
@@ -936,7 +926,14 @@ export default function AgentWorkspace() {
                   {messages.length === 0 ? (
                     <p className="text-sm font-medium text-white/70">Ask {agent.name} anything to get started.</p>
                   ) : (
-                    messages.map((message, index) => <MessageBubble key={index} message={message} />)
+                    messages.map((message, index) => (
+                      <div key={index} className="space-y-2">
+                        {message.content ? <MessageBubble message={message} /> : null}
+                        {message.taskProposal ? (
+                          <AgentTaskProposal taskProposal={message.taskProposal} agentName={agent.name} />
+                        ) : null}
+                      </div>
+                    ))
                   )}
                   {sendingMessage ? (
                     <div className="flex justify-start">

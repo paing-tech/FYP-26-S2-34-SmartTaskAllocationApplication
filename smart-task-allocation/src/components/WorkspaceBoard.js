@@ -2046,7 +2046,12 @@ export default function WorkspaceBoard({
           ...task,
           assignee: assignee ?? null,
           assignees,
-          owner: task.source === "optimus_ai" ? "Optimus AI" : owner ? getDisplayName(owner) : "Manager",
+          owner:
+            task.source === "optimus_ai"
+              ? task.reasons?.agentName || "Optimus AI"
+              : owner
+                ? getDisplayName(owner)
+                : "Manager",
           ownerJobTitle: task.source === "optimus_ai" ? "" : owner ? getOccupation(owner) : "",
         };
       }),
