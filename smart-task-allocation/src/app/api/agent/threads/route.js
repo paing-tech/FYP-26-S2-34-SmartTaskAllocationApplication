@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { createFoundryThread } from "@/lib/foundryAgent";
 
 async function getMyAgent(supabase, user) {
   const { data } = await supabase.from("agent").select("*").eq("user_id", user.id).maybeSingle();
@@ -51,11 +50,9 @@ export async function POST(request) {
       return NextResponse.json({ error: "Create your agent before starting a chat." }, { status: 404 });
     }
 
-    const thread = await createFoundryThread();
-
     const { data: created, error: insertError } = await supabase
       .from("agent_chat_thread")
-      .insert({ agent_id: agent.agent_id, foundry_thread_id: thread.id, title: "New chat", source: "web" })
+      .insert({ agent_id: agent.agent_id, title: "New chat", source: "web" })
       .select("*")
       .single();
 

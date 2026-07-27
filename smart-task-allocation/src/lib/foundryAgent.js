@@ -1,9 +1,9 @@
-// Thin REST wrapper around Azure AI Foundry's Agent Service (Assistants-API
-// shape: assistants/threads/files/vector_stores). API_VERSION is the one
-// place to update if your Foundry project reports a different version in
-// its quickstart/"View code" panel.
-const API_VERSION = "2025-05-01-preview";
-
+// Wrapper around Azure AI Foundry's unified /openai/v1 API (OpenAI-SDK
+// compatible: no api-version query param, Bearer-token auth). Confirmed
+// against this project's own "View code" sample from the Foundry portal.
+// The Responses API has no persistent assistant/thread resource — model,
+// instructions, and tools are passed on every call, and conversation
+// continuity is a previous_response_id chain instead of a thread object.
 export function isFoundryConfigured() {
   return Boolean(
     process.env.AZURE_AI_FOUNDRY_ENDPOINT &&
@@ -28,12 +28,10 @@ export function getFoundryConfig() {
 
 async function foundryFetch(path, { method = "GET", body, isForm = false } = {}) {
   const { endpoint, apiKey } = getFoundryConfig();
-  const url = `${endpoint}${path}${path.includes("?") ? "&" : "?"}api-version=${API_VERSION}`;
-
-  const headers = { "api-key": apiKey };
+  const headers = { Authorization: `Bearer ${apiKey}` };
   if (!isForm) headers["Content-Type"] = "application/json";
 
-  const response = await fetch(url, {
+  const response = await fetch(`${endpoint}${path}`, {
     method,
     headers,
     body: isForm ? body : body ? JSON.stringify(body) : undefined,
@@ -46,32 +44,8 @@ async function foundryFetch(path, { method = "GET", body, isForm = false } = {})
   return data;
 }
 
-export async function createFoundryAgent({ name, instructions }) {
-  const { deployment } = getFoundryConfig();
-  return foundryFetch("/assistants", {
-    method: "POST",
-    body: { model: deployment, name, instructions, tools: [] },
-  });
-}
-
-export async function updateFoundryAgent({ foundryAgentId, instructions, tools, toolResources }) {
-  const body = {};
-  if (instructions !== undefined) body.instructions = instructions;
-  if (tools !== undefined) body.tools = tools;
-  if (toolResources !== undefined) body.tool_resources = toolResources;
-  return foundryFetch(`/assistants/${foundryAgentId}`, { method: "POST", body });
-}
-
 export async function createFoundryVectorStore({ name }) {
   return foundryFetch("/vector_stores", { method: "POST", body: { name } });
-}
-
-export async function attachVectorStoreToAgent({ foundryAgentId, vectorStoreId }) {
-  return updateFoundryAgent({
-    foundryAgentId,
-    tools: [{ type: "file_search" }],
-    toolResources: { file_search: { vector_store_ids: [vectorStoreId] } },
-  });
 }
 
 export async function uploadFoundryFile({ buffer, filename, mimeType }) {
@@ -92,61 +66,33 @@ export async function deleteFoundryFile({ fileId }) {
   return foundryFetch(`/files/${fileId}`, { method: "DELETE" });
 }
 
-export async function createFoundryThread() {
-  return foundryFetch("/threads", { method: "POST", body: {} });
-}
-
-export async function addMessageToThread({ threadId, content }) {
-  return foundryFetch(`/threads/${threadId}/messages`, {
-    method: "POST",
-    body: { role: "user", content },
-  });
-}
-
-export async function listThreadMessages({ threadId, limit = 30 }) {
-  const data = await foundryFetch(`/threads/${threadId}/messages?order=asc&limit=${limit}`);
-  return data.data ?? [];
-}
-
-function extractMessageText(message) {
-  return (message.content ?? [])
-    .filter((block) => block.type === "text")
-    .map((block) => block.text?.value ?? "")
+function extractResponseText(response) {
+  if (typeof response.output_text === "string" && response.output_text) {
+    return response.output_text;
+  }
+  const messageItem = (response.output ?? []).find((item) => item.type === "message");
+  return (messageItem?.content ?? [])
+    .filter((block) => block.type === "output_text")
+    .map((block) => block.text ?? "")
     .join("\n")
     .trim();
 }
 
-// Adds the user's message, runs the agent, and polls until the run finishes
-// (or POLL_TIMEOUT_MS elapses) — the Assistants-style API has no synchronous
-// "just give me the reply" call, runs are asynchronous by design.
-const POLL_INTERVAL_MS = 1000;
-const POLL_TIMEOUT_MS = 45000;
+export async function sendMessageAndGetReply({ instructions, input, previousResponseId, vectorStoreId }) {
+  const { deployment } = getFoundryConfig();
+  const body = { model: deployment, instructions, input };
+  if (previousResponseId) body.previous_response_id = previousResponseId;
+  if (vectorStoreId) body.tools = [{ type: "file_search", vector_store_ids: [vectorStoreId] }];
 
-export async function sendMessageAndGetReply({ threadId, foundryAgentId, content }) {
-  await addMessageToThread({ threadId, content });
-  let run = await foundryFetch(`/threads/${threadId}/runs`, {
-    method: "POST",
-    body: { assistant_id: foundryAgentId },
-  });
-
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
-  while (["queued", "in_progress", "requires_action"].includes(run.status)) {
-    if (Date.now() > deadline) {
-      throw new Error("The agent took too long to respond.");
-    }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    run = await foundryFetch(`/threads/${threadId}/runs/${run.id}`);
-  }
-
-  if (run.status !== "completed") {
-    throw new Error(`The agent run ended with status "${run.status}".`);
-  }
-
-  const messages = await listThreadMessages({ threadId, limit: 5 });
-  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+  const response = await foundryFetch("/responses", { method: "POST", body });
 
   return {
-    reply: latestAssistantMessage ? extractMessageText(latestAssistantMessage) : "",
-    usage: run.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    responseId: response.id,
+    reply: extractResponseText(response),
+    usage: {
+      prompt_tokens: response.usage?.input_tokens ?? 0,
+      completion_tokens: response.usage?.output_tokens ?? 0,
+      total_tokens: response.usage?.total_tokens ?? 0,
+    },
   };
 }

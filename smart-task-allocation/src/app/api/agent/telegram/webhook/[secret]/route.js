@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { createFoundryThread, sendMessageAndGetReply } from "@/lib/foundryAgent";
+import { sendMessageAndGetReply } from "@/lib/foundryAgent";
 import { sendTelegramMessage } from "@/lib/telegramBot";
 
 async function getOrCreateTelegramThread(supabase, agent, chatId) {
@@ -14,12 +14,10 @@ async function getOrCreateTelegramThread(supabase, agent, chatId) {
 
   if (existing) return existing;
 
-  const thread = await createFoundryThread();
   const { data: created } = await supabase
     .from("agent_chat_thread")
     .insert({
       agent_id: agent.agent_id,
-      foundry_thread_id: thread.id,
       title: "Telegram chat",
       source: "telegram",
       telegram_chat_id: chatId,
@@ -60,22 +58,27 @@ export async function POST(request, { params }) {
     }
 
     const thread = await getOrCreateTelegramThread(supabase, agent, String(chatId));
-    const { reply, usage } = await sendMessageAndGetReply({
-      threadId: thread.foundry_thread_id,
-      foundryAgentId: agent.foundry_agent_id,
-      content: text,
+    const { responseId, reply, usage } = await sendMessageAndGetReply({
+      instructions: agent.instructions,
+      input: text,
+      previousResponseId: thread.last_response_id,
+      vectorStoreId: agent.foundry_vector_store_id,
     });
 
     await supabase.from("agent_token_usage").insert({
       agent_id: agent.agent_id,
       organization_id: agent.organization_id,
-      prompt_tokens: usage.prompt_tokens ?? 0,
-      completion_tokens: usage.completion_tokens ?? 0,
-      total_tokens: usage.total_tokens ?? 0,
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+      total_tokens: usage.total_tokens,
     });
     await supabase
       .from("agent_chat_thread")
-      .update({ updated_at: new Date().toISOString() })
+      .update({
+        updated_at: new Date().toISOString(),
+        last_response_id: responseId,
+        messages: [...(thread.messages ?? []), { role: "user", content: text }, { role: "assistant", content: reply }],
+      })
       .eq("agent_chat_thread_id", thread.agent_chat_thread_id);
 
     if (reply) {

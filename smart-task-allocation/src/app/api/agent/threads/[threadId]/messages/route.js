@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { listThreadMessages, sendMessageAndGetReply } from "@/lib/foundryAgent";
-
-function extractMessageText(message) {
-  return (message.content ?? [])
-    .filter((block) => block.type === "text")
-    .map((block) => block.text?.value ?? "")
-    .join("\n")
-    .trim();
-}
+import { sendMessageAndGetReply } from "@/lib/foundryAgent";
 
 async function getMyThread(supabase, user, threadId) {
   const { data: agent } = await supabase.from("agent").select("*").eq("user_id", user.id).maybeSingle();
@@ -39,13 +31,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Chat not found." }, { status: 404 });
     }
 
-    const messages = await listThreadMessages({ threadId: thread.foundry_thread_id });
-    return NextResponse.json({
-      messages: messages.map((message) => ({
-        role: message.role,
-        content: extractMessageText(message),
-      })),
-    });
+    return NextResponse.json({ messages: thread.messages ?? [] });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -71,21 +57,26 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "A message is required." }, { status: 400 });
     }
 
-    const { reply, usage } = await sendMessageAndGetReply({
-      threadId: thread.foundry_thread_id,
-      foundryAgentId: agent.foundry_agent_id,
-      content,
+    const { responseId, reply, usage } = await sendMessageAndGetReply({
+      instructions: agent.instructions,
+      input: content,
+      previousResponseId: thread.last_response_id,
+      vectorStoreId: agent.foundry_vector_store_id,
     });
 
     await supabase.from("agent_token_usage").insert({
       agent_id: agent.agent_id,
       organization_id: agent.organization_id,
-      prompt_tokens: usage.prompt_tokens ?? 0,
-      completion_tokens: usage.completion_tokens ?? 0,
-      total_tokens: usage.total_tokens ?? 0,
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+      total_tokens: usage.total_tokens,
     });
 
-    const updates = { updated_at: new Date().toISOString() };
+    const updates = {
+      updated_at: new Date().toISOString(),
+      last_response_id: responseId,
+      messages: [...(thread.messages ?? []), { role: "user", content }, { role: "assistant", content: reply }],
+    };
     if (thread.title === "New chat") {
       updates.title = content.slice(0, 60);
     }

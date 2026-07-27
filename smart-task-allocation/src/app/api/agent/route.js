@@ -2,14 +2,7 @@ import { NextResponse } from "next/server";
 import { requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { AGENT_AVATARS } from "@/lib/agentAvatars";
-import {
-  isFoundryConfigured,
-  getFoundryConfig,
-  createFoundryAgent,
-  createFoundryVectorStore,
-  attachVectorStoreToAgent,
-  updateFoundryAgent,
-} from "@/lib/foundryAgent";
+import { isFoundryConfigured, getFoundryConfig, createFoundryVectorStore } from "@/lib/foundryAgent";
 
 async function getManagerOrganizationId(supabase, user) {
   const { data } = await supabase.from("user_account").select("organization_id").eq("user_id", user.id).maybeSingle();
@@ -69,9 +62,7 @@ export async function POST(request) {
     }
 
     const { deployment } = getFoundryConfig();
-    const foundryAgent = await createFoundryAgent({ name, instructions });
     const vectorStore = await createFoundryVectorStore({ name: `${name} knowledge` });
-    await attachVectorStoreToAgent({ foundryAgentId: foundryAgent.id, vectorStoreId: vectorStore.id });
 
     const { data: created, error: insertError } = await supabase
       .from("agent")
@@ -79,7 +70,6 @@ export async function POST(request) {
         organization_id: organizationId,
         user_id: user.id,
         name,
-        foundry_agent_id: foundryAgent.id,
         foundry_deployment_name: deployment,
         foundry_vector_store_id: vectorStore.id,
         instructions,
@@ -128,13 +118,6 @@ export async function PATCH(request) {
     }
     if (AGENT_AVATARS.some((avatar) => avatar.key === body.avatarKey)) {
       updates.avatar_key = body.avatarKey;
-    }
-
-    if (updates.instructions !== undefined || updates.name !== undefined) {
-      await updateFoundryAgent({
-        foundryAgentId: existing.foundry_agent_id,
-        instructions: updates.instructions,
-      });
     }
 
     const { data: updated, error: updateError } = await supabase
