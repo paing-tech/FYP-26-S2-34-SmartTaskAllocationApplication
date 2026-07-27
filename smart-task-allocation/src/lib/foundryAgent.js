@@ -108,18 +108,28 @@ const PROPOSE_TASKS_TOOL = {
   },
 };
 
-function extractProposedTasks(response) {
-  const call = (response.output ?? []).find(
-    (item) => item.type === "function_call" && item.name === "propose_tasks",
-  );
-  if (!call) return null;
+function findProposeTasksCall(response) {
+  return (response.output ?? []).find((item) => item.type === "function_call" && item.name === "propose_tasks");
+}
 
+function parseProposedTasks(call) {
   try {
     const args = JSON.parse(call.arguments || "{}");
     return Array.isArray(args.tasks) && args.tasks.length ? args.tasks : null;
   } catch {
     return null;
   }
+}
+
+function sumUsage(...responses) {
+  return responses.reduce(
+    (total, response) => ({
+      prompt_tokens: total.prompt_tokens + (response?.usage?.input_tokens ?? 0),
+      completion_tokens: total.completion_tokens + (response?.usage?.output_tokens ?? 0),
+      total_tokens: total.total_tokens + (response?.usage?.total_tokens ?? 0),
+    }),
+    { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  );
 }
 
 export async function sendMessageAndGetReply({ instructions, input, previousResponseId, vectorStoreId }) {
@@ -136,14 +146,43 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
 
   const response = await foundryFetch("/responses", { method: "POST", body });
 
-  return {
-    responseId: response.id,
-    reply: extractResponseText(response),
-    proposedTasks: extractProposedTasks(response),
-    usage: {
-      prompt_tokens: response.usage?.input_tokens ?? 0,
-      completion_tokens: response.usage?.output_tokens ?? 0,
-      total_tokens: response.usage?.total_tokens ?? 0,
+  const functionCall = findProposeTasksCall(response);
+  if (!functionCall) {
+    return {
+      responseId: response.id,
+      reply: extractResponseText(response),
+      proposedTasks: null,
+      usage: sumUsage(response),
+    };
+  }
+
+  const proposedTasks = parseProposedTasks(functionCall);
+
+  // The API rejects the *next* previous_response_id-chained call if a
+  // function call from this response is left unresolved, so close the loop
+  // immediately — nothing actually "executes" the tool, we just tell the
+  // model the proposal was handed off to the user.
+  const followUp = await foundryFetch("/responses", {
+    method: "POST",
+    body: {
+      model: deployment,
+      instructions: augmentedInstructions,
+      tools,
+      previous_response_id: response.id,
+      input: [
+        {
+          type: "function_call_output",
+          call_id: functionCall.call_id,
+          output: "The proposed tasks were shown to the user to review, select, and confirm. Do not create them yourself.",
+        },
+      ],
     },
+  });
+
+  return {
+    responseId: followUp.id,
+    reply: extractResponseText(followUp) || extractResponseText(response),
+    proposedTasks,
+    usage: sumUsage(response, followUp),
   };
 }
