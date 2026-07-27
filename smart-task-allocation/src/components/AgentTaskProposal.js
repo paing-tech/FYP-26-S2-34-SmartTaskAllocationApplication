@@ -7,10 +7,16 @@ import { authHeaders, createProposedTasks } from "@/lib/agentClient";
 // select which tasks to keep, choose whether they need approval, then
 // create them — mirrors the "New chat" flow's structure (pick, confirm,
 // done) so it reads as one interaction instead of a form bolted onto chat.
-export default function AgentTaskProposal({ taskProposal, agentName }) {
-  const [selected, setSelected] = useState(() => new Set(taskProposal.tasks.map((_, index) => index)));
-  const [stage, setStage] = useState("select");
-  const [createdTitles, setCreatedTitles] = useState([]);
+// The resolution (done vs. still selectable) is persisted onto the message
+// itself via threadId/messageIndex, so reloading the page shows the same
+// closed-out checklist instead of a fresh, re-clickable one that could
+// create duplicate tasks.
+export default function AgentTaskProposal({ taskProposal, agentName, threadId, messageIndex }) {
+  const isDone = taskProposal.status === "done";
+  const [selected, setSelected] = useState(
+    () => new Set(taskProposal.selectedIndexes ?? taskProposal.tasks.map((_, index) => index)),
+  );
+  const [stage, setStage] = useState(isDone ? "done" : "select");
   const [error, setError] = useState("");
 
   function toggle(index) {
@@ -34,8 +40,24 @@ export default function AgentTaskProposal({ taskProposal, agentName }) {
         groupId: taskProposal.groupId,
         headers,
       });
-      setCreatedTitles(created);
       setStage("done");
+
+      if (threadId && messageIndex !== undefined) {
+        await fetch(`/api/agent/threads/${threadId}/messages`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({
+            messageIndex,
+            taskProposal: {
+              ...taskProposal,
+              status: "done",
+              selectedIndexes: [...selected],
+              createdTitles: created,
+              needsApproval,
+            },
+          }),
+        });
+      }
     } catch (err) {
       setError(err.message || "Could not create the tasks.");
       setStage("approval");
@@ -67,7 +89,7 @@ export default function AgentTaskProposal({ taskProposal, agentName }) {
               onChange={() => toggle(index)}
               disabled={locked}
             />
-            <span className="min-w-0 truncate font-bold">{task.title}</span>
+            <span className="min-w-0 truncate font-medium">{task.title}</span>
           </label>
         ))}
       </div>
@@ -106,12 +128,6 @@ export default function AgentTaskProposal({ taskProposal, agentName }) {
       ) : null}
 
       {stage === "creating" ? <p className="mt-3 text-xs font-semibold text-[#0D1E4C]/60">Creating tasks…</p> : null}
-
-      {stage === "done" ? (
-        <p className="mt-3 text-xs font-semibold text-emerald-700">
-          Created {createdTitles.length} task{createdTitles.length === 1 ? "" : "s"} in AI Recommendations.
-        </p>
-      ) : null}
     </div>
   );
 }

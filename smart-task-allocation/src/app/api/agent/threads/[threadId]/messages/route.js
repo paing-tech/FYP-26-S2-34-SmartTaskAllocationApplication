@@ -98,3 +98,47 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Persists a task proposal's resolution (which tasks were kept, whether
+// they've been created) onto its message so a page reload shows the same
+// closed-out state instead of a fresh, re-clickable checklist.
+export async function PATCH(request, { params }) {
+  try {
+    const { threadId } = await params;
+    const supabase = getSupabaseAdminClient();
+    const { user, error: authError } = await requireManager(request, supabase);
+    if (authError) {
+      return NextResponse.json({ error: authError }, { status: 403 });
+    }
+
+    const { thread } = await getMyThread(supabase, user, threadId);
+    if (!thread) {
+      return NextResponse.json({ error: "Chat not found." }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const messageIndex = Number(body.messageIndex);
+    const taskProposal = body.taskProposal;
+    const messages = thread.messages ?? [];
+    if (!Number.isInteger(messageIndex) || !messages[messageIndex]) {
+      return NextResponse.json({ error: "Message not found." }, { status: 404 });
+    }
+
+    const updatedMessages = messages.map((message, index) =>
+      index === messageIndex ? { ...message, taskProposal } : message,
+    );
+
+    const { error } = await supabase
+      .from("agent_chat_thread")
+      .update({ messages: updatedMessages, updated_at: new Date().toISOString() })
+      .eq("agent_chat_thread_id", thread.agent_chat_thread_id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

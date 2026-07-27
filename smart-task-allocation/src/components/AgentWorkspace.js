@@ -930,7 +930,12 @@ export default function AgentWorkspace() {
                       <div key={index} className="space-y-2">
                         {message.content ? <MessageBubble message={message} /> : null}
                         {message.taskProposal ? (
-                          <AgentTaskProposal taskProposal={message.taskProposal} agentName={agent.name} />
+                          <AgentTaskProposal
+                            taskProposal={message.taskProposal}
+                            agentName={agent.name}
+                            threadId={activeThreadId}
+                            messageIndex={index}
+                          />
                         ) : null}
                       </div>
                     ))
