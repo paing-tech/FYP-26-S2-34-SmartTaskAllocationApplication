@@ -25,9 +25,13 @@ export async function GET(request) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { data: agent } = await supabase.from("agent").select("agent_id").eq("user_id", user.id).maybeSingle();
+    const { data: agent } = await supabase
+      .from("agent")
+      .select("agent_id, daily_token_limit")
+      .eq("user_id", user.id)
+      .maybeSingle();
     if (!agent) {
-      return NextResponse.json({ today: 0, thisMonth: 0, allTime: 0 });
+      return NextResponse.json({ today: 0, thisMonth: 0, allTime: 0, dailyLimit: 0 });
     }
 
     const { data, error } = await supabase
@@ -42,11 +46,14 @@ export async function GET(request) {
     const rows = data ?? [];
     const todayCutoff = startOfDayIso();
     const monthCutoff = startOfMonthIso();
+    const today = sumTokens(rows.filter((row) => row.created_at >= todayCutoff));
 
     return NextResponse.json({
-      today: sumTokens(rows.filter((row) => row.created_at >= todayCutoff)),
+      today,
       thisMonth: sumTokens(rows.filter((row) => row.created_at >= monthCutoff)),
       allTime: sumTokens(rows),
+      dailyLimit: agent.daily_token_limit,
+      dailyPercent: agent.daily_token_limit ? Math.min(100, Math.round((today / agent.daily_token_limit) * 100)) : 0,
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { AGENT_AVATARS, getAgentAvatarSrc } from "@/lib/agentAvatars";
 
@@ -78,6 +79,7 @@ function MessageBubble({ message }) {
 }
 
 export default function AgentWorkspace() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [agent, setAgent] = useState(null);
   const [usage, setUsage] = useState(null);
@@ -128,9 +130,12 @@ export default function AgentWorkspace() {
         setNameDraft(data.agent.name);
         setAvatarKeyDraft(data.agent.avatar_key);
         await Promise.all([loadUsage(), loadFiles(), loadTelegram(), loadThreads()]);
+        const threadParam = searchParams.get("thread");
+        if (threadParam) setActiveThreadId(threadParam);
       }
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -623,11 +628,25 @@ export default function AgentWorkspace() {
 
       <section className="flex min-h-0 flex-1 flex-col gap-4">
         {/* Top: usage bar */}
-        <div className="flex items-center justify-between rounded-full border border-white/60 bg-white/25 px-8 py-4 backdrop-blur-sm">
-          <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-[#0D1E4C]/70">Token usage</h2>
-          <div className="flex gap-8">
+        <div className="flex items-center gap-8 rounded-[28px] border border-white/60 bg-white/25 px-8 py-4 backdrop-blur-sm">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-[#0D1E4C]/70">Today&apos;s usage</h2>
+              <p className="shrink-0 text-xs font-bold text-[#0D1E4C]/70">
+                {(usage?.today ?? 0).toLocaleString()} / {(usage?.dailyLimit ?? 0).toLocaleString()} ({usage?.dailyPercent ?? 0}%)
+              </p>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/50">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  (usage?.dailyPercent ?? 0) >= 90 ? "bg-red-500" : (usage?.dailyPercent ?? 0) >= 70 ? "bg-amber-500" : "bg-[#2563EB]"
+                }`}
+                style={{ width: `${usage?.dailyPercent ?? 0}%` }}
+              />
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-8">
             {[
-              { label: "Today", value: usage?.today },
               { label: "This month", value: usage?.thisMonth },
               { label: "All time", value: usage?.allTime },
             ].map((row) => (
