@@ -97,6 +97,9 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    // Telegram never reads this body (see note above), so without logging
+    // here a failure is invisible outside of Vercel's function logs.
+    console.error("Telegram webhook error:", error);
     return NextResponse.json({ ok: false, error: error.message });
   }
 }
