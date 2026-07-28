@@ -141,10 +141,27 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   const tools = [PROPOSE_TASKS_TOOL];
   if (vectorStoreId) tools.push({ type: "file_search", vector_store_ids: [vectorStoreId] });
 
-  const body = { model: deployment, instructions: augmentedInstructions, input, tools };
-  if (previousResponseId) body.previous_response_id = previousResponseId;
+  async function callResponses(prevId) {
+    const body = { model: deployment, instructions: augmentedInstructions, input, tools };
+    if (prevId) body.previous_response_id = prevId;
+    return foundryFetch("/responses", { method: "POST", body });
+  }
 
-  const response = await foundryFetch("/responses", { method: "POST", body });
+  let response;
+  try {
+    response = await callResponses(previousResponseId);
+  } catch (error) {
+    // previous_response_id chains can get permanently wedged if a function
+    // call was ever left unresolved on an earlier turn (a bug, an old
+    // deploy, a crash mid-request) — that's unrecoverable, so drop the
+    // broken history and start this thread's context fresh rather than
+    // failing every message in it forever.
+    if (previousResponseId && /tool output/i.test(error.message)) {
+      response = await callResponses(undefined);
+    } else {
+      throw error;
+    }
+  }
 
   const functionCall = findProposeTasksCall(response);
   if (!functionCall) {
