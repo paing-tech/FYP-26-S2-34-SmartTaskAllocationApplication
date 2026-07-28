@@ -58,7 +58,7 @@ export async function POST(request, { params }) {
     }
 
     const thread = await getOrCreateTelegramThread(supabase, agent, String(chatId));
-    const { responseId, reply, usage } = await sendMessageAndGetReply({
+    const { responseId, reply, proposedTasks, usage } = await sendMessageAndGetReply({
       instructions: agent.instructions,
       input: text,
       previousResponseId: thread.last_response_id,
@@ -81,9 +81,19 @@ export async function POST(request, { params }) {
       })
       .eq("agent_chat_thread_id", thread.agent_chat_thread_id);
 
-    if (reply) {
-      await sendTelegramMessage(link.bot_token, chatId, reply);
+    // Telegram can't render the interactive checklist the web chat uses, so
+    // proposed tasks need a plain-text fallback — and either way, the reply
+    // can legitimately come back empty (e.g. right after a function call),
+    // so always send *something* rather than silently going quiet.
+    let outgoingText = reply;
+    if (proposedTasks?.length) {
+      const list = proposedTasks.map((task, index) => `${index + 1}. ${task.title}`).join("\n");
+      outgoingText = `${reply ? `${reply}\n\n` : ""}I'd suggest these tasks:\n${list}\n\nOpen the Agent page in the app to review and create them.`;
     }
+    if (!outgoingText) {
+      outgoingText = "Sorry, I didn't have a response for that — please try again.";
+    }
+    await sendTelegramMessage(link.bot_token, chatId, outgoingText);
 
     return NextResponse.json({ ok: true });
   } catch (error) {
