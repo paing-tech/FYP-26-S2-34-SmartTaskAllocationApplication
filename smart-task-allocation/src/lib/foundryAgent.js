@@ -161,6 +161,11 @@ const ARRANGE_ORG_CHART_TOOL = {
           properties: {
             name: { type: "string" },
             memberNames: { type: "array", items: { type: "string" } },
+            order: {
+              type: "integer",
+              description:
+                "The left-to-right column position of this department's box, 0 = leftmost. Set this from the document's actual layout (e.g. if the document shows Warehouse, Marketing, Retail left to right, use 0, 1, 2) so placement is deterministic instead of guessed from list order.",
+            },
           },
           required: ["name", "memberNames"],
         },
@@ -172,6 +177,16 @@ const ARRANGE_ORG_CHART_TOOL = {
           properties: {
             fromName: { type: "string", description: "The manager or person being reported to." },
             toName: { type: "string", description: "The person who reports to fromName." },
+            fromHandle: {
+              type: "string",
+              enum: ["top", "right", "bottom", "left"],
+              description: "Which side of fromName's avatar box the line starts from. Defaults to bottom if omitted.",
+            },
+            toHandle: {
+              type: "string",
+              enum: ["top", "right", "bottom", "left"],
+              description: "Which side of toName's avatar box the line arrives at. Defaults to top if omitted.",
+            },
           },
           required: ["fromName", "toName"],
         },

@@ -46,15 +46,22 @@ async function getKnowledgeImages(supabase, agentId) {
   const { data: files } = await supabase
     .from("agent_knowledge_file")
     .select("filename, storage_path, mime_type")
-    .eq("agent_id", agentId)
-    .like("mime_type", "image/%");
+    .eq("agent_id", agentId);
 
   const images = [];
   for (const file of files ?? []) {
-    const { data: blob } = await supabase.storage.from(KNOWLEDGE_BUCKET).download(file.storage_path);
-    if (!blob) continue;
+    // mime_type is only populated on files uploaded after this feature
+    // shipped — fall back to the extension so earlier uploads still work.
+    const mimeType = file.mime_type || (file.filename?.toLowerCase().endsWith(".png") ? "image/png" : null);
+    if (!mimeType?.startsWith("image/")) continue;
+
+    const { data: blob, error } = await supabase.storage.from(KNOWLEDGE_BUCKET).download(file.storage_path);
+    if (error || !blob) {
+      console.error("Could not download knowledge image:", file.storage_path, error?.message);
+      continue;
+    }
     const buffer = Buffer.from(await blob.arrayBuffer());
-    images.push({ filename: file.filename, dataUrl: `data:${file.mime_type};base64,${buffer.toString("base64")}` });
+    images.push({ filename: file.filename, dataUrl: `data:${mimeType};base64,${buffer.toString("base64")}` });
   }
   return images;
 }
