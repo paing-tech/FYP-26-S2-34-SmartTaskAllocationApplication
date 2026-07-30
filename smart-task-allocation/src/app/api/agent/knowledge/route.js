@@ -84,18 +84,27 @@ export async function POST(request) {
       return NextResponse.json({ error: uploadError.message }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const foundryFile = await uploadFoundryFile({ buffer, filename: file.name, mimeType: file.type });
-    await addFileToVectorStore({ vectorStoreId: agent.foundry_vector_store_id, fileId: foundryFile.id });
+    // Images can't be indexed by file_search (Foundry rejects them for
+    // retrieval) — they're attached as real vision input at chat time
+    // instead (see the messages route), reading straight from Storage.
+    const isImage = file.type.startsWith("image/");
+    let foundryFileId = null;
+    if (!isImage) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const foundryFile = await uploadFoundryFile({ buffer, filename: file.name, mimeType: file.type });
+      await addFileToVectorStore({ vectorStoreId: agent.foundry_vector_store_id, fileId: foundryFile.id });
+      foundryFileId = foundryFile.id;
+    }
 
     const { data: created, error: insertError } = await supabase
       .from("agent_knowledge_file")
       .insert({
         agent_id: agent.agent_id,
-        foundry_file_id: foundryFile.id,
+        foundry_file_id: foundryFileId,
         filename: file.name,
         storage_path: storagePath,
         file_size_bytes: file.size,
+        mime_type: file.type,
         uploaded_by: user.id,
       })
       .select("*")
@@ -143,7 +152,9 @@ export async function DELETE(request) {
       return NextResponse.json({ error: "File not found." }, { status: 404 });
     }
 
-    await deleteFoundryFile({ fileId: fileRow.foundry_file_id }).catch(() => {});
+    if (fileRow.foundry_file_id) {
+      await deleteFoundryFile({ fileId: fileRow.foundry_file_id }).catch(() => {});
+    }
     await supabase.storage.from(BUCKET).remove([fileRow.storage_path]).catch(() => {});
 
     const { error: deleteError } = await supabase

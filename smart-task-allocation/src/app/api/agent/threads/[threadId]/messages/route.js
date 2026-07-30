@@ -37,6 +37,28 @@ async function getOrgChartRoster(supabase, agent) {
   return (accounts ?? []).map((a) => a.full_name).filter(Boolean);
 }
 
+const KNOWLEDGE_BUCKET = "agent-knowledge";
+
+// Attached only on a thread's first message — after that, the images are
+// already part of this conversation's stored state via previous_response_id,
+// same as we don't resend earlier text on every turn.
+async function getKnowledgeImages(supabase, agentId) {
+  const { data: files } = await supabase
+    .from("agent_knowledge_file")
+    .select("filename, storage_path, mime_type")
+    .eq("agent_id", agentId)
+    .like("mime_type", "image/%");
+
+  const images = [];
+  for (const file of files ?? []) {
+    const { data: blob } = await supabase.storage.from(KNOWLEDGE_BUCKET).download(file.storage_path);
+    if (!blob) continue;
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    images.push({ filename: file.filename, dataUrl: `data:${file.mime_type};base64,${buffer.toString("base64")}` });
+  }
+  return images;
+}
+
 export async function GET(request, { params }) {
   try {
     const { threadId } = await params;
@@ -78,6 +100,7 @@ export async function POST(request, { params }) {
     }
 
     const orgChartRoster = await getOrgChartRoster(supabase, agent);
+    const images = thread.last_response_id ? [] : await getKnowledgeImages(supabase, agent.agent_id);
 
     const {
       responseId,
@@ -91,6 +114,7 @@ export async function POST(request, { params }) {
       previousResponseId: thread.last_response_id,
       vectorStoreId: agent.foundry_vector_store_id,
       orgChartRoster,
+      images,
     });
 
     await supabase.from("agent_token_usage").insert({

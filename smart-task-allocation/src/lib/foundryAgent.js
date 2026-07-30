@@ -222,6 +222,22 @@ function sumUsage(...responses) {
   );
 }
 
+// Turns plain text into the Responses API's multimodal message shape when
+// images are attached — the model can only actually "see" a picture (read
+// labels, layout, etc.) via a real input_image block, never via file_search.
+function buildInput(text, images) {
+  if (!images?.length) return text;
+  return [
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text },
+        ...images.map((image) => ({ type: "input_image", image_url: image.dataUrl })),
+      ],
+    },
+  ];
+}
+
 export async function sendMessageAndGetReply({
   instructions,
   input,
@@ -229,8 +245,10 @@ export async function sendMessageAndGetReply({
   vectorStoreId,
   allowDirectCreate,
   orgChartRoster,
+  images,
 }) {
   const { deployment } = getFoundryConfig();
+  const resolvedInput = buildInput(input, images);
 
   let augmentedInstructions = `${instructions || ""}
 
@@ -250,7 +268,7 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   if (vectorStoreId) tools.push({ type: "file_search", vector_store_ids: [vectorStoreId] });
 
   async function callResponses(prevId) {
-    const body = { model: deployment, instructions: augmentedInstructions, input, tools };
+    const body = { model: deployment, instructions: augmentedInstructions, input: resolvedInput, tools };
     if (prevId) body.previous_response_id = prevId;
     return foundryFetch("/responses", { method: "POST", body });
   }
