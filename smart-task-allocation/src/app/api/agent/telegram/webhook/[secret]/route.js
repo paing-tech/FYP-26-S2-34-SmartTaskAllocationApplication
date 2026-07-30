@@ -118,6 +118,16 @@ export async function POST(request, { params }) {
       link.allowed_username && senderUsername && link.allowed_username === senderUsername.toLowerCase(),
     );
 
+    // Caches the allowed user's chat id the first time they actually message
+    // the bot, so proactive notifications (task status changes, etc.) have
+    // somewhere to send without needing a live conversation.
+    if (allowDirectCreate) {
+      await supabase
+        .from("agent_telegram_bot")
+        .update({ allowed_chat_id: String(chatId), updated_at: new Date().toISOString() })
+        .eq("agent_id", link.agent_id);
+    }
+
     const thread = await getOrCreateTelegramThread(supabase, agent, String(chatId));
     const { responseId, reply, proposedTasks, createTasksNow, usage } = await sendMessageAndGetReply({
       instructions: agent.instructions,

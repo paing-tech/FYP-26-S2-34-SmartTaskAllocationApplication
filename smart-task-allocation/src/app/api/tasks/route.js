@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser, requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { AI_RECOMMENDATIONS_GROUP_NAME, ensureAiRecommendationsGroup, ensureUntitledGroup } from "@/lib/taskGroups";
+import { notifyAgentOwnerTelegram } from "@/lib/agentNotifications";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -1126,6 +1127,13 @@ export async function POST(request) {
       });
     }
 
+    if (cleanString(source) === "optimus_ai") {
+      await notifyAgentOwnerTelegram(supabase, {
+        ownerUserId: user.id,
+        message: `🤖 New task recommendation: "${cleanString(title)}" — review in AI Recommendations`,
+      });
+    }
+
     return NextResponse.json({ success: true, task: createdTask });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -1530,7 +1538,7 @@ export async function PATCH(request) {
     // group/approval state before it's applied.
     const { data: existingTask } = await supabase
       .from("task")
-      .select("assigned_to, source, ai_state, group_id, title, status")
+      .select("assigned_to, source, ai_state, group_id, title, status, owner_id")
       .eq("task_id", taskId)
       .maybeSingle();
 
@@ -1609,6 +1617,13 @@ export async function PATCH(request) {
     if (assignedTo && assignedTo !== existingTask?.assigned_to) {
       const actor = assignedBy || (await getActorName(supabase, user));
       await recordAssignment(supabase, { taskId, userId: assignedTo, assignedBy: actor });
+    }
+
+    if (existingTask?.status && taskUpdates.status && existingTask.status !== taskUpdates.status) {
+      await notifyAgentOwnerTelegram(supabase, {
+        ownerUserId: existingTask.owner_id,
+        message: `📋 "${existingTask.title}" moved from ${existingTask.status} to ${taskUpdates.status}`,
+      });
     }
 
     const isCompletingNow = existingTask?.status !== "Completed" && cleanString(status) === "Completed";
