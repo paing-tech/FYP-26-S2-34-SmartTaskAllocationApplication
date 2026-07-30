@@ -179,7 +179,6 @@ export default function SideMenuLayout({ actor, children }) {
   const [agentAvatarKey, setAgentAvatarKey] = useState(null);
 
   useEffect(() => {
-    if (actor !== "manager") return;
     (async () => {
       const supabase = getSupabaseBrowserClient();
       const { data } = await supabase.auth.getSession();
@@ -249,23 +248,21 @@ export default function SideMenuLayout({ actor, children }) {
             </div>
           </aside>
 
-          {actor === "manager" ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (!pathname.startsWith("/manager/agents")) setIsAutomationChatOpen(true);
-              }}
-              title="Optimus AI"
-              aria-label="Open Optimus AI chat"
-              className="flex h-16 w-16 shrink-0 items-center justify-center self-center overflow-hidden rounded-full border border-white/60 bg-white/20 text-[#2563EB] shadow-sm backdrop-blur-sm transition hover:scale-105 [&>svg]:h-7 [&>svg]:w-7"
-            >
-              {agentAvatarKey ? (
-                <Image src={getAgentAvatarSrc(agentAvatarKey)} alt="" width={64} height={64} className="h-full w-full object-cover" />
-              ) : (
-                <NavIcon name="agents" />
-              )}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (!pathname.startsWith(`/${actor}/agents`)) setIsAutomationChatOpen(true);
+            }}
+            title="Optimus AI"
+            aria-label="Open Optimus AI chat"
+            className="flex h-16 w-16 shrink-0 items-center justify-center self-center overflow-hidden rounded-full border border-white/60 bg-white/20 text-[#2563EB] shadow-sm backdrop-blur-sm transition hover:scale-105 [&>svg]:h-7 [&>svg]:w-7"
+          >
+            {agentAvatarKey ? (
+              <Image src={getAgentAvatarSrc(agentAvatarKey)} alt="" width={64} height={64} className="h-full w-full object-cover" />
+            ) : (
+              <NavIcon name="agents" />
+            )}
+          </button>
         </div>
 
         <div className="min-h-0 min-w-0 flex-1">
@@ -273,8 +270,8 @@ export default function SideMenuLayout({ actor, children }) {
         </div>
       </div>
 
-      {actor === "manager" && isAutomationChatOpen && !pathname.startsWith("/manager/agents") ? (
-        <AIAutomationChat onClose={() => setIsAutomationChatOpen(false)} />
+      {isAutomationChatOpen && !pathname.startsWith(`/${actor}/agents`) ? (
+        <AIAutomationChat actor={actor} onClose={() => setIsAutomationChatOpen(false)} />
       ) : null}
     </main>
   );

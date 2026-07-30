@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireManager } from "@/lib/serverAuth";
+import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 async function getMyThread(supabase, user, threadId) {
@@ -20,7 +20,7 @@ export async function PATCH(request, { params }) {
   try {
     const { threadId } = await params;
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -60,7 +60,7 @@ export async function DELETE(request, { params }) {
   try {
     const { threadId } = await params;
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }

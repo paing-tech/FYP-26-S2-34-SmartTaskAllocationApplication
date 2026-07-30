@@ -30,7 +30,7 @@ function MessageBubble({ message }) {
 // the full Agent page, just a lighter surface. The thread isn't created
 // until the first message is actually sent, so opening-then-closing without
 // typing anything doesn't litter the Agent page's Recents list.
-export default function AIAutomationChat({ onClose }) {
+export default function AIAutomationChat({ actor, onClose }) {
   const router = useRouter();
   const [agent, setAgent] = useState(null);
   const [loadingAgent, setLoadingAgent] = useState(true);
@@ -104,7 +104,8 @@ export default function AIAutomationChat({ onClose }) {
   }
 
   function goToAgentPage() {
-    router.push(threadId ? `/manager/agents?thread=${threadId}` : "/manager/agents");
+    const base = `/${actor}/agents`;
+    router.push(threadId ? `${base}?thread=${threadId}` : base);
     onClose();
   }
 

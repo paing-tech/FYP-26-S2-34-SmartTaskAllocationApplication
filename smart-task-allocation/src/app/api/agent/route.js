@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireManager } from "@/lib/serverAuth";
+import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { AGENT_AVATARS } from "@/lib/agentAvatars";
 import { isFoundryConfigured, getFoundryConfig, createFoundryVectorStore } from "@/lib/foundryAgent";
@@ -12,7 +12,7 @@ async function getManagerOrganizationId(supabase, user) {
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -31,7 +31,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -91,7 +91,7 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }

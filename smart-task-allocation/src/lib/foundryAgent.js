@@ -108,14 +108,104 @@ const PROPOSE_TASKS_TOOL = {
   },
 };
 
-function findProposeTasksCall(response) {
-  return (response.output ?? []).find((item) => item.type === "function_call" && item.name === "propose_tasks");
+// Only offered to callers that have verified the sender is the one trusted
+// Telegram username configured on the agent (see the webhook route) — the
+// model is never even given this capability for anyone else, rather than
+// relying on it to police itself.
+const CREATE_TASKS_NOW_TOOL = {
+  type: "function",
+  name: "create_tasks_now",
+  description:
+    "Create one or more work tasks immediately, with no review step, when the user has explicitly stated both the task(s) to create AND whether they need approval (e.g. 'create a task to restock shelf A, auto-approve it' or 'create X, needs approval'). Only call this when the approval preference is stated explicitly — if it's not, use propose_tasks instead so a human can decide.",
+  parameters: {
+    type: "object",
+    properties: {
+      tasks: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            description: { type: "string" },
+            priority: { type: "string", enum: ["Low", "Medium", "High", "Urgent"] },
+          },
+          required: ["title", "description", "priority"],
+        },
+      },
+      needsApproval: {
+        type: "boolean",
+        description: "true if these tasks should require manager approval before going live, false to auto-approve them immediately.",
+      },
+    },
+    required: ["tasks", "needsApproval"],
+  },
+};
+
+// Only offered to a User Admin's agent, with the org's real roster injected
+// into instructions so the model grounds names against actual people
+// instead of inventing them. Executed directly (see the messages route) —
+// there's no per-item review step, since setting up the chart is a one-shot
+// setup action rather than an ongoing workflow decision like task approval.
+const ARRANGE_ORG_CHART_TOOL = {
+  type: "function",
+  name: "arrange_org_chart",
+  description:
+    "Set up the organization chart — departments and reporting connections between existing people — based on an uploaded org chart document. Only call this when the user has asked you to build, arrange, or set up the org chart from their uploaded document. Only reference real people from the roster you were given; never invent a person.",
+  parameters: {
+    type: "object",
+    properties: {
+      departments: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            memberNames: { type: "array", items: { type: "string" } },
+          },
+          required: ["name", "memberNames"],
+        },
+      },
+      connections: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            fromName: { type: "string", description: "The manager or person being reported to." },
+            toName: { type: "string", description: "The person who reports to fromName." },
+          },
+          required: ["fromName", "toName"],
+        },
+      },
+    },
+    required: ["departments", "connections"],
+  },
+};
+
+const TOOL_NAMES = ["propose_tasks", "create_tasks_now", "arrange_org_chart"];
+
+function findToolCall(response) {
+  return (response.output ?? []).find((item) => item.type === "function_call" && TOOL_NAMES.includes(item.name));
 }
 
-function parseProposedTasks(call) {
+function parseTasks(call) {
   try {
     const args = JSON.parse(call.arguments || "{}");
-    return Array.isArray(args.tasks) && args.tasks.length ? args.tasks : null;
+    if (!Array.isArray(args.tasks) || !args.tasks.length) return null;
+    return call.name === "create_tasks_now"
+      ? { tasks: args.tasks, needsApproval: Boolean(args.needsApproval) }
+      : { tasks: args.tasks };
+  } catch {
+    return null;
+  }
+}
+
+function parseOrgChart(call) {
+  try {
+    const args = JSON.parse(call.arguments || "{}");
+    const departments = Array.isArray(args.departments) ? args.departments : [];
+    const connections = Array.isArray(args.connections) ? args.connections : [];
+    if (!departments.length && !connections.length) return null;
+    return { departments, connections };
   } catch {
     return null;
   }
@@ -132,13 +222,31 @@ function sumUsage(...responses) {
   );
 }
 
-export async function sendMessageAndGetReply({ instructions, input, previousResponseId, vectorStoreId }) {
+export async function sendMessageAndGetReply({
+  instructions,
+  input,
+  previousResponseId,
+  vectorStoreId,
+  allowDirectCreate,
+  orgChartRoster,
+}) {
   const { deployment } = getFoundryConfig();
-  const augmentedInstructions = `${instructions || ""}
 
-You can propose actionable work tasks using the propose_tasks tool whenever the user clearly wants something created, planned, or automated. Only call it when they've clearly asked for that — otherwise just respond conversationally without calling it.`.trim();
+  let augmentedInstructions = `${instructions || ""}
+
+You can propose actionable work tasks using the propose_tasks tool whenever the user clearly wants something created, planned, or automated. Only call it when they've clearly asked for that — otherwise just respond conversationally without calling it.`;
+  if (allowDirectCreate) {
+    augmentedInstructions +=
+      " This user is trusted to create tasks directly: if they clearly state both the task(s) and whether they need approval in the same message, use create_tasks_now instead of propose_tasks.";
+  }
+  if (orgChartRoster?.length) {
+    augmentedInstructions += ` You can also set up the organization chart with the arrange_org_chart tool when asked to build/arrange it from an uploaded document. The real people in this organization are: ${orgChartRoster.join(", ")}. Only reference these exact names — never invent a person who isn't in this list; match names from the document to the closest name here.`;
+  }
+  augmentedInstructions = augmentedInstructions.trim();
 
   const tools = [PROPOSE_TASKS_TOOL];
+  if (allowDirectCreate) tools.push(CREATE_TASKS_NOW_TOOL);
+  if (orgChartRoster?.length) tools.push(ARRANGE_ORG_CHART_TOOL);
   if (vectorStoreId) tools.push({ type: "file_search", vector_store_ids: [vectorStoreId] });
 
   async function callResponses(prevId) {
@@ -163,22 +271,37 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
     }
   }
 
-  const functionCall = findProposeTasksCall(response);
+  const functionCall = findToolCall(response);
   if (!functionCall) {
     return {
       responseId: response.id,
       reply: extractResponseText(response),
       proposedTasks: null,
+      createTasksNow: null,
+      arrangeOrgChart: null,
       usage: sumUsage(response),
     };
   }
 
-  const proposedTasks = parseProposedTasks(functionCall);
+  const isTaskTool = functionCall.name === "propose_tasks" || functionCall.name === "create_tasks_now";
+  const parsedTasks = isTaskTool ? parseTasks(functionCall) : null;
+  const proposedTasks = functionCall.name === "propose_tasks" ? parsedTasks?.tasks ?? null : null;
+  const createTasksNow = functionCall.name === "create_tasks_now" ? parsedTasks : null;
+  const arrangeOrgChart = functionCall.name === "arrange_org_chart" ? parseOrgChart(functionCall) : null;
+
+  let followUpOutput = "Done.";
+  if (functionCall.name === "create_tasks_now") {
+    followUpOutput = "The tasks are being created now.";
+  } else if (functionCall.name === "propose_tasks") {
+    followUpOutput = "The proposed tasks were shown to the user to review, select, and confirm. Do not create them yourself.";
+  } else if (functionCall.name === "arrange_org_chart") {
+    followUpOutput = "The organization chart is being set up now.";
+  }
 
   // The API rejects the *next* previous_response_id-chained call if a
   // function call from this response is left unresolved, so close the loop
-  // immediately — nothing actually "executes" the tool, we just tell the
-  // model the proposal was handed off to the user.
+  // immediately — nothing actually "executes" the tool here, the caller
+  // (web UI or Telegram webhook) decides what happens with the result.
   const followUp = await foundryFetch("/responses", {
     method: "POST",
     body: {
@@ -190,7 +313,7 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
         {
           type: "function_call_output",
           call_id: functionCall.call_id,
-          output: "The proposed tasks were shown to the user to review, select, and confirm. Do not create them yourself.",
+          output: followUpOutput,
         },
       ],
     },
@@ -200,6 +323,8 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
     responseId: followUp.id,
     reply: extractResponseText(followUp) || extractResponseText(response),
     proposedTasks,
+    createTasksNow,
+    arrangeOrgChart,
     usage: sumUsage(response, followUp),
   };
 }

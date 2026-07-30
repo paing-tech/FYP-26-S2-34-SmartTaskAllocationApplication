@@ -7,6 +7,20 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+// Lets the Telegram webhook (which has no logged-in manager session) create
+// tasks on an agent's behalf. Scoped narrowly to POST/PATCH here — never
+// touches the shared requireManager/getAuthenticatedUser helpers, so every
+// other route's auth is completely unaffected. The secret is server-only
+// and never sent to a browser.
+function getInternalAuthUser(request) {
+  const secret = request.headers.get("x-agent-internal-secret");
+  const userId = request.headers.get("x-agent-internal-user-id");
+  if (secret && userId && process.env.AGENT_INTERNAL_API_SECRET && secret === process.env.AGENT_INTERNAL_API_SECRET) {
+    return { id: userId };
+  }
+  return null;
+}
+
 function normalizeTaskOrder(tasks) {
   if (!Array.isArray(tasks)) {
     return [];
@@ -1007,16 +1021,20 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
+    let user = getInternalAuthUser(request);
 
-    if (authError) {
-      return NextResponse.json({ error: authError }, { status: 403 });
-    }
+    if (!user) {
+      const auth = await getAuthenticatedUser(request, supabase);
+      if (auth.error) {
+        return NextResponse.json({ error: auth.error }, { status: 403 });
+      }
 
-    const managerCheck = await requireManager(request, supabase);
+      const managerCheck = await requireManager(request, supabase);
+      if (managerCheck.error) {
+        return NextResponse.json({ error: managerCheck.error }, { status: 403 });
+      }
 
-    if (managerCheck.error) {
-      return NextResponse.json({ error: managerCheck.error }, { status: 403 });
+      user = auth.user;
     }
 
     const organizationId = await getManagerOrganizationId(supabase, user);
@@ -1117,10 +1135,14 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    let user = getInternalAuthUser(request);
 
-    if (authError) {
-      return NextResponse.json({ error: authError }, { status: 403 });
+    if (!user) {
+      const managerAuth = await requireManager(request, supabase);
+      if (managerAuth.error) {
+        return NextResponse.json({ error: managerAuth.error }, { status: 403 });
+      }
+      user = managerAuth.user;
     }
 
     const body = await request.json();

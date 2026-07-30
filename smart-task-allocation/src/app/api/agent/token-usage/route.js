@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireManager } from "@/lib/serverAuth";
+import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 function startOfDayIso() {
@@ -23,7 +23,7 @@ function sumTokens(rows) {
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }

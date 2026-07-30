@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendMessageAndGetReply } from "@/lib/foundryAgent";
 import { sendTelegramMessage } from "@/lib/telegramBot";
+import { ensureAiRecommendationsGroup } from "@/lib/taskGroups";
 
 async function getOrCreateTelegramThread(supabase, agent, chatId) {
   const { data: existing } = await supabase
@@ -28,6 +29,61 @@ async function getOrCreateTelegramThread(supabase, agent, chatId) {
   return created;
 }
 
+// Creates tasks on the agent owner's behalf without a browser session, via
+// the narrow internal-secret bypass on /api/tasks (see getInternalAuthUser
+// there) — only reachable with AGENT_INTERNAL_API_SECRET, never exposed to
+// a client.
+async function createTasksDirectly(tasks, { origin, agentUserId, agentName, needsApproval, groupId }) {
+  const headers = {
+    "Content-Type": "application/json",
+    "x-agent-internal-secret": process.env.AGENT_INTERNAL_API_SECRET ?? "",
+    "x-agent-internal-user-id": agentUserId,
+  };
+  const approvedAt = new Date().toISOString();
+  const created = [];
+
+  for (const task of tasks) {
+    const reasons = {
+      creation: [`Created directly by ${agentName} via Telegram.`],
+      creationKind: "agent_telegram_direct",
+      agentName,
+    };
+    if (!needsApproval) {
+      reasons.approvedBy = agentName;
+      reasons.approvedAt = approvedAt;
+    }
+
+    const response = await fetch(`${origin}/api/tasks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        groupId,
+        title: task.title,
+        description: task.description,
+        priority: task.priority || "Medium",
+        assignedBy: agentName,
+        source: "optimus_ai",
+        aiState: needsApproval ? "active" : "accepted",
+        reasons,
+      }),
+    });
+    const result = await response.json();
+    if (response.ok) {
+      created.push(result.task?.title ?? task.title);
+    }
+  }
+
+  if (created.length) {
+    await fetch(`${origin}/api/tasks`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ action: "auto-allocate-tasks", enabled: true }),
+    });
+  }
+
+  return created;
+}
+
 // Telegram retries on non-2xx, so this always acks 200 even when internal
 // processing fails — the failure is surfaced in the response body only.
 export async function POST(request, { params }) {
@@ -37,7 +93,7 @@ export async function POST(request, { params }) {
   try {
     const { data: link } = await supabase
       .from("agent_telegram_bot")
-      .select("agent_id, bot_token")
+      .select("agent_id, bot_token, allowed_username")
       .eq("webhook_secret", secret)
       .maybeSingle();
 
@@ -57,12 +113,18 @@ export async function POST(request, { params }) {
       return NextResponse.json({ ok: false, error: "Agent not found." });
     }
 
+    const senderUsername = update.message?.from?.username;
+    const allowDirectCreate = Boolean(
+      link.allowed_username && senderUsername && link.allowed_username === senderUsername.toLowerCase(),
+    );
+
     const thread = await getOrCreateTelegramThread(supabase, agent, String(chatId));
-    const { responseId, reply, proposedTasks, usage } = await sendMessageAndGetReply({
+    const { responseId, reply, proposedTasks, createTasksNow, usage } = await sendMessageAndGetReply({
       instructions: agent.instructions,
       input: text,
       previousResponseId: thread.last_response_id,
       vectorStoreId: agent.foundry_vector_store_id,
+      allowDirectCreate,
     });
 
     await supabase.from("agent_token_usage").insert({
@@ -86,7 +148,19 @@ export async function POST(request, { params }) {
     // can legitimately come back empty (e.g. right after a function call),
     // so always send *something* rather than silently going quiet.
     let outgoingText = reply;
-    if (proposedTasks?.length) {
+    if (createTasksNow?.tasks?.length) {
+      const groupId = await ensureAiRecommendationsGroup(supabase, agent.organization_id);
+      const created = await createTasksDirectly(createTasksNow.tasks, {
+        origin: request.nextUrl.origin,
+        agentUserId: agent.user_id,
+        agentName: agent.name,
+        needsApproval: createTasksNow.needsApproval,
+        groupId,
+      });
+      outgoingText = `${reply ? `${reply}\n\n` : ""}Created ${created.length} task${created.length === 1 ? "" : "s"}: ${created.join(", ")} (${
+        createTasksNow.needsApproval ? "pending approval" : "auto-approved"
+      }).`;
+    } else if (proposedTasks?.length) {
       const list = proposedTasks.map((task, index) => `${index + 1}. ${task.title}`).join("\n");
       outgoingText = `${reply ? `${reply}\n\n` : ""}I'd suggest these tasks:\n${list}\n\nOpen the Agent page in the app to review and create them.`;
     }

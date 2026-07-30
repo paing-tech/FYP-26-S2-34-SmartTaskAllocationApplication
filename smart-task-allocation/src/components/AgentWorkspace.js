@@ -165,6 +165,7 @@ export default function AgentWorkspace() {
   const [integrationsOpen, setIntegrationsOpen] = useState(true);
   const [telegram, setTelegram] = useState(null);
   const [botTokenInput, setBotTokenInput] = useState("");
+  const [allowedUsernameInput, setAllowedUsernameInput] = useState("");
   const [connectingTelegram, setConnectingTelegram] = useState(false);
   const [telegramError, setTelegramError] = useState("");
 
@@ -361,12 +362,13 @@ export default function AgentWorkspace() {
       const res = await fetch("/api/agent/telegram", {
         method: "POST",
         headers,
-        body: JSON.stringify({ botToken: botTokenInput }),
+        body: JSON.stringify({ botToken: botTokenInput, allowedUsername: allowedUsernameInput }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not connect the bot.");
       setTelegram(data.telegram);
       setBotTokenInput("");
+      setAllowedUsernameInput("");
     } catch (error) {
       setTelegramError(error.message);
     } finally {
@@ -712,7 +714,7 @@ export default function AgentWorkspace() {
               ))}
               <label className="flex h-9 cursor-pointer items-center justify-center rounded-full border border-dashed border-[#0D1E4C]/30 text-xs font-bold text-[#0D1E4C]/70 transition hover:border-[#2563EB] hover:text-[#2563EB]">
                 {uploading ? "Uploading…" : "+ Add file"}
-                <input type="file" accept=".pdf,.doc,.docx,.txt,.md" className="hidden" disabled={uploading} onChange={handleUpload} />
+                <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.png" className="hidden" disabled={uploading} onChange={handleUpload} />
               </label>
               {knowledgeError ? <p className="text-xs font-medium text-red-600">{knowledgeError}</p> : null}
             </div>
@@ -754,6 +756,11 @@ export default function AgentWorkspace() {
                 {telegram ? (
                   <>
                     <p className="text-[11px] text-[#0D1E4C]/60">Connected as @{telegram.bot_username}</p>
+                    {telegram.allowed_username ? (
+                      <p className="text-center text-[10px] text-[#0D1E4C]/50">
+                        @{telegram.allowed_username} can create tasks directly by chat
+                      </p>
+                    ) : null}
                     <button
                       type="button"
                       onClick={handleDisconnectTelegram}
@@ -772,6 +779,17 @@ export default function AgentWorkspace() {
                       required
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-[#0D1E4C] outline-none focus:border-[#2563EB]"
                     />
+                    <input
+                      type="text"
+                      value={allowedUsernameInput}
+                      onChange={(event) => setAllowedUsernameInput(event.target.value)}
+                      placeholder="Your Telegram username (optional)"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-[#0D1E4C] outline-none focus:border-[#2563EB]"
+                    />
+                    <p className="text-[10px] text-[#0D1E4C]/50">
+                      Only this username can create tasks directly by chat — everyone else just gets suggestions to
+                      review in the app.
+                    </p>
                     <button
                       type="submit"
                       disabled={connectingTelegram}

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireManager } from "@/lib/serverAuth";
+import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { getBotInfo, setWebhook, deleteWebhook } from "@/lib/telegramBot";
 
@@ -11,7 +11,7 @@ async function getMyAgent(supabase, user) {
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -23,7 +23,7 @@ export async function GET(request) {
 
     const { data } = await supabase
       .from("agent_telegram_bot")
-      .select("bot_username, created_at")
+      .select("bot_username, created_at, allowed_username")
       .eq("agent_id", agent.agent_id)
       .maybeSingle();
 
@@ -36,7 +36,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -59,6 +59,8 @@ export async function POST(request) {
     if (!botToken) {
       return NextResponse.json({ error: "A bot token is required." }, { status: 400 });
     }
+    const allowedUsername =
+      typeof body.allowedUsername === "string" ? body.allowedUsername.trim().replace(/^@/, "").toLowerCase() : "";
 
     const botInfo = await getBotInfo(botToken);
     const webhookSecret = crypto.randomUUID();
@@ -73,11 +75,12 @@ export async function POST(request) {
           bot_token: botToken,
           bot_username: botInfo.username,
           webhook_secret: webhookSecret,
+          allowed_username: allowedUsername || null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "agent_id" },
       )
-      .select("bot_username, created_at")
+      .select("bot_username, created_at, allowed_username")
       .single();
 
     if (upsertError) {
@@ -93,7 +96,7 @@ export async function POST(request) {
 export async function DELETE(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }

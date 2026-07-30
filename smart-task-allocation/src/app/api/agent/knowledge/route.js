@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireManager } from "@/lib/serverAuth";
+import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { uploadFoundryFile, addFileToVectorStore, deleteFoundryFile } from "@/lib/foundryAgent";
 
@@ -11,6 +11,7 @@ const ALLOWED_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
   "text/markdown",
+  "image/png",
 ]);
 
 async function getMyAgent(supabase, user) {
@@ -21,7 +22,7 @@ async function getMyAgent(supabase, user) {
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -50,7 +51,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
@@ -66,7 +67,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "A file is required." }, { status: 400 });
     }
     if (!ALLOWED_TYPES.has(file.type)) {
-      return NextResponse.json({ error: "Only PDF, Word, TXT, or Markdown files are allowed." }, { status: 400 });
+      return NextResponse.json({ error: "Only PDF, Word, TXT, Markdown, or PNG files are allowed." }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ error: "The file must be 20MB or smaller." }, { status: 400 });
@@ -113,7 +114,7 @@ export async function POST(request) {
 export async function DELETE(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
