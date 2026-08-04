@@ -253,7 +253,6 @@ export default function WorkspaceView() {
   const [skills, setSkills] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [createTaskRequestKey, setCreateTaskRequestKey] = useState(0);
   const today = new Date();
   const totalTasks = tasks.length;
   const dueTodayCount = tasks.filter((task) => isSameLocalDay(task.end_datetime, today)).length;
@@ -917,14 +916,6 @@ export default function WorkspaceView() {
                 progress={totalTasks ? dueTodayCount / totalTasks : 0}
               />
             </div>
-            <button
-              type="button"
-              onClick={() => setCreateTaskRequestKey((current) => current + 1)}
-              className="rounded-full border border-white/70 bg-white/35 px-4 py-2 text-sm font-black text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/70"
-            >
-              Add task
-            </button>
-
             <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 p-1 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
               {COLUMN_LAYOUT_OPTIONS.map((option) => {
                 const isSelected = option.count === columnLayout;
@@ -974,7 +965,6 @@ export default function WorkspaceView() {
             employees={employees}
             error={error}
             groups={groups}
-            createTaskRequestKey={createTaskRequestKey}
             isLoading={isLoading}
             onGroupCreate={createGroup}
             onGroupDelete={deleteGroup}

@@ -1999,7 +1999,6 @@ function getColumnWidthStyle(columnLayout) {
 
 export default function WorkspaceBoard({
   columnLayout = 4,
-  createTaskRequestKey = 0,
   employees = [],
   error = "",
   groups = [],
@@ -2022,9 +2021,9 @@ export default function WorkspaceBoard({
 }) {
   const [editingTask, setEditingTask] = useState(null);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const boardScrollRef = useRef(null);
   const previousGroupCountRef = useRef(groups.length);
-  const [handledCreateTaskRequestKey, setHandledCreateTaskRequestKey] = useState(createTaskRequestKey);
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
     [employees],
@@ -2101,17 +2100,6 @@ export default function WorkspaceBoard({
     });
   }
 
-  // Respond to the parent's "open a new task" signal. This adjusts state
-  // directly during render (React's sanctioned pattern for "do something when
-  // a prop changes") instead of a useEffect, since it's reacting to an
-  // external trigger rather than syncing derived state.
-  if (createTaskRequestKey !== handledCreateTaskRequestKey) {
-    setHandledCreateTaskRequestKey(createTaskRequestKey);
-    if (createTaskRequestKey > 0) {
-      handleOpenNewTask();
-    }
-  }
-
   async function handleCreateGroup() {
     if (!onGroupCreate || isCreatingGroup) return;
 
@@ -2123,6 +2111,15 @@ export default function WorkspaceBoard({
       setIsCreatingGroup(false);
     }
   }
+
+  useEffect(() => {
+    if (!isAddMenuOpen) return;
+    function handleWindowClick() {
+      setIsAddMenuOpen(false);
+    }
+    window.addEventListener("click", handleWindowClick);
+    return () => window.removeEventListener("click", handleWindowClick);
+  }, [isAddMenuOpen]);
 
   async function handleTaskSave(task, updates) {
     if (task?.isNew) {
@@ -2211,15 +2208,47 @@ export default function WorkspaceBoard({
         ) : null}
       </div>
 
-      <button
-        type="button"
-        onClick={handleCreateGroup}
-        disabled={isCreatingGroup}
-        className="absolute right-2 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/60 bg-white/10 text-3xl font-light leading-none text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.18)] backdrop-blur-xl transition hover:scale-105 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-        aria-label="Add group"
-      >
-        +
-      </button>
+      <div className="absolute right-2 top-1/2 z-30 -translate-y-1/2">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsAddMenuOpen((current) => !current);
+          }}
+          className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/10 text-3xl font-light leading-none text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.18)] backdrop-blur-xl transition hover:scale-105 hover:bg-white"
+          aria-label="Add"
+        >
+          +
+        </button>
+        {isAddMenuOpen ? (
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className="absolute right-0 -top-4 w-44 px-2 py-2 overflow-hidden rounded-3xl border border-white/60 bg-white backdrop-blur-3xl shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddMenuOpen(false);
+                handleOpenNewTask();
+              }}
+              className="block w-full px-4 py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
+            >
+              Add New Task
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddMenuOpen(false);
+                handleCreateGroup();
+              }}
+              disabled={isCreatingGroup}
+              className="block w-full px-4 py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
+            >
+              Add New Group
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       {currentEditingTask ? (
         <TaskEditPanel
