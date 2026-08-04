@@ -107,9 +107,10 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isReassigning, setIsReassigning] = useState(false);
   const historyItems = allocations;
-  const visibleItems = historyItems.slice(startIndex, startIndex + 1);
+  const allocation = historyItems[startIndex] ?? null;
   const canShowNewer = startIndex > 0;
   const canShowOlder = startIndex + 1 < historyItems.length;
+  const byAI = allocation ? /optimus/i.test(allocation.assignedBy ?? "") : false;
 
   useEffect(() => {
     setStartIndex(0);
@@ -123,101 +124,97 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
     setStartIndex((current) => Math.min(Math.max(historyItems.length - 1, 0), current + 1));
   }
 
-  return (
-    <section className="mt-2 shrink-0 rounded-[1.75rem] border border-white/50 bg-white/20 px-5 py-4 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-black text-[#0D1E4C]">Allocation History</h3>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
-            <button
-              type="button"
-              onClick={showNewerRecords}
-              disabled={!canShowNewer}
-              className="flex h-8 w-9 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
-              aria-label="Show newer allocation records"
-            >
-              <span className="material-symbols-outlined text-xl" aria-hidden="true">
-                keyboard_arrow_up
-              </span>
-            </button>
-            <div className="w-px bg-white/60" />
-            <button
-              type="button"
-              onClick={showOlderRecords}
-              disabled={!canShowOlder}
-              className="flex h-8 w-9 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
-              aria-label="Show older allocation records"
-            >
-              <span className="material-symbols-outlined text-xl" aria-hidden="true">
-                keyboard_arrow_down
-              </span>
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsExpanded(true)}
-            className="flex h-8 w-9 items-center justify-center rounded-full border border-white/60 bg-white/30 text-[#0D1E4C] shadow-sm backdrop-blur-sm transition hover:bg-white/60"
-            aria-label="Expand allocation history"
-          >
-            <span className="material-symbols-outlined text-xl" aria-hidden="true">
-              expand_content
-            </span>
-          </button>
-        </div>
+  // Kept as a sibling of the record pill (not nested inside it) so its
+  // position stays fixed on the right regardless of how wide the record's
+  // own content runs.
+  const controls = (
+    <div className="flex shrink-0 items-center gap-2">
+      <div className="inline-flex overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={showNewerRecords}
+          disabled={!canShowNewer}
+          className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+          aria-label="Show newer allocation records"
+        >
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">
+            keyboard_arrow_up
+          </span>
+        </button>
+        <div className="w-px bg-white/60" />
+        <button
+          type="button"
+          onClick={showOlderRecords}
+          disabled={!canShowOlder}
+          className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+          aria-label="Show older allocation records"
+        >
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">
+            keyboard_arrow_down
+          </span>
+        </button>
       </div>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(true)}
+        className="flex h-7 w-8 items-center justify-center rounded-full border border-white/60 bg-white/30 text-[#0D1E4C] shadow-sm backdrop-blur-sm transition hover:bg-white/60"
+        aria-label="Expand allocation history"
+      >
+        <span className="material-symbols-outlined text-lg" aria-hidden="true">
+          expand_content
+        </span>
+      </button>
+    </div>
+  );
 
-      {visibleItems.length ? (
-        <div className="space-y-2">
-          {visibleItems.map((allocation) => {
-            const byAI = /optimus/i.test(allocation.assignedBy ?? "");
-            return (
-              <article
-                key={allocation.id}
-                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/50 bg-white/30 px-4 py-3 text-sm backdrop-blur-sm"
-              >
-                <span className="max-w-[180px] truncate rounded-full border border-[#2563EB]/25 bg-[#2563EB]/10 px-3 py-1 font-bold text-[#1E40AF]">
-                  {allocation.assigneeName || "Unknown"}
-                </span>
-                <span className="text-[#52627a]">was assigned to</span>
-                <span className="max-w-[260px] truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
-                  {allocation.taskTitle || "Task"}
-                </span>
-                <span className="text-[#52627a]">by</span>
-                <span
-                  className={`max-w-[160px] truncate rounded-full border px-3 py-1 font-bold ${
-                    byAI
-                      ? "border-[#7C3AED]/25 bg-[#7C3AED]/10 text-[#5B21B6]"
-                      : "border-[#0D1E4C]/15 bg-white/70 text-[#0D1E4C]"
-                  }`}
-                >
-                  {allocation.assignedBy || "Manager"}
-                </span>
-                <span className="text-[#52627a]">on {formatHistoryTime(allocation.assignedAt)}</span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (isReassigning) return;
-                    setIsReassigning(true);
-                    try {
-                      await onReassign?.(allocation);
-                    } finally {
-                      setIsReassigning(false);
-                    }
-                  }}
-                  disabled={isReassigning}
-                  className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Reassign
-                </button>
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-dashed border-white/60 bg-white/20 py-6 text-center text-sm font-bold text-[#94a3b8]">
-          No allocation history yet.
-        </div>
-      )}
+  return (
+    <section className="mt-4 shrink-0 rounded-full border border-white/50 bg-white/20 px-4 py-2.5 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
+      <div className="flex items-center gap-2">
+        {allocation ? (
+          <article className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/50 bg-white/30 px-3.5 py-2 text-sm backdrop-blur-sm">
+            <span className="max-w-40 truncate rounded-full border border-[#2563EB]/25 bg-[#2563EB]/10 px-3 py-1 font-bold text-[#1E40AF]">
+              {allocation.assigneeName || "Unknown"}
+            </span>
+            <span className="text-[#52627a]">was assigned to</span>
+            <span className="rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
+              {allocation.taskTitle || "Task"}
+            </span>
+            <span className="text-[#52627a]">by</span>
+            <span
+              className={`max-w-35 truncate rounded-full border px-3 py-1 font-bold ${
+                byAI
+                  ? "border-[#7C3AED]/25 bg-[#7C3AED]/10 text-[#5B21B6]"
+                  : "border-[#0D1E4C]/15 bg-white/70 text-[#0D1E4C]"
+              }`}
+            >
+              {allocation.assignedBy || "Manager"}
+            </span>
+            <span className="hidden text-[#52627a] lg:inline">on {formatHistoryTime(allocation.assignedAt)}</span>
+            <button
+              type="button"
+              onClick={async () => {
+                if (isReassigning) return;
+                setIsReassigning(true);
+                try {
+                  await onReassign?.(allocation);
+                } finally {
+                  setIsReassigning(false);
+                }
+              }}
+              disabled={isReassigning}
+              className="ml-auto shrink-0 rounded-full border border-[#0a72e8] px-3.5 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Reassign
+            </button>
+          </article>
+        ) : (
+          <div className="flex-1 rounded-full border border-dashed border-white/60 bg-white/20 px-3.5 py-2 text-sm font-bold text-[#94a3b8]">
+            No allocation history yet.
+          </div>
+        )}
+
+        {controls}
+      </div>
 
       {isExpanded ? (
         <Portal>
