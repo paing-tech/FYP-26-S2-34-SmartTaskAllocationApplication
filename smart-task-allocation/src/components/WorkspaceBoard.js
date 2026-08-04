@@ -40,6 +40,30 @@ export function getDisplayName(employee) {
   return employee?.full_name || employee?.username || employee?.email || "Employee";
 }
 
+function AvatarCircle({ className, employee, sizeClass, style }) {
+  const name = employee ? getDisplayName(employee) : "";
+
+  if (employee?.avatar_url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        alt={name}
+        className={`${sizeClass} shrink-0 rounded-full border-2 border-white object-cover ${className ?? ""}`}
+        src={employee.avatar_url}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full border-2 border-white text-[10px] font-black text-white ${className ?? ""}`}
+      style={style ?? { backgroundColor: employee ? AVATAR_COLORS[0] : "#94a3b8" }}
+    >
+      {employee ? initials(name) : "?"}
+    </span>
+  );
+}
+
 function getPriorityKey(priority) {
   const normalized = String(priority || "Medium").toLowerCase();
 
@@ -270,13 +294,8 @@ function CompactAssigneeRow({ assignees, end, start }) {
       </span>
       <span className="flex shrink-0 items-center -space-x-2">
         {shown.map((employee, index) => (
-          <span
-            key={employee?.user_id ?? `unassigned-${index}`}
-            title={employee ? getDisplayName(employee) : "Unassigned"}
-            className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-[10px] font-black text-white"
-            style={{ backgroundColor: employee ? AVATAR_COLORS[0] : "#94a3b8" }}
-          >
-            {employee ? initials(getDisplayName(employee)) : "?"}
+          <span key={employee?.user_id ?? `unassigned-${index}`} title={employee ? getDisplayName(employee) : "Unassigned"}>
+            <AvatarCircle employee={employee} sizeClass="h-7 w-7" />
           </span>
         ))}
         {extra > 0 ? (
@@ -311,12 +330,7 @@ function AssigneeProfile({ employee }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 rounded-full bg-white/10 backdrop-blur-3xl px-3 py-2">
       <span className="flex min-w-0 items-center gap-2">
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white"
-          style={{ backgroundColor: AVATAR_COLORS[0] }}
-        >
-          {initials(name)}
-        </span>
+        <AvatarCircle employee={employee} sizeClass="h-7 w-7" />
         <span className="truncate text-xs font-black text-[#0D1E4C]">{name}</span>
       </span>
       <span className="shrink-0 truncate text-right text-[11px] font-semibold text-[#667085]">
@@ -604,9 +618,12 @@ export function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign
                   key={assignee.user_id}
                   className="flex items-center gap-1.5 rounded-full bg-[#eef2f8] py-1 pl-1 pr-2"
                 >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-[9px] font-black text-white">
-                    {initials(getDisplayName(assignee))}
-                  </span>
+                  <AvatarCircle
+                    employee={assignee}
+                    sizeClass="h-6 w-6"
+                    className="border-0 text-[9px]"
+                    style={{ backgroundColor: "#2563EB" }}
+                  />
                   <span className="truncate text-xs font-bold text-[#0D1E4C]">
                     {getDisplayName(assignee)}
                   </span>
@@ -727,12 +744,7 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
     <div className="group relative z-0 pt-11 hover:z-20">
       <div className="absolute inset-x-0 top-2 bottom-0 z-0 translate-y-0 rounded-3xl border border-white/60 bg-white/10 px-4 pt-3 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out group-hover:-bottom-4 group-hover:-translate-y-4">
         <div className="flex items-center justify-between gap-1.5">
-          <span className="truncate text-[11px] font-bold text-[#0D1E4C]">
-            {task.owner}
-            {task.ownerJobTitle ? (
-              <span className="font-semibold text-[#667085]"> • {task.ownerJobTitle}</span>
-            ) : null}
-          </span>
+          <span className="truncate text-[11px] font-bold text-[#0D1E4C]">{task.owner}</span>
           {approvedBy ? (
             <span className="truncate text-[11px] font-bold text-emerald-700">Approved by {approvedBy}</span>
           ) : null}
@@ -2228,7 +2240,7 @@ export default function WorkspaceBoard({
                 setIsAddMenuOpen(false);
                 handleOpenNewTask();
               }}
-              className="block w-full px-4 py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
+              className="block w-full py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
             >
               Add New Task
             </button>
@@ -2239,7 +2251,7 @@ export default function WorkspaceBoard({
                 handleCreateGroup();
               }}
               disabled={isCreatingGroup}
-              className="block w-full px-4 py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
+              className="block w-full py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
             >
               Add New Group
             </button>
