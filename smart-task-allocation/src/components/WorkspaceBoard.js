@@ -40,7 +40,7 @@ export function getDisplayName(employee) {
   return employee?.full_name || employee?.username || employee?.email || "Employee";
 }
 
-function AvatarCircle({ className, employee, sizeClass, style }) {
+export function AvatarCircle({ className, employee, sizeClass, style }) {
   const name = employee ? getDisplayName(employee) : "";
 
   if (employee?.avatar_url) {
@@ -233,7 +233,7 @@ function getTaskActionLabels(task) {
   ].filter(Boolean);
 }
 
-function buildBoardColumns({ groups, tasks }) {
+export function buildBoardColumns({ groups, tasks }) {
   const fallbackGroup = {
     group_id: "ungrouped",
     group_name: "To-do",

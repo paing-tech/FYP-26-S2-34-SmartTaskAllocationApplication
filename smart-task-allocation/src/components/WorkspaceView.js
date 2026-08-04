@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import WorkspaceCalendar from "@/components/WorkspaceCalendar";
-import WorkspaceBoard from "@/components/WorkspaceBoard";
+import WorkspaceBoard, { AvatarCircle, buildBoardColumns } from "@/components/WorkspaceBoard";
 import AllocationHistory from "@/components/AllocationHistory";
 import Portal from "@/components/Portal";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
@@ -250,9 +250,28 @@ export default function WorkspaceView() {
   const [skills, setSkills] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isMissionControlOpen, setIsMissionControlOpen] = useState(false);
   const today = new Date();
   const totalTasks = tasks.length;
   const dueTodayCount = tasks.filter((task) => isSameLocalDay(task.end_datetime, today)).length;
+
+  const employeesById = useMemo(
+    () => new Map(employees.map((employee) => [employee.user_id, employee])),
+    [employees],
+  );
+
+  // Same grouping WorkspaceBoard uses for its columns, reused here so the
+  // quick-view overlay always matches the real board layout exactly.
+  const missionControlColumns = useMemo(() => {
+    const columns = buildBoardColumns({ groups, tasks });
+    return columns.map((column) => ({
+      ...column,
+      tasks: column.tasks.map((task) => ({
+        ...task,
+        assignees: (task.assigneeIds ?? []).map((userId) => employeesById.get(userId)).filter(Boolean),
+      })),
+    }));
+  }, [groups, tasks, employeesById]);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -928,7 +947,7 @@ export default function WorkspaceView() {
                 progress={totalTasks ? dueTodayCount / totalTasks : 0}
               />
             </div>
-            <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 p-1 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
+            <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 px-1 py-1.5 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
               {COLUMN_LAYOUT_OPTIONS.map((option) => {
                 const isSelected = option.count === columnLayout;
 
@@ -949,6 +968,17 @@ export default function WorkspaceView() {
                 );
               })}
             </div>
+            <button
+              type="button"
+              onClick={() => setIsMissionControlOpen(true)}
+              aria-label="Open quick view"
+              title="Quick view"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/35 text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/60"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                view_compact_alt
+              </span>
+            </button>
           </div>
         ) : null}
       </div>
@@ -1002,6 +1032,69 @@ export default function WorkspaceView() {
         onReassign={recreateTaskFromAllocation}
         onReload={loadWorkspaceData}
       />
+
+      {isMissionControlOpen ? (
+        <Portal>
+          <div
+            className="fixed inset-0 z-80 bg-transparent backdrop-blur-lg"
+            onClick={() => setIsMissionControlOpen(false)}
+          >
+            <button
+              type="button"
+              onClick={() => setIsMissionControlOpen(false)}
+              className="fixed right-8 top-24 z-90 flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/35 text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/60"
+              aria-label="Close quick view"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
+            </button>
+
+            <div
+              className="flex h-full gap-8 overflow-x-auto pb-16 pl-[104px] pr-16 pt-[164px]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {missionControlColumns.map((column) => (
+                <div key={column.id} className="flex w-80 shrink-0 flex-col">
+                  <h3 className="mb-4 shrink-0 text-center text-xl font-black text-[#0D1E4C]">{column.name}</h3>
+                  <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-1 pb-4 pt-1">
+                    {column.tasks.length ? (
+                      column.tasks.map((task) => (
+                        <div key={task.task_id} className="relative">
+                          <div className="rounded-full border border-white/60 bg-white/60 px-5 py-4 shadow-sm">
+                            <span
+                              className="block text-center text-sm font-bold text-[#0D1E4C]"
+                              title={task.title || "Untitled task"}
+                            >
+                              {task.title || "Untitled task"}
+                            </span>
+                          </div>
+                          <div className="absolute left-1/2 top-full flex -translate-x-1/2 -translate-y-1/2 items-center -space-x-2">
+                            {task.assignees.length ? (
+                              task.assignees.map((employee) => (
+                                <AvatarCircle
+                                  key={employee.user_id}
+                                  employee={employee}
+                                  sizeClass="h-9 w-9"
+                                  className="text-xs"
+                                />
+                              ))
+                            ) : (
+                              <AvatarCircle employee={null} sizeClass="h-9 w-9" className="text-xs" />
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-center text-sm font-semibold text-[#94a3b8]">No tasks</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Portal>
+      ) : null}
     </div>
   );
 }
