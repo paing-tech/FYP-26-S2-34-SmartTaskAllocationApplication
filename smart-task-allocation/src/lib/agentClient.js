@@ -33,10 +33,13 @@ export async function resolveSkillIds(skillNames, headers) {
 
 // Creates each selected proposed task via the existing /api/tasks endpoint
 // (source: "optimus_ai" so it renders through the same Approve/Reject card
-// as every other AI-authored task) and triggers auto-allocation once done.
-// When needsApproval is false, the task is stamped pre-approved so it skips
-// straight past the pending-approval UI.
-export async function createProposedTasks(tasks, { agentName, needsApproval, groupId, headers }) {
+// as every other AI-authored task, decorated with a glowing border on the
+// board) and triggers auto-allocation once done. Each task lands in whichever
+// column the agent chose (task.groupId), falling back to the default
+// "Untitled" column server-side when it didn't pick one. When needsApproval
+// is false, the task is stamped pre-approved so it skips straight past the
+// pending-approval UI.
+export async function createProposedTasks(tasks, { agentName, needsApproval, headers }) {
   const created = [];
   const approvedAt = new Date().toISOString();
 
@@ -59,7 +62,7 @@ export async function createProposedTasks(tasks, { agentName, needsApproval, gro
       method: "POST",
       headers,
       body: JSON.stringify({
-        groupId,
+        groupId: task.groupId,
         title: task.title,
         description: task.description,
         priority: task.priority || "Medium",

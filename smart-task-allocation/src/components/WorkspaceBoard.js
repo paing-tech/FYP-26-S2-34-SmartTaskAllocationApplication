@@ -240,8 +240,7 @@ function buildBoardColumns({ groups, tasks }) {
   };
   const baseGroups = groups.length ? groups : [fallbackGroup];
   // Orphaned tasks (group deleted, etc.) land in "Untitled" if the org has
-  // one, rather than silently landing in whichever group happens to sort
-  // first (which may be the reserved "AI Recommendations" group).
+  // one, rather than silently landing in whichever group happens to sort first.
   const untitledGroup = baseGroups.find((group) => (group.group_name || "").trim().toLowerCase() === "untitled");
   const orphanGroupId = untitledGroup?.group_id ?? baseGroups[0]?.group_id;
   const tasksByGroup = new Map(baseGroups.map((group) => [group.group_id, []]));
@@ -715,7 +714,8 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
   const actionLabels = getTaskActionLabels(task);
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [isDeciding, setIsDeciding] = useState(false);
-  const isPendingApproval = task.source === "optimus_ai" && task.ai_state !== "accepted";
+  const isAiCreated = task.source === "optimus_ai";
+  const isPendingApproval = isAiCreated && task.ai_state !== "accepted";
   const approvedBy = task.reasons?.approvedBy;
 
   async function handleApprove(event) {
@@ -764,9 +764,11 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
             onOpen?.(task);
           }
         }}
-        className={`relative z-10 cursor-pointer rounded-3xl border border-[#e6ebf2] bg-white/40 shadow-sm backdrop-blur-2xl transition duration-200 group-hover:shadow-lg ${
-          compact ? "p-3" : "p-4"
-        }`}
+        className={`relative z-10 cursor-pointer rounded-3xl border bg-white/40 shadow-sm backdrop-blur-2xl transition duration-200 group-hover:shadow-lg ${
+          isAiCreated
+            ? "border-[#2563EB]/70 shadow-[0_0_0_1px_rgba(37,99,235,0.35),0_0_22px_rgba(37,99,235,0.45)]"
+            : "border-[#e6ebf2]"
+        } ${compact ? "p-3" : "p-4"}`}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -1210,16 +1212,10 @@ function SelectRow({ icon, isLast = false, label, onChange, options, value }) {
   );
 }
 
-function GroupPicker({ groups, onChange, value, restrictedGroupId, locked = false }) {
+function GroupPicker({ groups, onChange, value, locked = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedGroup = groups.find((group) => sameId(group.group_id, value));
   const selectedName = selectedGroup?.group_name || "No group";
-  // Manual moves can't target the reserved AI Recommendations group — it's
-  // only ever populated by Optimus AI — unless a task is already sitting
-  // there (so its current value still renders as a valid option).
-  const selectableGroups = groups.filter(
-    (group) => !restrictedGroupId || !sameId(group.group_id, restrictedGroupId) || sameId(group.group_id, value),
-  );
 
   function selectGroup(groupId) {
     if (locked) return;
@@ -1260,7 +1256,7 @@ function GroupPicker({ groups, onChange, value, restrictedGroupId, locked = fals
         <>
           <div className="mx-4 border-t border-[#e6ebf2]" />
           <div className="space-y-1 px-3 py-2">
-            {selectableGroups.map((group) => {
+            {groups.map((group) => {
               const isSelected = sameId(group.group_id, value);
 
               return (
@@ -1320,9 +1316,6 @@ export function TaskEditPanel({
     endTime: endParts.time,
   }));
   const isPendingApproval = task?.source === "optimus_ai" && task?.ai_state !== "accepted";
-  const aiRecommendationsGroupId = groups.find(
-    (group) => (group.group_name || "").trim().toLowerCase() === "ai recommendations",
-  )?.group_id;
   const [isSaving, setIsSaving] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1641,7 +1634,6 @@ export function TaskEditPanel({
             groups={groups}
             value={form.groupId}
             onChange={(value) => updateField("groupId", value)}
-            restrictedGroupId={aiRecommendationsGroupId}
             locked={isPendingApproval}
           />
 

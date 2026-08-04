@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendMessageAndGetReply } from "@/lib/foundryAgent";
 import { sendTelegramMessage } from "@/lib/telegramBot";
-import { ensureAiRecommendationsGroup } from "@/lib/taskGroups";
+import { matchTaskGroupByName, ensureUntitledGroup } from "@/lib/taskGroups";
 
 async function getOrCreateTelegramThread(supabase, agent, chatId) {
   const { data: existing } = await supabase
@@ -33,7 +33,7 @@ async function getOrCreateTelegramThread(supabase, agent, chatId) {
 // the narrow internal-secret bypass on /api/tasks (see getInternalAuthUser
 // there) — only reachable with AGENT_INTERNAL_API_SECRET, never exposed to
 // a client.
-async function createTasksDirectly(tasks, { origin, agentUserId, agentName, needsApproval, groupId }) {
+async function createTasksDirectly(tasks, { origin, agentUserId, agentName, needsApproval, defaultGroupId, taskGroups }) {
   const headers = {
     "Content-Type": "application/json",
     "x-agent-internal-secret": process.env.AGENT_INTERNAL_API_SECRET ?? "",
@@ -57,7 +57,7 @@ async function createTasksDirectly(tasks, { origin, agentUserId, agentName, need
       method: "POST",
       headers,
       body: JSON.stringify({
-        groupId,
+        groupId: matchTaskGroupByName(taskGroups, task.groupName) ?? defaultGroupId,
         title: task.title,
         description: task.description,
         priority: task.priority || "Medium",
@@ -129,12 +129,18 @@ export async function POST(request, { params }) {
     }
 
     const thread = await getOrCreateTelegramThread(supabase, agent, String(chatId));
+    const { data: taskGroups } = await supabase
+      .from("task_group")
+      .select("group_id, group_name")
+      .eq("organization_id", agent.organization_id)
+      .order("sort_order", { ascending: true });
     const { responseId, reply, proposedTasks, createTasksNow, usage } = await sendMessageAndGetReply({
       instructions: agent.instructions,
       input: text,
       previousResponseId: thread.last_response_id,
       vectorStoreId: agent.foundry_vector_store_id,
       allowDirectCreate,
+      taskGroups: (taskGroups ?? []).map((group) => group.group_name),
     });
 
     await supabase.from("agent_token_usage").insert({
@@ -159,13 +165,14 @@ export async function POST(request, { params }) {
     // so always send *something* rather than silently going quiet.
     let outgoingText = reply;
     if (createTasksNow?.tasks?.length) {
-      const groupId = await ensureAiRecommendationsGroup(supabase, agent.organization_id);
+      const defaultGroupId = await ensureUntitledGroup(supabase, agent.organization_id);
       const created = await createTasksDirectly(createTasksNow.tasks, {
         origin: request.nextUrl.origin,
         agentUserId: agent.user_id,
         agentName: agent.name,
         needsApproval: createTasksNow.needsApproval,
-        groupId,
+        defaultGroupId,
+        taskGroups,
       });
       outgoingText = `${reply ? `${reply}\n\n` : ""}Created ${created.length} task${created.length === 1 ? "" : "s"}: ${created.join(", ")} (${
         createTasksNow.needsApproval ? "pending approval" : "auto-approved"

@@ -4,10 +4,13 @@ import { useState } from "react";
 import { authHeaders, createProposedTasks } from "@/lib/agentClient";
 
 // Renders inline in the chat when the agent calls the propose_tasks tool:
-// select which tasks to keep, choose whether they need approval, then
-// create them — mirrors the "New chat" flow's structure (pick, confirm,
-// done) so it reads as one interaction instead of a form bolted onto chat.
-// The resolution (done vs. still selectable) is persisted onto the message
+// select which tasks to keep, choose whether they need approval, then create
+// them — each lands in whichever column the agent chose. Auto-approved tasks
+// skip straight past the board's approve/reject gate; "needs approval" ones
+// show up pending, with a glowing border marking them as AI-authored either
+// way. Mirrors the "New chat" flow's structure (pick, confirm, done) so it
+// reads as one interaction instead of a form bolted onto chat. The resolution
+// (done vs. still selectable) is persisted onto the message
 // itself via threadId/messageIndex, so reloading the page shows the same
 // closed-out checklist instead of a fresh, re-clickable one that could
 // create duplicate tasks.
@@ -34,12 +37,7 @@ export default function AgentTaskProposal({ taskProposal, agentName, threadId, m
     try {
       const headers = await authHeaders();
       const chosen = taskProposal.tasks.filter((_, index) => selected.has(index));
-      const created = await createProposedTasks(chosen, {
-        agentName,
-        needsApproval,
-        groupId: taskProposal.groupId,
-        headers,
-      });
+      const created = await createProposedTasks(chosen, { agentName, needsApproval, headers });
       setStage("done");
 
       if (threadId && messageIndex !== undefined) {

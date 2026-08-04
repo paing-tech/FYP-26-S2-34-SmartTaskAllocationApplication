@@ -370,7 +370,6 @@ export default function WorkspaceView() {
       const actionByFeature = {
         smart_task_creation: "set-ai-task-visibility",
         smart_task_allocation: "auto-allocate-tasks",
-        prompt_to_automation: "set-prompt-automation-visibility",
       };
       const action = actionByFeature[detail.feature];
 
@@ -405,6 +404,22 @@ export default function WorkspaceView() {
 
     return () => {
       window.removeEventListener("optima:optimus-setting-change", handleOptimusSettingChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // TopInformationBar performs the refresh-smart-tasks call itself (so it can
+  // show the result inline in its own panel) and just tells the board to
+  // reload once new tasks may have landed.
+  useEffect(() => {
+    function handleTasksRefreshed() {
+      loadWorkspaceData();
+    }
+
+    window.addEventListener("optima:tasks-refreshed", handleTasksRefreshed);
+
+    return () => {
+      window.removeEventListener("optima:tasks-refreshed", handleTasksRefreshed);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

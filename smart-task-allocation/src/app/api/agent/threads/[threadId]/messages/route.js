@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendMessageAndGetReply } from "@/lib/foundryAgent";
-import { ensureAiRecommendationsGroup } from "@/lib/taskGroups";
+import { matchTaskGroupByName } from "@/lib/taskGroups";
 import { arrangeOrgChart } from "@/lib/orgChartAutomation";
 import { getAccountsWithProfiles } from "@/app/api/my-organization/route";
 
@@ -35,6 +35,17 @@ async function getOrgChartRoster(supabase, agent) {
 
   const { accounts } = await getAccountsWithProfiles(supabase, agent.organization_id);
   return (accounts ?? []).map((a) => a.full_name).filter(Boolean);
+}
+
+// Lets the model choose which board column a task belongs on instead of
+// everything landing in one reserved, locked column.
+async function getTaskGroups(supabase, organizationId) {
+  const { data: groups } = await supabase
+    .from("task_group")
+    .select("group_id, group_name")
+    .eq("organization_id", organizationId)
+    .order("sort_order", { ascending: true });
+  return groups ?? [];
 }
 
 const KNOWLEDGE_BUCKET = "agent-knowledge";
@@ -108,6 +119,7 @@ export async function POST(request, { params }) {
 
     const orgChartRoster = await getOrgChartRoster(supabase, agent);
     const images = thread.last_response_id ? [] : await getKnowledgeImages(supabase, agent.agent_id);
+    const taskGroups = await getTaskGroups(supabase, agent.organization_id);
 
     const {
       responseId,
@@ -121,6 +133,7 @@ export async function POST(request, { params }) {
       previousResponseId: thread.last_response_id,
       vectorStoreId: agent.foundry_vector_store_id,
       orgChartRoster,
+      taskGroups: taskGroups.map((group) => group.group_name),
       images,
     });
 
@@ -134,8 +147,11 @@ export async function POST(request, { params }) {
 
     let taskProposal = null;
     if (proposedTasks?.length) {
-      const groupId = await ensureAiRecommendationsGroup(supabase, agent.organization_id);
-      taskProposal = { tasks: proposedTasks, groupId };
+      const tasks = proposedTasks.map((task) => ({
+        ...task,
+        groupId: matchTaskGroupByName(taskGroups, task.groupName),
+      }));
+      taskProposal = { tasks };
     }
 
     let reply = modelReply;

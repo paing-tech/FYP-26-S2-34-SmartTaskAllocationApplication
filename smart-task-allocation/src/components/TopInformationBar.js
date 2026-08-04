@@ -147,6 +147,24 @@ function AgentsIcon() {
   );
 }
 
+function RefreshIcon({ spinning }) {
+  return (
+    <svg
+      className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
 function OptimusToggle({ checked, label, onChange }) {
   return (
     <button
@@ -184,8 +202,9 @@ export default function TopInformationBar({ actor }) {
   const [optimusSettings, setOptimusSettings] = useState({
     smartTaskCreation: false,
     smartTaskAllocation: false,
-    promptToAutomation: false,
   });
+  const [isRefreshingSmartTasks, setIsRefreshingSmartTasks] = useState(false);
+  const [smartTasksRefreshMessage, setSmartTasksRefreshMessage] = useState("");
   const [accountSearchItems, setAccountSearchItems] = useState([]);
   const [isLoadingSearchItems, setIsLoadingSearchItems] = useState(false);
   const [profile, setProfile] = useState({ email: "", name: "" });
@@ -446,16 +465,38 @@ export default function TopInformationBar({ actor }) {
       );
     }
 
-    if (key === "promptToAutomation") {
-      window.dispatchEvent(
-        new CustomEvent("optima:optimus-setting-change", {
-          detail: {
-            actor,
-            feature: "prompt_to_automation",
-            enabled: nextValue,
-          },
-        }),
+  }
+
+  // Runs Smart Task Creation's allocation-history analysis on demand — the
+  // agent decides what's due/missing and creates it directly on the board
+  // (skipping anything that already has an equivalent open task) rather than
+  // this being a background toggle.
+  async function handleRefreshSmartTasks() {
+    if (isRefreshingSmartTasks) return;
+    setIsRefreshingSmartTasks(true);
+    setSmartTasksRefreshMessage("");
+
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "refresh-smart-tasks" }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not refresh smart tasks.");
+      }
+
+      const createdCount = (result.recurringCreated ?? 0) + (result.historyCreated ?? 0);
+      setSmartTasksRefreshMessage(
+        createdCount ? `Created ${createdCount} new task${createdCount === 1 ? "" : "s"}.` : "No new tasks needed.",
       );
+      window.dispatchEvent(new CustomEvent("optima:tasks-refreshed"));
+    } catch (refreshError) {
+      setSmartTasksRefreshMessage(refreshError.message || "Could not refresh smart tasks.");
+    } finally {
+      setIsRefreshingSmartTasks(false);
     }
   }
 
@@ -549,11 +590,21 @@ export default function TopInformationBar({ actor }) {
                   label="Smart Task Allocation"
                   onChange={() => toggleOptimusSetting("smartTaskAllocation")}
                 />
-                <OptimusToggle
-                  checked={optimusSettings.promptToAutomation}
-                  label="Prompt to Automation"
-                  onChange={() => toggleOptimusSetting("promptToAutomation")}
-                />
+
+                <div className="mt-1 border-t border-white/40 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleRefreshSmartTasks}
+                    disabled={isRefreshingSmartTasks}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition hover:bg-white/15 disabled:opacity-60"
+                  >
+                    <span className="text-sm font-black text-[#0D1E4C]">Refresh smart tasks</span>
+                    <RefreshIcon spinning={isRefreshingSmartTasks} />
+                  </button>
+                  {smartTasksRefreshMessage ? (
+                    <p className="px-3 pb-1 text-xs font-semibold text-[#52627a]">{smartTasksRefreshMessage}</p>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>

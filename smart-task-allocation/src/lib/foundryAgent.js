@@ -82,6 +82,12 @@ function extractResponseText(response) {
 // model calls this instead of (or alongside) replying in prose, and the
 // caller turns the arguments into a selectable proposal in the chat UI
 // rather than creating anything automatically.
+const GROUP_NAME_FIELD = {
+  type: "string",
+  description:
+    "The board column this task belongs on — pick the closest match from the list of existing columns you were given. Leave blank only if none of them fit.",
+};
+
 const PROPOSE_TASKS_TOOL = {
   type: "function",
   name: "propose_tasks",
@@ -99,6 +105,7 @@ const PROPOSE_TASKS_TOOL = {
             description: { type: "string" },
             priority: { type: "string", enum: ["Low", "Medium", "High", "Urgent"] },
             requiredSkillNames: { type: "array", items: { type: "string" } },
+            groupName: GROUP_NAME_FIELD,
           },
           required: ["title", "description", "priority"],
         },
@@ -111,12 +118,15 @@ const PROPOSE_TASKS_TOOL = {
 // Only offered to callers that have verified the sender is the one trusted
 // Telegram username configured on the agent (see the webhook route) — the
 // model is never even given this capability for anyone else, rather than
-// relying on it to police itself.
+// relying on it to police itself. Tasks made this way go onto the board
+// immediately (pending approval unless auto-approve was explicitly asked
+// for), so the model must place each one in the right column itself instead
+// of leaving that to a human afterward.
 const CREATE_TASKS_NOW_TOOL = {
   type: "function",
   name: "create_tasks_now",
   description:
-    "Create one or more work tasks immediately, with no review step, when the user has explicitly stated both the task(s) to create AND whether they need approval (e.g. 'create a task to restock shelf A, auto-approve it' or 'create X, needs approval'). Only call this when the approval preference is stated explicitly — if it's not, use propose_tasks instead so a human can decide.",
+    "Create one or more work tasks immediately when the user has explicitly stated both the task(s) to create AND whether they need approval (e.g. 'create a task to restock shelf A, auto-approve it' or 'create X, needs approval'). Only call this when the approval preference is stated explicitly — if it's not, use propose_tasks instead so a human can decide.",
   parameters: {
     type: "object",
     properties: {
@@ -128,6 +138,7 @@ const CREATE_TASKS_NOW_TOOL = {
             title: { type: "string" },
             description: { type: "string" },
             priority: { type: "string", enum: ["Low", "Medium", "High", "Urgent"] },
+            groupName: GROUP_NAME_FIELD,
           },
           required: ["title", "description", "priority"],
         },
@@ -260,6 +271,7 @@ export async function sendMessageAndGetReply({
   vectorStoreId,
   allowDirectCreate,
   orgChartRoster,
+  taskGroups,
   images,
 }) {
   const { deployment } = getFoundryConfig();
@@ -271,6 +283,9 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   if (allowDirectCreate) {
     augmentedInstructions +=
       " This user is trusted to create tasks directly: if they clearly state both the task(s) and whether they need approval in the same message, use create_tasks_now instead of propose_tasks.";
+  }
+  if (taskGroups?.length) {
+    augmentedInstructions += ` The workspace board currently has these columns: ${taskGroups.join(", ")}. When you create or propose a task, set groupName to whichever of these columns it best belongs in (e.g. a brand-new task usually belongs in a "To-do"-style column, not a "Completed" one) — never invent a column name that isn't in this list.`;
   }
   if (orgChartRoster?.length) {
     augmentedInstructions += ` You can also set up the organization chart with the arrange_org_chart tool when asked to build/arrange it from an uploaded document. The real people in this organization are: ${orgChartRoster.join(", ")}. Only reference these exact names — never invent a person who isn't in this list; match names from the document to the closest name here.`;
