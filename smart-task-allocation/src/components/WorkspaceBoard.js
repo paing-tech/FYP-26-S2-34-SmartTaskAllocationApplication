@@ -778,9 +778,6 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
         <h4 className={`font-black text-[#0D1E4C] ${compact ? "mt-2 text-sm" : "mt-3 text-base"}`}>
           {task.title || "Untitled task"}
         </h4>
-        <p className={`line-clamp-2 leading-5 text-[#667085] ${compact ? "mt-0.5 text-[11px]" : "mt-1 text-xs"}`}>
-          {task.description || "No description added."}
-        </p>
         {compact ? null : <TimelineRail start={task.start_datetime} end={task.end_datetime} />}
 
         <div className={`space-y-2 ${compact ? "mt-3" : "mt-4"}`}>
