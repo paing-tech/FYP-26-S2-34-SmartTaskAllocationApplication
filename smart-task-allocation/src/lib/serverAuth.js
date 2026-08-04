@@ -151,6 +151,17 @@ export async function requireManager(request, supabase) {
   );
 }
 
+// Read-only org chart access for Manager's view-only Team page — editing
+// (POST/PATCH/DELETE) stays on requireUserAdmin alone everywhere else.
+export async function requireUserAdminOrManager(request, supabase) {
+  return requireHomeRoute(
+    request,
+    supabase,
+    ["/useradmin/accounts", "/manager"],
+    "Only User Admin or Manager accounts can view the organization chart.",
+  );
+}
+
 export async function requireEmployee(request, supabase) {
   return requireHomeRoute(
     request,

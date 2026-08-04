@@ -469,7 +469,7 @@ function buildDepartmentNode(department, index) {
   };
 }
 
-function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
+function CanvasInner({ organization, onAccountClick, onUpdateOrganization, readOnly = false }) {
   const [accounts, setAccounts] = useState([]);
   const [personNodes, setPersonNodes] = useState([]);
   const [departmentNodes, setDepartmentNodes] = useState([]);
@@ -481,7 +481,12 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
   const [passwordError, setPasswordError] = useState("");
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const isConnectionInProgress = useConnection((c) => c.inProgress);
-  const isLocked = lockState !== "unlocked";
+  // readOnly forces locked regardless of lockState — no password re-auth can
+  // ever flip it, since the underlying write APIs are User-Admin-only
+  // anyway; letting a manager "unlock" client-side would just make every
+  // subsequent edit action fail with a confusing 403 instead of being
+  // honestly unavailable.
+  const isLocked = readOnly || lockState !== "unlocked";
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -921,13 +926,19 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
             <div className="flex flex-col items-end gap-2">
               <div className="flex items-center gap-3 rounded-full border border-white/65 bg-white/20 px-4 py-4 shadow-md backdrop-blur-sm">
                 <span className="text-lg font-bold text-black">Organization Chart</span>
-                <LockToggle
-                  lockState={lockState}
-                  onRequestUnlock={handleRequestUnlock}
-                  onRelock={handleRelock}
-                />
+                {readOnly ? (
+                  <span className="rounded-full bg-black/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black/60">
+                    View only
+                  </span>
+                ) : (
+                  <LockToggle
+                    lockState={lockState}
+                    onRequestUnlock={handleRequestUnlock}
+                    onRelock={handleRelock}
+                  />
+                )}
               </div>
-              {lockState === "awaiting-password" ? (
+              {!readOnly && lockState === "awaiting-password" ? (
                 <PasswordPanel
                   onSubmit={handlePasswordSubmit}
                   onCancel={handlePasswordCancel}
@@ -946,13 +957,14 @@ function CanvasInner({ organization, onAccountClick, onUpdateOrganization }) {
   );
 }
 
-export default function OrganizationCanvas({ organization, onAccountClick, onUpdateOrganization }) {
+export default function OrganizationCanvas({ organization, onAccountClick, onUpdateOrganization, readOnly = false }) {
   return (
     <ReactFlowProvider>
       <CanvasInner
         organization={organization}
         onAccountClick={onAccountClick}
         onUpdateOrganization={onUpdateOrganization}
+        readOnly={readOnly}
       />
     </ReactFlowProvider>
   );

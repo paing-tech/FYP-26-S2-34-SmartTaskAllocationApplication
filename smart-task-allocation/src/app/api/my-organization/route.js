@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isPlatformAdminRole, requireUserAdmin } from "@/lib/serverAuth";
+import { isPlatformAdminRole, requireUserAdmin, requireUserAdminOrManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 function cleanString(value) {
@@ -139,7 +139,7 @@ async function getOrganizationPayload(supabase, account) {
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireUserAdmin(request, supabase);
+    const { user, error: authError } = await requireUserAdminOrManager(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });

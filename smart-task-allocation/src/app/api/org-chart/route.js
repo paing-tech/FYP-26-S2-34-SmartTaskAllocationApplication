@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUserAdmin } from "@/lib/serverAuth";
+import { requireUserAdmin, requireUserAdminOrManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { getAccountsWithProfiles, getUserAccount } from "@/app/api/my-organization/route";
 
@@ -128,7 +128,7 @@ function computeDefaultConnectionsForNewAccounts(newAccounts, allAccounts) {
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireUserAdmin(request, supabase);
+    const { user, error: authError } = await requireUserAdminOrManager(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
