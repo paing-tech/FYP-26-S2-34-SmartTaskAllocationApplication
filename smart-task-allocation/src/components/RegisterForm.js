@@ -218,7 +218,7 @@ function JoinForm({ initialEmail = "" }) {
   // Prefill the email once it becomes available (e.g. from the invite link
   // session on the /accept-invite page).
   useEffect(() => {
-    if (initialEmail) setEmail(initialEmail);
+    if (initialEmail) queueMicrotask(() => setEmail(initialEmail));
   }, [initialEmail]);
 
   // Live invitation lookup: when the email looks complete, check whether it has
@@ -226,7 +226,7 @@ function JoinForm({ initialEmail = "" }) {
   useEffect(() => {
     const trimmed = email.trim().toLowerCase();
     if (!trimmed || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-      setWelcome(null);
+      queueMicrotask(() => setWelcome(null));
       return;
     }
 

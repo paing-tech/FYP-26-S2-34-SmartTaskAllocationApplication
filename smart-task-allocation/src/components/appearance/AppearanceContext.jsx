@@ -25,16 +25,18 @@ export function AppearanceProvider({ children }) {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        setAppearance((prev) => ({
-          ...prev,
-          ...parsed,
-          background: { ...prev.background, ...(parsed.background ?? {}) },
-        }));
+        queueMicrotask(() =>
+          setAppearance((prev) => ({
+            ...prev,
+            ...parsed,
+            background: { ...prev.background, ...(parsed.background ?? {}) },
+          })),
+        );
       }
     } catch {
       // ignore corrupt/unavailable storage
     }
-    setHydrated(true);
+    queueMicrotask(() => setHydrated(true));
   }, []);
 
   // Persist after the first load so we don't clobber storage with defaults.

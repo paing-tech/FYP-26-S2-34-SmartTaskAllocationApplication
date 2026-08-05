@@ -51,7 +51,9 @@ export default function AllocationHistory({ onClose } = {}) {
   }
 
   useEffect(() => {
-    loadAll();
+    (async () => {
+      await loadAll();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

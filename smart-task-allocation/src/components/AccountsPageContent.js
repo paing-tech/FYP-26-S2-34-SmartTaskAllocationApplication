@@ -37,11 +37,6 @@ function getWhatsAppHref(phoneNumber) {
   return digits ? `https://wa.me/${digits}` : null;
 }
 
-const VIEWS = [
-  { id: "list", label: "List" },
-  { id: "card", label: "Card" },
-];
-
 const STATUS_TONES = {
   Suspended: "bg-[#FEE4E2] text-[#B42318]",
   Pending: "bg-[#FEF3C7] text-[#92400E]",
@@ -422,7 +417,6 @@ export default function AccountsPageContent() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [view, setView] = useState("list");
   const [statusFilter, setStatusFilter] = useState("All");
   const [roleFilter, setRoleFilter] = useState([]);
   const [isRoleOpen, setIsRoleOpen] = useState(false);
@@ -430,9 +424,9 @@ export default function AccountsPageContent() {
   const [isDeptOpen, setIsDeptOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
   const [viewProfileUserId, setViewProfileUserId] = useState(null);
-  const [searchMaxWidth, setSearchMaxWidth] = useState(null);
+  const [searchWidth, setSearchWidth] = useState(null);
   const searchWrapperRef = useRef(null);
-  const departmentButtonRef = useRef(null);
+  const actionsGroupRef = useRef(null);
 
   function toggleRole(roleName) {
     setRoleFilter((current) =>
@@ -515,22 +509,21 @@ export default function AccountsPageContent() {
     return Array.from(names).sort();
   }, [accounts]);
 
-  // Keeps the search bar's right edge lined up with the Department filter
-  // button below it — measured live since the filter row's width shifts with
-  // the number of role/department options and viewport width.
+  // Keeps the search bar exactly as wide as the Export data + Add User
+  // buttons combined — measured live since button width depends on font
+  // rendering, not something safe to hardcode.
   useLayoutEffect(() => {
     function measure() {
-      const wrapperRect = searchWrapperRef.current?.getBoundingClientRect();
-      const deptRect = departmentButtonRef.current?.getBoundingClientRect();
-      if (wrapperRect && deptRect) {
-        setSearchMaxWidth(Math.max(200, deptRect.right - wrapperRect.left));
+      const groupRect = actionsGroupRef.current?.getBoundingClientRect();
+      if (groupRect) {
+        setSearchWidth(Math.max(160, groupRect.width));
       }
     }
 
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [roleOptions, departmentOptions]);
+  }, []);
 
   // Accounts after search + role + department filters (but before the status
   // filter), so the status pill counts reflect the other active filters.
@@ -567,14 +560,6 @@ export default function AccountsPageContent() {
       ? searchAndDeptFiltered
       : searchAndDeptFiltered.filter((account) => account.account_status === statusFilter);
   }, [searchAndDeptFiltered, statusFilter]);
-
-  const groupedAccounts = useMemo(() => {
-    return visibleAccounts.reduce((groups, account) => {
-      const roleName = account.role?.role_name ?? "Unassigned";
-      groups[roleName] = [...(groups[roleName] ?? []), account];
-      return groups;
-    }, {});
-  }, [visibleAccounts]);
 
   async function performPendingAction() {
     if (!pendingAction) return;
@@ -635,64 +620,6 @@ export default function AccountsPageContent() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="shrink-0 space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="inline-flex shrink-0 rounded-full border border-white/60 bg-white/30 p-1 backdrop-blur-sm">
-            {VIEWS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setView(option.id)}
-                className={`rounded-full px-5 py-2 text-sm font-bold transition ${
-                  view === option.id ? "bg-[#0D1E4C] text-white shadow-sm" : "text-[#0D1E4C] hover:bg-white/60"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <div
-            ref={searchWrapperRef}
-            className="relative sm:flex-1"
-            style={searchMaxWidth ? { maxWidth: searchMaxWidth } : undefined}
-          >
-            <span
-              className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#64748B]"
-              style={ICON_WEIGHT}
-              aria-hidden="true"
-            >
-              search
-            </span>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search for users"
-              className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
-            />
-          </div>
-          <div className="flex shrink-0 items-center gap-3 sm:ml-auto">
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="flex h-12 items-center gap-2 rounded-full border border-[#C7DDEB] bg-white pl-4 pr-5 text-sm font-bold text-[#0D1E4C] shadow-sm transition hover:bg-[#F1F5F9]"
-            >
-              <span className="material-symbols-outlined text-[20px]" style={BOLD_ICON_WEIGHT} aria-hidden="true">
-                download
-              </span>
-              Export data
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsFormOpen(true)}
-              className="flex h-12 items-center gap-2 rounded-full bg-[#0a2a66] pl-4 pr-6 text-sm font-bold text-white transition-colors hover:bg-[#061a40]"
-            >
-              <span className="material-symbols-outlined text-[20px]" style={BOLD_ICON_WEIGHT} aria-hidden="true">
-                person_add
-              </span>
-              Add User
-            </button>
-          </div>
-        </div>
-
         <div className="flex flex-wrap items-center gap-2">
         {["All", "Active", "Suspended", "Pending"].map((status) => {
           const active = statusFilter === status;
@@ -793,7 +720,6 @@ export default function AccountsPageContent() {
 
         <div className="relative">
           <button
-            ref={departmentButtonRef}
             type="button"
             onClick={() => setIsDeptOpen((open) => !open)}
             aria-expanded={isDeptOpen}
@@ -863,6 +789,50 @@ export default function AccountsPageContent() {
             </>
           ) : null}
         </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          <div
+            ref={searchWrapperRef}
+            className="relative"
+            style={searchWidth ? { width: searchWidth } : undefined}
+          >
+            <span
+              className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#64748B]"
+              style={ICON_WEIGHT}
+              aria-hidden="true"
+            >
+              search
+            </span>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search for users"
+              className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
+            />
+          </div>
+          <div ref={actionsGroupRef} className="flex shrink-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="flex h-12 items-center gap-2 rounded-full border border-[#C7DDEB] bg-white pl-4 pr-5 text-sm font-bold text-[#0D1E4C] shadow-sm transition hover:bg-[#F1F5F9]"
+            >
+              <span className="material-symbols-outlined text-[20px]" style={BOLD_ICON_WEIGHT} aria-hidden="true">
+                download
+              </span>
+              Export data
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFormOpen(true)}
+              className="flex h-12 items-center gap-2 rounded-full bg-[#0a2a66] pl-4 pr-6 text-sm font-bold text-white transition-colors hover:bg-[#061a40]"
+            >
+              <span className="material-symbols-outlined text-[20px]" style={BOLD_ICON_WEIGHT} aria-hidden="true">
+                person_add
+              </span>
+              Add User
+            </button>
+          </div>
+        </div>
       </div>
 
         {error ? (
@@ -873,30 +843,27 @@ export default function AccountsPageContent() {
 
         {isLoading ? <p className="text-sm text-[#52627a]">Loading accounts...</p> : null}
 
-        {view === "list" ? (
-          <div className="overflow-x-auto pt-3">
-            <div
-              className="hidden min-w-225 gap-x-2 px-4 text-xs font-bold uppercase tracking-wide text-[#64748B] sm:grid"
-              style={{ gridTemplateColumns: LIST_GRID_TEMPLATE }}
-            >
-              <span>User</span>
-              <span>Username</span>
-              <span>Job Title</span>
-              <span>Department</span>
-              <span>Role</span>
-              <span>Status</span>
-              <span className="text-right">Actions</span>
-            </div>
+        <div className="overflow-x-auto pt-3">
+          <div
+            className="hidden min-w-225 gap-x-2 px-4 text-xs font-bold uppercase tracking-wide text-[#64748B] sm:grid"
+            style={{ gridTemplateColumns: LIST_GRID_TEMPLATE }}
+          >
+            <span>User</span>
+            <span>Username</span>
+            <span>Job Title</span>
+            <span>Department</span>
+            <span>Role</span>
+            <span>Status</span>
+            <span className="text-right">Actions</span>
           </div>
-        ) : null}
+        </div>
       </div>
 
       {/* Grows to fill ~70% of the remaining space (the placeholder sections
           below take the other ~30%), scrolling internally past that. The
           column header above lives outside this container entirely (not
           just sticky within it), so rows never visually pass "behind" it. */}
-      {view === "list" ? (
-        <div className="min-h-0 flex-7 space-y-2 overflow-x-auto overflow-y-auto pr-1">
+      <div className="min-h-0 flex-7 space-y-2 overflow-x-auto overflow-y-auto pr-1">
           {visibleAccounts.map((account) => (
             <div
               key={account.user_id}
@@ -929,50 +896,7 @@ export default function AccountsPageContent() {
               No accounts match your filters.
             </p>
           ) : null}
-        </div>
-      ) : null}
-
-      {view === "card" ? (
-        <div className="min-h-0 flex-7 space-y-5 overflow-y-auto">
-          {Object.entries(groupedAccounts).map(([roleName, roleAccounts]) => (
-            <section key={roleName} className="space-y-2">
-              <h2 className="text-lg font-bold text-[#07183b]">{roleName}</h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {roleAccounts.map((account) => (
-                  <article
-                    key={account.user_id}
-                    className="flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/35 p-4 shadow-sm backdrop-blur-md"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setViewProfileUserId(account.user_id)}
-                      className="flex items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/45"
-                    >
-                      <AccountAvatar account={account} sizeClass="h-12 w-12" />
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate text-sm font-bold text-[#0B1B32]">
-                          {account.full_name || account.username}
-                        </h3>
-                        <p className="truncate text-xs text-[#64748B]">
-                          {account.department?.department_name ?? "No department"}
-                        </p>
-                        <StatusBadge status={account.account_status} className="mt-1.5" />
-                      </div>
-                    </button>
-                    <div className="flex items-center justify-end gap-1 border-t border-white/50 pt-2">
-                      <AccountActions account={account} roleIdByName={roleIdByName} onRequestAction={setPendingAction} />
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
-
-          {!visibleAccounts.length && !isLoading ? (
-            <p className="text-sm font-semibold text-[#94a3b8]">No accounts match your filters.</p>
-          ) : null}
-        </div>
-      ) : null}
+      </div>
 
       <div className="min-h-0 flex-3 space-y-4 overflow-y-auto pb-1">
         <PlaceholderSection title="Activity Logs" description="A history of account and permission changes. Coming soon." />

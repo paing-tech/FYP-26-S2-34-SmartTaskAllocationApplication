@@ -283,6 +283,11 @@ export const LogoLoop = memo(
             {item.node}
           </span>
         ) : (
+          // Generic component: `item.src` is an arbitrary caller-supplied URL
+          // (any domain), so next/image's remotePatterns allowlist doesn't
+          // fit here — same reasoning already applied at this component's
+          // call site in OrganizationLogoLoop.js.
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             className={cx(
               'h-[var(--logoloop-logoHeight)] w-auto block object-contain',

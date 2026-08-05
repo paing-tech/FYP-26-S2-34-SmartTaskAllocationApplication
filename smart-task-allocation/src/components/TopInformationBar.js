@@ -212,7 +212,7 @@ export default function TopInformationBar({ actor }) {
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
 
   useEffect(() => {
-    setIsDemo(isDemoSession());
+    queueMicrotask(() => setIsDemo(isDemoSession()));
   }, []);
 
   const baseSearchItems = useMemo(() => {

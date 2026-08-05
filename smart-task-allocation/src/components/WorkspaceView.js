@@ -113,7 +113,7 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
   const byAI = allocation ? /optimus/i.test(allocation.assignedBy ?? "") : false;
 
   useEffect(() => {
-    setStartIndex(0);
+    queueMicrotask(() => setStartIndex(0));
   }, [allocations]);
 
   function showNewerRecords() {
@@ -360,7 +360,9 @@ export default function WorkspaceView() {
   }
 
   useEffect(() => {
-    loadWorkspaceData();
+    (async () => {
+      await loadWorkspaceData();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
