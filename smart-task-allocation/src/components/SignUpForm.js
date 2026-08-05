@@ -3,19 +3,16 @@
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { useEffect, useState } from "react";
 
-export default function SignUpForm({ onSuccess }) {
+export default function SignUpForm({ onClose, onSuccess }) {
   const [mode, setMode] = useState("create");
   const [roles, setRoles] = useState([]);
-  const [organizations, setOrganizations] = useState([]);
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [roleId, setRoleId] = useState("");
-  const [organizationId, setOrganizationId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isLoadingRoles, setIsLoadingRoles] = useState(true);
-  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function changeMode(nextMode) {
@@ -37,30 +34,19 @@ export default function SignUpForm({ onSuccess }) {
         const headers = {
           Authorization: `Bearer ${data.session?.access_token ?? ""}`,
         };
-        const [rolesResponse, organizationsResponse] = await Promise.all([
-          fetch("/api/roles", { headers }),
-          fetch("/api/organizations", { headers }),
-        ]);
+        const rolesResponse = await fetch("/api/roles", { headers });
         const rolesResult = await rolesResponse.json();
-        const organizationsResult = await organizationsResponse.json();
 
         if (!rolesResponse.ok) {
           throw new Error(rolesResult.error || "Could not load roles.");
         }
 
-        if (!organizationsResponse.ok) {
-          throw new Error(organizationsResult.error || "Could not load organizations.");
-        }
-
         setRoles(rolesResult.roles);
         setRoleId(rolesResult.roles[0]?.role_id?.toString() ?? "");
-        setOrganizations(organizationsResult.organizations);
-        setOrganizationId(organizationsResult.organizations[0]?.organization_id ?? "");
       } catch (loadError) {
         setError(loadError.message);
       } finally {
         setIsLoadingRoles(false);
-        setIsLoadingOrganizations(false);
       }
     }
 
@@ -71,7 +57,6 @@ export default function SignUpForm({ onSuccess }) {
     setEmail("");
     setUsername("");
     setPassword("");
-    setOrganizationId(organizations[0]?.organization_id ?? "");
   }
 
   async function handleSubmit(event) {
@@ -94,7 +79,6 @@ export default function SignUpForm({ onSuccess }) {
           username,
           password,
           roleId,
-          organizationId,
         }),
       });
       const result = await response.json();
@@ -114,14 +98,24 @@ export default function SignUpForm({ onSuccess }) {
   }
 
   return (
-    <section className="w-full max-w-md rounded-lg border border-[#d8e0ee] bg-white p-6 shadow-sm">
+    <section className="relative w-full max-w-md rounded-lg border border-[#d8e0ee] bg-white p-6 shadow-sm">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-slate-100/80 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-slate-200"
+        aria-label="Close sign up form"
+      >
+        <span className="material-symbols-outlined text-xl" aria-hidden="true">
+          close
+        </span>
+      </button>
       <div className="text-center">
         <h2 className="text-2xl font-bold text-[#061a40]">Sign Up</h2>
-        <div className="mt-5 inline-flex rounded-md border border-[#b8c4d8] bg-[#f4f7fb] p-1">
+        <div className="mt-5 inline-flex rounded-full border border-[#b8c4d8] bg-[#f4f7fb] p-1">
           <button
             type="button"
             onClick={() => changeMode("create")}
-            className={`h-9 rounded px-3 text-sm font-bold transition-colors ${
+            className={`h-9 rounded-full px-4 text-sm font-bold transition-colors ${
               mode === "create" ? "bg-[#0a2a66] text-white" : "text-[#061a40]"
             }`}
           >
@@ -130,7 +124,7 @@ export default function SignUpForm({ onSuccess }) {
           <button
             type="button"
             onClick={() => changeMode("invite")}
-            className={`h-9 rounded px-3 text-sm font-bold transition-colors ${
+            className={`h-9 rounded-full px-4 text-sm font-bold transition-colors ${
               mode === "invite" ? "bg-[#0a2a66] text-white" : "text-[#061a40]"
             }`}
           >
@@ -150,7 +144,7 @@ export default function SignUpForm({ onSuccess }) {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
-            className="h-11 w-full rounded-md border border-[#b8c4d8] px-3 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20"
+            className="h-11 w-full rounded-full border border-[#b8c4d8] px-4 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20"
           />
         </div>
 
@@ -167,7 +161,7 @@ export default function SignUpForm({ onSuccess }) {
             required={mode === "create"}
             disabled={mode === "invite"}
             placeholder={mode === "invite" ? "Set by user" : ""}
-            className="h-11 w-full rounded-md border border-[#b8c4d8] px-3 text-sm outline-none placeholder:text-slate-400 focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100 disabled:text-slate-500"
+            className="h-11 w-full rounded-full border border-[#b8c4d8] px-4 text-sm outline-none placeholder:text-slate-400 focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100 disabled:text-slate-500"
           />
         </div>
 
@@ -182,7 +176,7 @@ export default function SignUpForm({ onSuccess }) {
             required={mode === "create"}
             disabled={mode === "invite"}
             placeholder={mode === "invite" ? "Set by user" : ""}
-            className="h-11 w-full rounded-md border border-[#b8c4d8] px-3 text-sm outline-none placeholder:text-slate-400 focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100 disabled:text-slate-500"
+            className="h-11 w-full rounded-full border border-[#b8c4d8] px-4 text-sm outline-none placeholder:text-slate-400 focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100 disabled:text-slate-500"
           />
         </div>
 
@@ -196,34 +190,11 @@ export default function SignUpForm({ onSuccess }) {
             onChange={(event) => setRoleId(event.target.value)}
             disabled={isLoadingRoles}
             required
-            className="h-11 w-full rounded-md border border-[#b8c4d8] bg-white px-3 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100"
+            className="h-11 w-full rounded-full border border-[#b8c4d8] bg-white px-4 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100"
           >
             {roles.map((role) => (
               <option key={role.role_id} value={role.role_id}>
                 {role.role_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <label htmlFor="organizationId" className="block text-sm font-medium text-[#061a40]">
-            Organization Name
-          </label>
-          <select
-            id="organizationId"
-            value={organizationId}
-            onChange={(event) => setOrganizationId(event.target.value)}
-            disabled={isLoadingOrganizations}
-            className="h-11 w-full rounded-md border border-[#b8c4d8] bg-white px-3 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100"
-          >
-            <option value="">No organization</option>
-            {organizations.map((organization) => (
-              <option
-                key={organization.organization_id}
-                value={organization.organization_id}
-              >
-                {organization.organization_name}
               </option>
             ))}
           </select>
@@ -243,8 +214,8 @@ export default function SignUpForm({ onSuccess }) {
 
         <button
           type="submit"
-          disabled={isLoadingRoles || isLoadingOrganizations || isSubmitting}
-          className="h-11 w-full rounded-md bg-[#0a2a66] px-5 text-sm font-bold text-white transition-colors hover:bg-[#061a40] disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={isLoadingRoles || isSubmitting}
+          className="h-11 w-full rounded-full bg-[#0a2a66] px-5 text-sm font-bold text-white transition-colors hover:bg-[#061a40] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving..." : mode === "create" ? "Create Account" : "Send Invite"}
         </button>

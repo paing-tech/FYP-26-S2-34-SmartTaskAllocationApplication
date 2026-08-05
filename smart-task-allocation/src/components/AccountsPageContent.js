@@ -904,16 +904,9 @@ export default function AccountsPageContent() {
 
       {isFormOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#07183b]/40 p-4">
-          <div className="relative w-full max-w-md">
-            <button
-              type="button"
-              onClick={() => setIsFormOpen(false)}
-              className="absolute -right-2 -top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg font-bold text-[#07183b] shadow"
-              aria-label="Close sign up form"
-            >
-              x
-            </button>
+          <div className="w-full max-w-md">
             <SignUpForm
+              onClose={() => setIsFormOpen(false)}
               onSuccess={() => {
                 setIsFormOpen(false);
                 loadAccounts();
