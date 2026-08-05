@@ -52,7 +52,7 @@ export async function GET(request) {
     if (userIds.length) {
       const { data: profiles, error: profileError } = await supabase
         .from("profile")
-        .select("user_id, full_name, profile_picture_url")
+        .select("user_id, full_name, job_title, phone_number, profile_picture_url")
         .in("user_id", userIds);
 
       if (profileError) {
@@ -65,6 +65,8 @@ export async function GET(request) {
     const accountsWithProfile = accounts.map((account) => ({
       ...account,
       full_name: profilesByUserId.get(account.user_id)?.full_name ?? null,
+      job_title: profilesByUserId.get(account.user_id)?.job_title ?? null,
+      phone_number: profilesByUserId.get(account.user_id)?.phone_number ?? null,
       profile_picture_url: profilesByUserId.get(account.user_id)?.profile_picture_url ?? null,
     }));
 
