@@ -903,7 +903,7 @@ export default function AccountsPageContent() {
       </div>
 
       {isFormOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#07183b]/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-md">
             <SignUpForm
               onClose={() => setIsFormOpen(false)}

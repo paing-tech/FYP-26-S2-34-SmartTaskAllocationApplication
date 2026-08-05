@@ -8,7 +8,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import CornerNav from "@/components/CornerNav";
 
 const inputClass =
-  "h-14 w-full rounded-md border border-white/40 bg-black/40 px-4 text-base text-white outline-none transition-colors placeholder:text-white/40 focus:border-white/60 focus:ring-2 focus:ring-white/20";
+  "auth-dark-field h-14 w-full rounded-md border border-white/40 bg-black/40 px-4 text-base text-white outline-none transition-colors placeholder:text-white/40 focus:border-white/60 focus:ring-2 focus:ring-white/20";
 
 function GoogleIcon() {
   return (
