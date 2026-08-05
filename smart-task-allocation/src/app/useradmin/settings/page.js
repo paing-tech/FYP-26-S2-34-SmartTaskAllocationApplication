@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function UserAdminSettingsRedirectPage() {
-  redirect("/useradmin/roles");
+  redirect("/useradmin/accounts");
 }

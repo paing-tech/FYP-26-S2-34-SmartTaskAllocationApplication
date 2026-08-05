@@ -9,6 +9,10 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 // Lighter than the font's default weight (400) so the action icons read as
 // less heavy/bold next to the surrounding text.
 const ICON_WEIGHT = { fontVariationSettings: "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20" };
+// Heavier than default — used on the toolbar's primary action buttons
+// (Export data, Add User), which should read as bold, not the toned-down
+// weight the per-row action icons use.
+const BOLD_ICON_WEIGHT = { fontVariationSettings: "'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 20" };
 
 // Real WhatsApp brand mark (green badge + white handset glyph) rather than a
 // monochrome line icon, so it reads as the actual app rather than a generic
@@ -43,13 +47,12 @@ const STATUS_TONES = {
   Pending: "bg-[#FEF3C7] text-[#92400E]",
 };
 
-// Background lives on each <td> (not the <tr>) so the row's rounded
-// left/right corners actually clip the fill — a <tr>-level background paints
-// as a plain rectangle behind the cells, which showed as a faded square edge
-// poking out past the first/last cell's rounded corner. No per-cell shadow —
-// adjacent cells' shadows overlapped at their shared edge and showed as a
-// faded divider line between columns.
-const LIST_CELL_CLASS = "bg-white/40 px-4 py-2 backdrop-blur-md";
+// Shared between the column-header row (frozen, outside the scroll area) and
+// every data row (inside it) so the columns always line up without needing
+// an actual <table> — that's what let the header live outside the
+// scrollable region entirely instead of just being sticky within it.
+const LIST_GRID_TEMPLATE =
+  "minmax(200px,1.6fr) minmax(120px,1fr) minmax(150px,1.2fr) minmax(140px,1fr) minmax(110px,0.8fr) minmax(100px,0.7fr) minmax(150px,1fr)";
 
 async function authHeaders() {
   const supabase = getSupabaseBrowserClient();
@@ -666,26 +669,28 @@ export default function AccountsPageContent() {
               className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
             />
           </div>
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="flex h-12 shrink-0 items-center gap-2 rounded-full border border-[#C7DDEB] bg-white px-5 text-sm font-bold text-[#0D1E4C] shadow-sm transition hover:bg-[#F1F5F9]"
-          >
-            <span className="material-symbols-outlined text-[20px]" style={ICON_WEIGHT} aria-hidden="true">
-              download
-            </span>
-            Export data
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsFormOpen(true)}
-            className="flex h-12 shrink-0 items-center gap-2 rounded-full bg-[#0a2a66] px-6 text-sm font-bold text-white transition-colors hover:bg-[#061a40]"
-          >
-            <span className="material-symbols-outlined text-[20px]" style={ICON_WEIGHT} aria-hidden="true">
-              person_add
-            </span>
-            Add User
-          </button>
+          <div className="flex shrink-0 items-center gap-3 sm:ml-auto">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="flex h-12 items-center gap-2 rounded-full border border-[#C7DDEB] bg-white pl-4 pr-5 text-sm font-bold text-[#0D1E4C] shadow-sm transition hover:bg-[#F1F5F9]"
+            >
+              <span className="material-symbols-outlined text-[20px]" style={BOLD_ICON_WEIGHT} aria-hidden="true">
+                download
+              </span>
+              Export data
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFormOpen(true)}
+              className="flex h-12 items-center gap-2 rounded-full bg-[#0a2a66] pl-4 pr-6 text-sm font-bold text-white transition-colors hover:bg-[#061a40]"
+            >
+              <span className="material-symbols-outlined text-[20px]" style={BOLD_ICON_WEIGHT} aria-hidden="true">
+                person_add
+              </span>
+              Add User
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -867,66 +872,68 @@ export default function AccountsPageContent() {
         ) : null}
 
         {isLoading ? <p className="text-sm text-[#52627a]">Loading accounts...</p> : null}
+
+        {view === "list" ? (
+          <div className="overflow-x-auto pt-3">
+            <div
+              className="hidden min-w-225 gap-x-2 px-4 text-xs font-bold uppercase tracking-wide text-[#64748B] sm:grid"
+              style={{ gridTemplateColumns: LIST_GRID_TEMPLATE }}
+            >
+              <span>User</span>
+              <span>Username</span>
+              <span>Job Title</span>
+              <span>Department</span>
+              <span>Role</span>
+              <span>Status</span>
+              <span className="text-right">Actions</span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      {/* Capped to roughly 5 rows tall — only this list scrolls, the
-          controls above and the column header (sticky) never move. */}
+      {/* Grows to fill ~70% of the remaining space (the placeholder sections
+          below take the other ~30%), scrolling internally past that. The
+          column header above lives outside this container entirely (not
+          just sticky within it), so rows never visually pass "behind" it. */}
       {view === "list" ? (
-        <div className="max-h-96 shrink-0 overflow-y-auto overflow-x-auto">
-          <table className="w-full min-w-225 border-separate border-spacing-y-2">
-            <thead className="sticky top-0 z-10 bg-[#eef2f8]/95 backdrop-blur-sm">
-              <tr className="text-left text-xs font-bold uppercase tracking-wide text-[#64748B]">
-                <th className="px-4 py-2">User</th>
-                <th className="px-4 py-2">Username</th>
-                <th className="px-4 py-2">Job Title</th>
-                <th className="px-4 py-2">Department</th>
-                <th className="px-4 py-2">Role</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleAccounts.map((account) => (
-                <tr key={account.user_id}>
-                  <td className={`${LIST_CELL_CLASS} rounded-l-2xl`}>
-                    <button
-                      type="button"
-                      onClick={() => setViewProfileUserId(account.user_id)}
-                      className="flex min-w-0 items-center gap-3 rounded-full py-1 pr-3 text-left transition hover:bg-white/60"
-                    >
-                      <AccountAvatar account={account} sizeClass="h-9 w-9" />
-                      <span className="min-w-0 truncate text-sm font-bold text-[#0B1B32]">
-                        {account.full_name || account.username}
-                      </span>
-                    </button>
-                  </td>
-                  <td className={`${LIST_CELL_CLASS} text-sm text-[#475569]`}>@{account.username}</td>
-                  <td className={`${LIST_CELL_CLASS} text-sm text-[#475569]`}>{account.job_title || "—"}</td>
-                  <td className={`${LIST_CELL_CLASS} text-sm text-[#475569]`}>
-                    {account.department?.department_name ?? "No department"}
-                  </td>
-                  <td className={`${LIST_CELL_CLASS} text-sm text-[#475569]`}>{account.role?.role_name ?? "—"}</td>
-                  <td className={LIST_CELL_CLASS}>
-                    <StatusBadge status={account.account_status} />
-                  </td>
-                  <td className={`${LIST_CELL_CLASS} rounded-r-2xl`}>
-                    <AccountActions account={account} roleIdByName={roleIdByName} onRequestAction={setPendingAction} />
-                  </td>
-                </tr>
-              ))}
+        <div className="min-h-0 flex-7 space-y-2 overflow-x-auto overflow-y-auto pr-1">
+          {visibleAccounts.map((account) => (
+            <div
+              key={account.user_id}
+              className="grid min-w-225 items-center gap-x-2 rounded-2xl bg-white/40 px-4 py-2 backdrop-blur-md"
+              style={{ gridTemplateColumns: LIST_GRID_TEMPLATE }}
+            >
+              <button
+                type="button"
+                onClick={() => setViewProfileUserId(account.user_id)}
+                className="flex min-w-0 items-center gap-3 rounded-full py-1 pr-3 text-left transition hover:bg-white/60"
+              >
+                <AccountAvatar account={account} sizeClass="h-9 w-9" />
+                <span className="min-w-0 truncate text-sm font-bold text-[#0B1B32]">
+                  {account.full_name || account.username}
+                </span>
+              </button>
+              <span className="truncate text-sm text-[#475569]">@{account.username}</span>
+              <span className="truncate text-sm text-[#475569]">{account.job_title || "—"}</span>
+              <span className="truncate text-sm text-[#475569]">
+                {account.department?.department_name ?? "No department"}
+              </span>
+              <span className="truncate text-sm text-[#475569]">{account.role?.role_name ?? "—"}</span>
+              <StatusBadge status={account.account_status} className="justify-self-start" />
+              <AccountActions account={account} roleIdByName={roleIdByName} onRequestAction={setPendingAction} />
+            </div>
+          ))}
 
-              {!visibleAccounts.length && !isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm font-semibold text-[#94a3b8]">
-                    No accounts match your filters.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+          {!visibleAccounts.length && !isLoading ? (
+            <p className="px-4 py-8 text-center text-sm font-semibold text-[#94a3b8]">
+              No accounts match your filters.
+            </p>
+          ) : null}
         </div>
-      ) : (
-        <div className="max-h-96 shrink-0 space-y-5 overflow-y-auto">
+      ) : null}
+
+      {view === "card" ? (
+        <div className="min-h-0 flex-7 space-y-5 overflow-y-auto">
           {Object.entries(groupedAccounts).map(([roleName, roleAccounts]) => (
             <section key={roleName} className="space-y-2">
               <h2 className="text-lg font-bold text-[#07183b]">{roleName}</h2>
@@ -965,13 +972,9 @@ export default function AccountsPageContent() {
             <p className="text-sm font-semibold text-[#94a3b8]">No accounts match your filters.</p>
           ) : null}
         </div>
-      )}
+      ) : null}
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-1">
-        <PlaceholderSection
-          title="Role Permission Management"
-          description="Configure what each role can see and do. Coming soon."
-        />
+      <div className="min-h-0 flex-3 space-y-4 overflow-y-auto pb-1">
         <PlaceholderSection title="Activity Logs" description="A history of account and permission changes. Coming soon." />
       </div>
 

@@ -36,7 +36,6 @@ const roleActions = {
     { label: "Create account", href: "/useradmin/accounts", group: "Accounts" },
     { label: "Invite user", href: "/useradmin/accounts", group: "Accounts" },
     { label: "Update organization profile", href: "/useradmin/organization", group: "Organization" },
-    { label: "Review roles", href: "/useradmin/roles", group: "Roles" },
   ],
   employee: [
     { label: "Open workspace", href: "/employee/workspace", group: "Workspace" },
@@ -328,15 +327,13 @@ export default function TopInformationBar({ actor }) {
       }
 
       if (actor === "useradmin") {
-        const [accountResult, roleResult, organizationResult] = await Promise.allSettled([
+        const [accountResult, organizationResult] = await Promise.allSettled([
           fetchJson("/api/accounts"),
-          fetchJson("/api/roles"),
           fetchJson("/api/my-organization"),
         ]);
 
         setAccountSearchItems([
           ...itemsFromAccounts(settledValue(accountResult), "/useradmin/accounts"),
-          ...itemsFromRoles(settledValue(roleResult), "/useradmin/roles"),
           ...itemsFromOrganization(settledValue(organizationResult), "/useradmin/organization"),
         ]);
       }
@@ -878,17 +875,6 @@ function itemsFromAccounts(payload, href) {
     href,
     group: "Accounts",
     type: "Member",
-  }));
-}
-
-function itemsFromRoles(payload, href) {
-  return (payload?.roles ?? []).map((role) => ({
-    id: role.role_id,
-    label: role.role_name,
-    description: "Role access",
-    href,
-    group: "Roles",
-    type: "Role",
   }));
 }
 
