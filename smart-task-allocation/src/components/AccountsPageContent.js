@@ -371,8 +371,15 @@ function ConfirmActionModal({ title, tone = "default", onCancel, onConfirm }) {
   );
 }
 
-function AccountActions({ account, roleIdByName, onRequestAction }) {
+function AccountActions({ account, isSelf, roleIdByName, onRequestAction }) {
   const whatsappHref = getWhatsAppHref(account.phone_number);
+
+  // Messaging/emailing yourself is a no-op, and self-service promote/
+  // demote/suspend/delete risks locking the User Admin out of their own
+  // account with no one left to undo it — so this row just shows nothing.
+  if (isSelf) {
+    return null;
+  }
 
   return (
     <div className="flex items-center justify-end gap-1">
@@ -424,6 +431,7 @@ export default function AccountsPageContent() {
   const [isDeptOpen, setIsDeptOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
   const [viewProfileUserId, setViewProfileUserId] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [searchWidth, setSearchWidth] = useState(null);
   const searchWrapperRef = useRef(null);
   const actionsGroupRef = useRef(null);
@@ -482,6 +490,14 @@ export default function AccountsPageContent() {
     }, 0);
 
     return () => clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      setCurrentUserId(data.session?.user?.id ?? null);
+    })();
   }, []);
 
   const roleIdByName = useMemo(() => {
@@ -887,7 +903,12 @@ export default function AccountsPageContent() {
               </span>
               <span className="truncate text-sm text-[#475569]">{account.role?.role_name ?? "—"}</span>
               <StatusBadge status={account.account_status} className="justify-self-start" />
-              <AccountActions account={account} roleIdByName={roleIdByName} onRequestAction={setPendingAction} />
+              <AccountActions
+                account={account}
+                isSelf={account.user_id === currentUserId}
+                roleIdByName={roleIdByName}
+                onRequestAction={setPendingAction}
+              />
             </div>
           ))}
 

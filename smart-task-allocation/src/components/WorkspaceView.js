@@ -79,15 +79,34 @@ function isSameLocalDay(value, reference = new Date()) {
   );
 }
 
-function InsightPill({ label, value, detail, progress = 1 }) {
+function isTaskOverdue(task, reference = new Date()) {
+  if (!task.end_datetime) return false;
+
+  const status = String(task.status || "").toLowerCase();
+  if (status === "completed" || status === "cancelled") return false;
+
+  const end = new Date(task.end_datetime);
+  return !Number.isNaN(end.getTime()) && end.getTime() < reference.getTime();
+}
+
+function isTaskUnassigned(task) {
+  return !(task.assigneeIds?.length);
+}
+
+function InsightPill({ label, value, detail, progress = 1, tone = "blue" }) {
   const safeProgress = Math.max(0, Math.min(1, progress));
+  const ringColor = tone === "red" ? "#DC2626" : "#2563EB";
 
   return (
-    <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/25 px-3 py-1.5 text-[#0D1E4C] shadow-sm backdrop-blur-xl">
+    <div
+      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-sm backdrop-blur-xl ${
+        tone === "red" ? "border-red-200 bg-red-50/70 text-red-700" : "border-white/60 bg-white/25 text-[#0D1E4C]"
+      }`}
+    >
       <span
         className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-black"
         style={{
-          background: `conic-gradient(#2563EB ${safeProgress * 360}deg, rgba(255,255,255,0.45) 0deg)`,
+          background: `conic-gradient(${ringColor} ${safeProgress * 360}deg, rgba(255,255,255,0.45) 0deg)`,
         }}
       >
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/80">
@@ -256,9 +275,13 @@ export default function WorkspaceView() {
   const [selectedGroupIds, setSelectedGroupIds] = useState([]);
   const [selectedPriorities, setSelectedPriorities] = useState([]);
   const [dueTodayOnly, setDueTodayOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
   const filterMenuRef = useRef(null);
   const totalTasks = tasks.length;
   const dueTodayCount = tasks.filter((task) => isSameLocalDay(task.end_datetime)).length;
+  const overdueCount = tasks.filter((task) => isTaskOverdue(task)).length;
+  const unassignedCount = tasks.filter((task) => isTaskUnassigned(task)).length;
   const priorityOptions = useMemo(
     () => Array.from(new Set(tasks.map((task) => task.priority).filter(Boolean))).sort(),
     [tasks],
@@ -276,10 +299,26 @@ export default function WorkspaceView() {
       if (selectedGroupIds.length && !selectedGroupIds.includes(groupId)) return false;
       if (selectedPriorities.length && !selectedPriorities.includes(task.priority)) return false;
       if (dueTodayOnly && !isSameLocalDay(task.end_datetime, today)) return false;
+      if (overdueOnly && !isTaskOverdue(task, today)) return false;
+      if (unassignedOnly && !isTaskUnassigned(task)) return false;
       return true;
     });
-  }, [tasks, groups, taskSearch, selectedGroupIds, selectedPriorities, dueTodayOnly]);
-  const activeFilterCount = selectedGroupIds.length + selectedPriorities.length + Number(dueTodayOnly);
+  }, [
+    tasks,
+    groups,
+    taskSearch,
+    selectedGroupIds,
+    selectedPriorities,
+    dueTodayOnly,
+    overdueOnly,
+    unassignedOnly,
+  ]);
+  const activeFilterCount =
+    selectedGroupIds.length +
+    selectedPriorities.length +
+    Number(dueTodayOnly) +
+    Number(overdueOnly) +
+    Number(unassignedOnly);
 
   useEffect(() => {
     function closeFilterMenu(event) {
@@ -989,9 +1028,20 @@ export default function WorkspaceView() {
                 value={dueTodayCount}
                 progress={totalTasks ? dueTodayCount / totalTasks : 0}
               />
+              <InsightPill
+                label="Overdue"
+                value={overdueCount}
+                progress={totalTasks ? overdueCount / totalTasks : 0}
+                tone="red"
+              />
+              <InsightPill
+                label="Unassigned"
+                value={unassignedCount}
+                progress={totalTasks ? unassignedCount / totalTasks : 0}
+              />
             </div>
             <div className="absolute right-0 flex items-center gap-2">
-              <div className="relative w-44 2xl:w-52">
+              <div className="relative w-64">
                 <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#64748B]" aria-hidden="true">
                   search
                 </span>
@@ -999,7 +1049,7 @@ export default function WorkspaceView() {
                   value={taskSearch}
                   onChange={(event) => setTaskSearch(event.target.value)}
                   placeholder="Search tasks"
-                  className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-5 text-sm text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
+                  className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
                 />
               </div>
 
@@ -1024,7 +1074,7 @@ export default function WorkspaceView() {
                 </button>
 
                 {isFilterOpen ? (
-                  <div className="absolute right-0 top-13 z-40 w-72 rounded-[24px] border border-white/70 bg-white/60 p-3 shadow-[0_20px_55px_rgba(13,30,76,0.22)] backdrop-blur-2xl">
+                  <div className="absolute right-0 top-13 z-40 w-48 rounded-[24px] border border-white/70 bg-white/60 p-3 shadow-[0_20px_55px_rgba(13,30,76,0.22)] backdrop-blur-3xl">
                     <div>
                       <p className="px-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Task group</p>
                       <div className="mt-1 max-h-36 space-y-0.5 overflow-y-auto">
@@ -1038,9 +1088,11 @@ export default function WorkspaceView() {
                               onClick={() => toggleFilterValue(setSelectedGroupIds, value)}
                               className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
                             >
-                              <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#94A3B8] bg-white/40"}`}>
-                                {checked ? <span className="text-[11px]">✓</span> : null}
-                              </span>
+                              {checked ? (
+                                <span className="material-symbols-outlined text-[18px] text-[#2563EB]" aria-hidden="true">check_circle</span>
+                              ) : (
+                                <span className="h-4 w-4 rounded-full border border-[#94A3B8] bg-white/40" />
+                              )}
                               <span className="truncate">{group.group_name}</span>
                             </button>
                           );
@@ -1060,9 +1112,11 @@ export default function WorkspaceView() {
                               onClick={() => toggleFilterValue(setSelectedPriorities, priority)}
                               className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
                             >
-                              <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#94A3B8] bg-white/40"}`}>
-                                {checked ? <span className="text-[11px]">✓</span> : null}
-                              </span>
+                              {checked ? (
+                                <span className="material-symbols-outlined text-[18px] text-[#2563EB]" aria-hidden="true">check_circle</span>
+                              ) : (
+                                <span className="h-4 w-4 rounded-full border border-[#94A3B8] bg-white/40" />
+                              )}
                               {priority}
                             </button>
                           );
@@ -1070,16 +1124,42 @@ export default function WorkspaceView() {
                       </div>
                     </div>
 
-                    <div className="mt-3 border-t border-white/60 pt-3">
+                    <div className="mt-3 space-y-0.5 border-t border-white/60 pt-3">
                       <button
                         type="button"
                         onClick={() => setDueTodayOnly((current) => !current)}
                         className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
                       >
-                        <span className={`flex h-4 w-4 items-center justify-center rounded border ${dueTodayOnly ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#94A3B8] bg-white/40"}`}>
-                          {dueTodayOnly ? <span className="text-[11px]">✓</span> : null}
-                        </span>
+                        {dueTodayOnly ? (
+                          <span className="material-symbols-outlined text-[18px] text-[#2563EB]" aria-hidden="true">check_circle</span>
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border border-[#94A3B8] bg-white/40" />
+                        )}
                         Due today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOverdueOnly((current) => !current)}
+                        className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                      >
+                        {overdueOnly ? (
+                          <span className="material-symbols-outlined text-[18px] text-[#DC2626]" aria-hidden="true">check_circle</span>
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border border-[#94A3B8] bg-white/40" />
+                        )}
+                        Overdue
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUnassignedOnly((current) => !current)}
+                        className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                      >
+                        {unassignedOnly ? (
+                          <span className="material-symbols-outlined text-[18px] text-[#2563EB]" aria-hidden="true">check_circle</span>
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border border-[#94A3B8] bg-white/40" />
+                        )}
+                        Unassigned
                       </button>
                     </div>
 
@@ -1090,6 +1170,8 @@ export default function WorkspaceView() {
                           setSelectedGroupIds([]);
                           setSelectedPriorities([]);
                           setDueTodayOnly(false);
+                          setOverdueOnly(false);
+                          setUnassignedOnly(false);
                         }}
                         className="mt-3 w-full rounded-full px-3 py-2 text-xs font-bold text-[#64748B] transition hover:bg-white/70 hover:text-[#0D1E4C]"
                       >

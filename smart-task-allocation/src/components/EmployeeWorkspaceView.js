@@ -28,7 +28,7 @@ function formatRelativeTime(value) {
   return new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-function ActivityLogPreview({ activity = [], onReload }) {
+function ActivityLogPreview({ activity = [], completedTasks = [], employees = [], onReload, onReopenTask }) {
   const [startIndex, setStartIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const entry = activity[startIndex] ?? null;
@@ -94,14 +94,14 @@ function ActivityLogPreview({ activity = [], onReload }) {
           <article className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/50 bg-white/30 px-3.5 py-2 text-sm backdrop-blur-sm">
             {entry.type === "assignment" ? (
               <>
-                <span className="max-w-35 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
-                  {entry.assignedBy}
-                </span>
-                <span className="text-[#52627a]">assigned</span>
+                <span className="text-[#52627a]">You were assigned</span>
                 <span className="max-w-60 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
                   {entry.taskTitle || "Task"}
                 </span>
-                <span className="text-[#52627a]">to you</span>
+                <span className="text-[#52627a]">by</span>
+                <span className="max-w-35 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
+                  {entry.assignedBy}
+                </span>
               </>
             ) : (
               <>
@@ -138,10 +138,13 @@ function ActivityLogPreview({ activity = [], onReload }) {
             >
               <TaskHistory
                 activity={activity}
+                completedTasks={completedTasks}
+                employees={employees}
                 onClose={async () => {
                   setIsExpanded(false);
                   await onReload?.();
                 }}
+                onReopenTask={onReopenTask}
               />
             </div>
           </div>
@@ -153,6 +156,7 @@ function ActivityLogPreview({ activity = [], onReload }) {
 
 export default function EmployeeWorkspaceView() {
   const [tasks, setTasks] = useState([]);
+  const [completedTasks, setCompletedTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [activity, setActivity] = useState([]);
   const [error, setError] = useState("");
@@ -167,6 +171,10 @@ export default function EmployeeWorkspaceView() {
   const enrichedTasks = useMemo(
     () => tasks.map((task) => enrichTaskWithPeople(task, employeesById)),
     [tasks, employeesById],
+  );
+  const enrichedCompletedTasks = useMemo(
+    () => completedTasks.map((task) => enrichTaskWithPeople(task, employeesById)),
+    [completedTasks, employeesById],
   );
   const filteredTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -205,6 +213,7 @@ export default function EmployeeWorkspaceView() {
       }
 
       setTasks(tasksResult.tasks ?? []);
+      setCompletedTasks(tasksResult.completedTasks ?? []);
       setEmployees(tasksResult.employees ?? []);
 
       if (activityResponse.ok) {
@@ -244,21 +253,40 @@ export default function EmployeeWorkspaceView() {
         throw new Error(result.error || "Could not mark task as completed.");
       }
 
-      // Completed tasks move to Task History — take it off the active board
-      // and close its detail panel if it was open.
-      setTasks((current) => current.filter((currentTask) => currentTask.task_id !== task.task_id));
+      // Completed tasks move to Task History — close the detail panel if it
+      // was open, then reload everything (tasks, completedTasks, activity)
+      // in one pass so they all stay in sync.
       setEditingTask(null);
-
-      const activityResponse = await fetch("/api/employee-activity", { headers: await authHeaders() });
-      const activityResult = await activityResponse.json();
-      if (activityResponse.ok) {
-        setActivity(activityResult.activity ?? []);
-      } else {
-        setError(activityResult.error || "Could not refresh task history.");
-      }
+      await loadWorkspaceData();
     } catch (completeError) {
       setError(completeError.message);
       throw completeError;
+    }
+  }
+
+  // Inverse of completeTask — reopens a task from Task History's completed
+  // list back onto the active board.
+  async function reopenTask(task) {
+    if (!task?.task_id) return;
+
+    setError("");
+
+    try {
+      const response = await fetch("/api/employee-tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "reopen", taskId: task.task_id }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reopen task.");
+      }
+
+      await loadWorkspaceData();
+    } catch (reopenError) {
+      setError(reopenError.message);
+      throw reopenError;
     }
   }
 
@@ -312,7 +340,13 @@ export default function EmployeeWorkspaceView() {
         <TaskTimeline employees={employees} onOpen={setEditingTask} tasks={filteredTasks} />
       </div>
 
-      <ActivityLogPreview activity={activity} onReload={loadWorkspaceData} />
+      <ActivityLogPreview
+        activity={activity}
+        completedTasks={enrichedCompletedTasks}
+        employees={employees}
+        onReload={loadWorkspaceData}
+        onReopenTask={reopenTask}
+      />
 
       {currentEditingTask ? (
         <TaskViewPanel

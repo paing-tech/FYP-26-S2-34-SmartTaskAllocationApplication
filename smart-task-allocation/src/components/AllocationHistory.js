@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { TaskCard, TaskViewPanel, enrichTaskWithPeople } from "@/components/WorkspaceBoard";
 import EmployeeProfileCard from "@/components/EmployeeProfileCard";
 import HoverPill from "@/components/HoverPill";
 
@@ -19,10 +20,12 @@ function formatDateTime(iso) {
 
 export default function AllocationHistory({ onClose } = {}) {
   const [allocations, setAllocations] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [error, setError] = useState("");
   const [isReassigning, setIsReassigning] = useState(false);
+  const [viewingTaskId, setViewingTaskId] = useState(null);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -36,14 +39,18 @@ export default function AllocationHistory({ onClose } = {}) {
   async function loadAll() {
     try {
       const headers = await authHeaders();
-      const [allocRes, empRes] = await Promise.all([
+      const [allocRes, tasksRes, empRes] = await Promise.all([
         fetch("/api/allocations", { headers }),
+        fetch("/api/tasks", { headers }),
         fetch("/api/employees", { headers }),
       ]);
       const allocData = await allocRes.json();
+      const tasksData = await tasksRes.json();
       const empData = await empRes.json();
       if (!allocRes.ok) throw new Error(allocData.error || "Could not load allocations.");
+      if (!tasksRes.ok) throw new Error(tasksData.error || "Could not load tasks.");
       setAllocations(allocData.allocations ?? []);
+      setTasks(tasksData.tasks ?? []);
       setEmployees(empData.employees ?? []);
     } catch (loadError) {
       setError(loadError.message);
@@ -61,6 +68,18 @@ export default function AllocationHistory({ onClose } = {}) {
     () => new Map(employees.map((e) => [e.user_id, e])),
     [employees],
   );
+
+  const completedTasks = useMemo(
+    () =>
+      tasks
+        .filter((task) => String(task.status || "").toLowerCase() === "completed")
+        .map((task) => enrichTaskWithPeople(task, employeeById)),
+    [tasks, employeeById],
+  );
+
+  const viewingTask = viewingTaskId
+    ? completedTasks.find((task) => task.task_id === viewingTaskId) ?? null
+    : null;
 
   // Group allocations by calendar date (already sorted desc by API).
   const grouped = useMemo(() => {
@@ -112,6 +131,40 @@ export default function AllocationHistory({ onClose } = {}) {
     }
   }
 
+  // The generic PATCH branch replaces the full task record, not just the
+  // changed field (see /api/tasks's title-wiping gotcha), so every other
+  // field has to be resent as-is alongside the new status.
+  async function reopenTask(task) {
+    if (!task?.task_id) return;
+    setError("");
+    try {
+      const headers = await authHeaders();
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          taskId: task.task_id,
+          title: task.title,
+          description: task.description,
+          groupId: task.group_id,
+          status: "Open",
+          priority: task.priority,
+          startDatetime: task.start_datetime,
+          endDatetime: task.end_datetime,
+          requiredSkillIds: (task.requiredSkills ?? []).map((skill) => skill.skill_id),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reopen task.");
+      }
+      await loadAll();
+    } catch (reopenError) {
+      setError(reopenError.message);
+      throw reopenError;
+    }
+  }
+
   const selectedAllocations = allocations.filter((a) => selectedIds.has(a.id));
 
   return (
@@ -150,7 +203,32 @@ export default function AllocationHistory({ onClose } = {}) {
         </p>
       ) : null}
 
-      <div className="min-h-0 flex-1 space-y-8 overflow-y-auto pr-1">
+      <div className="shrink-0">
+        {completedTasks.length ? (
+          <div className="flex gap-6 overflow-x-auto pb-2">
+            {completedTasks.map((task) => (
+              <div key={task.task_id} className="w-80 shrink-0">
+                <TaskCard
+                  employees={employees}
+                  onOpen={(openedTask) => setViewingTaskId(openedTask.task_id)}
+                  task={task}
+                  tasks={completedTasks}
+                  viewOnly
+                />
+                <p className="mt-1.5 px-1 text-right text-xs font-semibold text-[#94a3b8]">
+                  on {formatDateTime(task.updated_at)}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-2xl border border-dashed border-white/60 px-6 py-8 text-center text-sm font-medium text-[#0D1E4C]/60">
+            No completed tasks yet.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-6 min-h-0 flex-1 space-y-8 overflow-y-auto pr-1">
         {grouped.map((group) => (
           <div key={group.dateKey}>
             <h3 className="mb-3 text-sm font-black uppercase tracking-[0.15em] text-[#0D1E4C]/60">
@@ -221,6 +299,15 @@ export default function AllocationHistory({ onClose } = {}) {
           </p>
         ) : null}
       </div>
+
+      {viewingTask ? (
+        <TaskViewPanel
+          employees={employees}
+          onClose={() => setViewingTaskId(null)}
+          onReopen={reopenTask}
+          task={viewingTask}
+        />
+      ) : null}
     </div>
   );
 }

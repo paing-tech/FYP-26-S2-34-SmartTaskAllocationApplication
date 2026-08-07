@@ -42,7 +42,7 @@ export async function GET(request) {
     }
 
     if (!account?.organization_id) {
-      return NextResponse.json({ tasks: [], groups: [], employees: [] });
+      return NextResponse.json({ tasks: [], completedTasks: [], groups: [], employees: [] });
     }
 
     // "Assigned to me" means either the single-assignee mirror column or a
@@ -70,17 +70,15 @@ export async function GET(request) {
     }
 
     // Completed tasks move to Task History (see /api/employee-activity) —
-    // once marked done, they no longer clutter the active board.
-    const myTasks = (allTasks ?? []).filter((task) => {
+    // once marked done, they no longer clutter the active board, but are
+    // still returned separately (completedTasks) so Task History can show
+    // them as full task cards.
+    const myTasksAll = (allTasks ?? []).filter((task) => {
       const status = String(task.status || "").toLowerCase();
-      return (
-        (task.assigned_to === account.user_id || assignedTaskIds.has(task.task_id)) &&
-        status !== "archived" &&
-        status !== "completed"
-      );
+      return (task.assigned_to === account.user_id || assignedTaskIds.has(task.task_id)) && status !== "archived";
     });
 
-    const taskIds = myTasks.map((task) => task.task_id);
+    const taskIds = myTasksAll.map((task) => task.task_id);
     const requiredSkillsByTaskId = new Map();
     const assigneeIdsByTaskId = new Map();
 
@@ -106,11 +104,20 @@ export async function GET(request) {
       }
     }
 
-    const tasks = myTasks.map((task) => ({
-      ...task,
-      requiredSkills: requiredSkillsByTaskId.get(task.task_id) ?? [],
-      assigneeIds: assigneeIdsByTaskId.get(task.task_id) ?? (task.assigned_to ? [task.assigned_to] : []),
-    }));
+    function enrichTask(task) {
+      return {
+        ...task,
+        requiredSkills: requiredSkillsByTaskId.get(task.task_id) ?? [],
+        assigneeIds: assigneeIdsByTaskId.get(task.task_id) ?? (task.assigned_to ? [task.assigned_to] : []),
+      };
+    }
+
+    const tasks = myTasksAll
+      .filter((task) => String(task.status || "").toLowerCase() !== "completed")
+      .map(enrichTask);
+    const completedTasks = myTasksAll
+      .filter((task) => String(task.status || "").toLowerCase() === "completed")
+      .map(enrichTask);
 
     // Only the columns these tasks actually land in — the employee board
     // never creates/renames/deletes groups, so there's no need for the
@@ -128,9 +135,14 @@ export async function GET(request) {
 
     // Profile info for whoever the board needs to render an avatar/name for
     // — task owners and every assignee (usually just this employee, but a
-    // co-assigned task may reference others).
+    // co-assigned task may reference others), across both active and
+    // completed tasks.
     const peopleIds = [
-      ...new Set(tasks.flatMap((task) => [task.owner_id, ...(task.assigneeIds ?? [])]).filter(Boolean)),
+      ...new Set(
+        [...tasks, ...completedTasks]
+          .flatMap((task) => [task.owner_id, ...(task.assigneeIds ?? [])])
+          .filter(Boolean),
+      ),
     ];
     let employees = [];
     if (peopleIds.length) {
@@ -159,15 +171,15 @@ export async function GET(request) {
       }));
     }
 
-    return NextResponse.json({ tasks, groups, employees });
+    return NextResponse.json({ tasks, completedTasks, groups, employees });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// The employee board's only mutation: mark one of their own assigned tasks
-// Completed. Anything else (reassigning, editing details, deleting) stays
-// manager-only.
+// The employee board's mutations: mark one of their own assigned tasks
+// Completed, or reopen one they'd previously completed. Anything else
+// (reassigning, editing details, deleting) stays manager-only.
 export async function PATCH(request) {
   try {
     const supabase = getSupabaseAdminClient();
@@ -187,7 +199,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Account not found." }, { status: 404 });
     }
 
-    const { taskId } = await request.json();
+    const { action, taskId } = await request.json();
 
     if (!taskId) {
       return NextResponse.json({ error: "Task ID is required." }, { status: 400 });
@@ -221,28 +233,33 @@ export async function PATCH(request) {
     }
 
     const fromStatus = task.status;
+    const toStatus = action === "reopen" ? "Open" : "Completed";
 
-    if (fromStatus === "Completed") {
+    if (action === "reopen" && fromStatus !== "Completed") {
+      return NextResponse.json({ error: "Only completed tasks can be reopened." }, { status: 400 });
+    }
+
+    if (fromStatus === toStatus) {
       return NextResponse.json({ success: true });
     }
 
     const { error: updateError } = await supabase
       .from("task")
-      .update({ status: "Completed", updated_at: new Date().toISOString() })
+      .update({ status: toStatus, updated_at: new Date().toISOString() })
       .eq("task_id", taskId);
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
-    // Best-effort: the task is already marked Completed above, so a failure
+    // Best-effort: the task's status is already updated above, so a failure
     // here shouldn't block that — but it must not be swallowed silently
     // either, since this is the only place Task History gets its data from.
     const { error: historyError } = await supabase.from("task_history").insert({
       task_id: taskId,
       user_id: account.user_id,
       from_status: fromStatus,
-      to_status: "Completed",
+      to_status: toStatus,
     });
 
     if (historyError) {

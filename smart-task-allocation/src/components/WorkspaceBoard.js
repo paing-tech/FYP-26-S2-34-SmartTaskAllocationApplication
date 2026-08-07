@@ -1872,8 +1872,9 @@ export function TaskEditPanel({
 // it is editable. Used by the employee board, where task details are for
 // viewing only; the sole action is marking the task complete (also
 // available directly on the card).
-export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
+export function TaskViewPanel({ employees = [], onClose, onComplete, onReopen, task }) {
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isReopening, setIsReopening] = useState(false);
   const [activePanel, setActivePanel] = useState("details");
   const [comments, setComments] = useState([]);
   const [attachments, setAttachments] = useState([]);
@@ -1956,6 +1957,16 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
       await onComplete?.(task);
     } finally {
       setIsCompleting(false);
+    }
+  }
+
+  async function handleReopen() {
+    if (isReopening) return;
+    setIsReopening(true);
+    try {
+      await onReopen?.(task);
+    } finally {
+      setIsReopening(false);
     }
   }
 
@@ -2336,18 +2347,29 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
 
         {activePanel === "details" ? (
           <div className="shrink-0 px-6 pb-6 pt-2">
-            <button
-              type="button"
-              onClick={handleComplete}
-              disabled={isCompleting || isCompleted}
-              className={`w-full rounded-2xl border py-3 text-sm font-black transition disabled:cursor-not-allowed ${
-                isCompleted
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-white/60 bg-slate-200 text-slate-800 hover:scale-[1.02] disabled:opacity-60"
-              }`}
-            >
-              {isCompleted ? "Completed" : isCompleting ? "Marking…" : "Mark as Completed"}
-            </button>
+            {isCompleted && onReopen ? (
+              <button
+                type="button"
+                onClick={handleReopen}
+                disabled={isReopening}
+                className="w-full rounded-2xl border border-white/60 bg-slate-200 py-3 text-sm font-black text-slate-800 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isReopening ? "Reopening…" : "Mark as Open"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleComplete}
+                disabled={isCompleting || isCompleted}
+                className={`w-full rounded-2xl border py-3 text-sm font-black transition disabled:cursor-not-allowed ${
+                  isCompleted
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-white/60 bg-slate-200 text-slate-800 hover:scale-[1.02] disabled:opacity-60"
+                }`}
+              >
+                {isCompleted ? "Completed" : isCompleting ? "Marking…" : "Mark as Completed"}
+              </button>
+            )}
           </div>
         ) : null}
       </div>
