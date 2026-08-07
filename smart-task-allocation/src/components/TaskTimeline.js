@@ -127,24 +127,28 @@ function MultiDayTaskPill({ onOpen, range, task }) {
   const tone = PRIORITY_PILL_TONES[getPriorityKey(task.priority)] ?? PRIORITY_PILL_TONES.medium;
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen(task)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen(task);
-        }
-      }}
-      title={task.title || "Untitled task"}
-      className={`flex cursor-pointer items-center gap-3 overflow-hidden rounded-full border px-4 py-2.5 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone}`}
-    >
-      <span className="truncate text-xs font-black text-white">{task.title || "Untitled task"}</span>
-      <span className="shrink-0 text-[10px] font-bold text-white/85">
-        {formatDate(range.start)} – {formatDate(range.end)}
-      </span>
-      <AvatarCircle employee={task.assignees?.[0] ?? null} sizeClass="h-6 w-6" className="shrink-0 text-[9px]" />
+    <div className="shrink-0">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(task)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpen(task);
+          }
+        }}
+        title={task.title || "Untitled task"}
+        className={`flex cursor-pointer items-center gap-3 overflow-hidden rounded-full border px-4 py-2.5 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone}`}
+      >
+        <span className="truncate text-xs font-black text-white">{task.title || "Untitled task"}</span>
+        <AvatarCircle employee={task.assignees?.[0] ?? null} sizeClass="h-6 w-6" className="shrink-0 text-[9px]" />
+      </div>
+
+      <div className="mt-1 flex items-center justify-between gap-2 px-1 text-[9px] font-bold text-[#94a3b8]">
+        <span>{formatDate(range.start)}</span>
+        <span>{formatDate(range.end)}</span>
+      </div>
     </div>
   );
 }
@@ -313,8 +317,7 @@ export default function TaskTimeline({ employees = [], onOpen, tasks = [] }) {
 
       {multiDayTasks.length ? (
         <div className="mt-3">
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#94a3b8]">Multi-day tasks</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {multiDayTasks.map(({ range, task }) => (
               <MultiDayTaskPill key={task.task_id} onOpen={onOpen} range={range} task={task} />
             ))}

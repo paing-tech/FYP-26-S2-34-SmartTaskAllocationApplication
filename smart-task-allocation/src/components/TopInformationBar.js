@@ -696,7 +696,7 @@ export default function TopInformationBar({ actor }) {
           </button>
 
           {isProfileOpen ? (
-            <div className="absolute right-0 top-14 w-72 rounded-[28px] border border-white/60 bg-white/20 p-2 shadow-[0_18px_60px_rgba(7,24,59,0.16)] backdrop-blur-lg">
+            <div className="absolute right-0 top-14 w-52 rounded-[28px] border border-white/60 bg-slate-200 p-6 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
               <div className="flex items-center gap-3 px-3 py-2">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a2a66] text-white">
                   {profile.profilePictureUrl ? (
@@ -756,7 +756,7 @@ export default function TopInformationBar({ actor }) {
                       setIsProfileCardOpen(true);
                       setIsProfileOpen(false);
                     }}
-                    className="rounded-full px-3 py-2 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
+                    className="rounded-full px-4 py-3 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
                   >
                     View profile
                   </button>
@@ -764,7 +764,7 @@ export default function TopInformationBar({ actor }) {
                 <button
                   type="button"
                   onClick={isDemo ? exitDemo : signOut}
-                  className="rounded-full px-3 py-2 text-left text-sm font-bold text-red-700 transition hover:bg-red-50/80"
+                  className="rounded-full px-4 py-3 text-left text-sm font-bold text-red-700 transition hover:bg-red-50/80"
                 >
                   {isDemo ? "Exit demo" : "Log out"}
                 </button>

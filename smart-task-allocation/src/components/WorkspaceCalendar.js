@@ -220,39 +220,43 @@ function MultiDayTaskPill({ employees, groupName, onAiAssign, onAssignEmployee, 
 
   return (
     <>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => onOpen(task)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onOpen(task);
-          }
-        }}
-        title={task.title || "Untitled task"}
-        className={`flex cursor-pointer items-center gap-3 overflow-hidden rounded-full border px-4 py-2.5 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone}`}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-xs font-black text-white">{task.title || "Untitled task"}</span>
-          <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-700">
-            {task.status || "Open"}
-          </span>
-        </span>
-        <span className="shrink-0 text-[10px] font-bold text-white/85">
-          {formatDate(range.start)} – {formatDate(range.end)}
-        </span>
-        <AvatarStack assignees={task.assignees ?? []} />
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setIsAssignOpen(true);
+      <div className="shrink-0">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpen(task)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onOpen(task);
+            }
           }}
-          className="shrink-0 rounded-full border border-white/70 bg-white/70 px-3 py-1.5 text-[10px] font-black text-[#0D1E4C] transition hover:scale-110 hover:bg-white"
+          title={task.title || "Untitled task"}
+          className={`flex cursor-pointer items-center gap-3 overflow-hidden rounded-full border px-4 py-2.5 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone}`}
         >
-          Assign
-        </button>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-xs font-black text-white">{task.title || "Untitled task"}</span>
+            <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-700">
+              {task.status || "Open"}
+            </span>
+          </span>
+          <AvatarStack assignees={task.assignees ?? []} />
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsAssignOpen(true);
+            }}
+            className="shrink-0 rounded-full border border-white/70 bg-white/70 px-3 py-1.5 text-[10px] font-black text-[#0D1E4C] transition hover:scale-110 hover:bg-white"
+          >
+            Assign
+          </button>
+        </div>
+
+        <div className="mt-1 flex items-center justify-between gap-2 px-1 text-[9px] font-bold text-[#94a3b8]">
+          <span>{formatDate(range.start)}</span>
+          <span>{formatDate(range.end)}</span>
+        </div>
       </div>
 
       {isAssignOpen ? (
@@ -542,8 +546,7 @@ export default function WorkspaceCalendar({
 
       {multiDayTasks.length ? (
         <div className="mt-3 shrink-0">
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#94a3b8]">Multi-day tasks</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {multiDayTasks.map(({ task, range }) => (
               <MultiDayTaskPill
                 key={task.task_id}
