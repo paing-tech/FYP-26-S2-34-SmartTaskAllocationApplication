@@ -24,7 +24,7 @@ export const sideMenuNavigation = {
     label: "Employee",
     homeHref: "/employee/workspace",
     items: [
-      { label: "Workspace", href: "/employee/workspace", icon: "workspace" },
+      { label: "Tasks", href: "/employee/workspace", icon: "workspace" },
       { label: "Agents", href: "/employee/agents", icon: "agents" },
       { label: "Support", href: "/employee/support", icon: "support" },
     ],

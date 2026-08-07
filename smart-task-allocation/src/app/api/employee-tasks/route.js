@@ -69,11 +69,16 @@ export async function GET(request) {
       return NextResponse.json({ error: tasksError.message }, { status: 400 });
     }
 
-    const myTasks = (allTasks ?? []).filter(
-      (task) =>
+    // Completed tasks move to Task History (see /api/employee-activity) —
+    // once marked done, they no longer clutter the active board.
+    const myTasks = (allTasks ?? []).filter((task) => {
+      const status = String(task.status || "").toLowerCase();
+      return (
         (task.assigned_to === account.user_id || assignedTaskIds.has(task.task_id)) &&
-        String(task.status || "").toLowerCase() !== "archived",
-    );
+        status !== "archived" &&
+        status !== "completed"
+      );
+    });
 
     const taskIds = myTasks.map((task) => task.task_id);
     const requiredSkillsByTaskId = new Map();

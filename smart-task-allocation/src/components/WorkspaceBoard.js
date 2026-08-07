@@ -94,6 +94,33 @@ function formatDate(value) {
   }).format(date);
 }
 
+function formatRelativeTimestamp(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const diffMinutes = Math.round((Date.now() - date.getTime()) / 60000);
+
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return formatDate(value);
+}
+
+function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function toDateInputValue(date) {
   if (!date || Number.isNaN(date.getTime())) return "";
 
@@ -256,6 +283,29 @@ export function buildBoardColumns({ groups, tasks }) {
     name: group.group_name,
     tasks: tasksByGroup.get(group.group_id) ?? [],
   }));
+}
+
+// Resolves the display-ready owner/assignee fields TaskCard expects from a
+// raw task row (owner_id/assigned_to/assigneeIds) plus an employeesById map.
+export function enrichTaskWithPeople(task, employeesById) {
+  const owner = employeesById.get(task.owner_id);
+  const assignee = employeesById.get(task.assigned_to);
+  const assignees = (task.assigneeIds ?? [])
+    .map((userId) => employeesById.get(userId))
+    .filter(Boolean);
+
+  return {
+    ...task,
+    assignee: assignee ?? null,
+    assignees,
+    owner:
+      task.source === "optimus_ai"
+        ? task.reasons?.agentName || "Optimus AI"
+        : owner
+          ? getDisplayName(owner)
+          : "Manager",
+    ownerJobTitle: task.source === "optimus_ai" ? "" : owner ? getOccupation(owner) : "",
+  };
 }
 
 export function getOccupation(employee) {
@@ -1824,6 +1874,71 @@ export function TaskEditPanel({
 // available directly on the card).
 export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
   const [isCompleting, setIsCompleting] = useState(false);
+  const [activePanel, setActivePanel] = useState("details");
+  const [comments, setComments] = useState([]);
+  const [attachments, setAttachments] = useState([]);
+  const [isLoadingExtras, setIsLoadingExtras] = useState(false);
+  const [extrasError, setExtrasError] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDeletingAttachmentId, setIsDeletingAttachmentId] = useState(null);
+  const [isDeletingCommentId, setIsDeletingCommentId] = useState(null);
+  const [commentContextMenu, setCommentContextMenu] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const fileInputRef = useRef(null);
+  const taskId = task?.task_id ?? null;
+
+  useEffect(() => {
+    (async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      setCurrentUserId(data.session?.user?.id ?? null);
+    })();
+  }, []);
+
+  async function authHeaders() {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+    return {
+      Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+    };
+  }
+
+  async function loadExtras(id) {
+    setIsLoadingExtras(true);
+    setExtrasError("");
+
+    try {
+      const headers = await authHeaders();
+      const [commentsResponse, attachmentsResponse] = await Promise.all([
+        fetch(`/api/task-comments?taskId=${id}`, { headers }),
+        fetch(`/api/task-attachments?taskId=${id}`, { headers }),
+      ]);
+      const [commentsResult, attachmentsResult] = await Promise.all([
+        commentsResponse.json(),
+        attachmentsResponse.json(),
+      ]);
+
+      setComments(commentsResponse.ok ? commentsResult.comments ?? [] : []);
+      setAttachments(attachmentsResponse.ok ? attachmentsResult.attachments ?? [] : []);
+    } catch (loadError) {
+      setExtrasError(loadError.message);
+    } finally {
+      setIsLoadingExtras(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!taskId) return;
+
+    (async () => {
+      setActivePanel("details");
+      setCommentDraft("");
+      await loadExtras(taskId);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
 
   if (!task) return null;
 
@@ -1844,6 +1959,123 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
     }
   }
 
+  async function postComment() {
+    const text = commentDraft.trim();
+    if (!text || isPostingComment || !taskId) return;
+
+    setIsPostingComment(true);
+    setExtrasError("");
+
+    try {
+      const response = await fetch("/api/task-comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ taskId, commentText: text }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not post comment.");
+      }
+
+      setComments((current) => [...current, result.comment]);
+      setCommentDraft("");
+    } catch (postError) {
+      setExtrasError(postError.message);
+    } finally {
+      setIsPostingComment(false);
+    }
+  }
+
+  function handleCommentContextMenu(event, comment) {
+    if (comment.userId !== currentUserId) return;
+    event.preventDefault();
+    setCommentContextMenu({ commentId: comment.id, x: event.clientX, y: event.clientY });
+  }
+
+  async function deleteComment(commentId) {
+    if (isDeletingCommentId) return;
+
+    setIsDeletingCommentId(commentId);
+    setExtrasError("");
+
+    try {
+      const response = await fetch(`/api/task-comments?commentId=${commentId}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not delete comment.");
+      }
+
+      setComments((current) => current.filter((comment) => comment.id !== commentId));
+    } catch (deleteError) {
+      setExtrasError(deleteError.message);
+    } finally {
+      setIsDeletingCommentId(null);
+    }
+  }
+
+  async function uploadAttachment(file) {
+    if (!file || isUploading || !taskId) return;
+
+    setIsUploading(true);
+    setExtrasError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("taskId", String(taskId));
+      formData.append("file", file);
+
+      const response = await fetch("/api/task-attachments", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: formData,
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not upload file.");
+      }
+
+      setAttachments((current) => [...current, result.attachment]);
+    } catch (uploadError) {
+      setExtrasError(uploadError.message);
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function deleteAttachment(attachmentId) {
+    if (isDeletingAttachmentId) return;
+
+    setIsDeletingAttachmentId(attachmentId);
+    setExtrasError("");
+
+    try {
+      const response = await fetch(`/api/task-attachments?attachmentId=${attachmentId}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not delete attachment.");
+      }
+
+      setAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+    } catch (deleteError) {
+      setExtrasError(deleteError.message);
+    } finally {
+      setIsDeletingAttachmentId(null);
+    }
+  }
+
+  const panelTitle =
+    activePanel === "comments" ? "Comments" : activePanel === "attachments" ? "Attachments" : "Details";
+
   return createPortal(
     <div className="pointer-events-none fixed inset-y-0 right-0 z-[999] flex w-full items-start justify-end px-7 pb-8 pt-26">
       <button
@@ -1854,89 +2086,304 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
       />
       <div className="pointer-events-auto relative z-10 flex max-h-[calc(100vh-9.5rem)] w-full max-w-sm flex-col overflow-hidden rounded-[2rem] border border-white/60 bg-white/10 shadow-[0_24px_80px_rgba(13,30,76,0.25)] backdrop-blur-md">
         <div className="grid shrink-0 grid-cols-3 items-center gap-4 px-6 pb-6 pt-5">
+          {activePanel !== "details" ? (
+            <button
+              type="button"
+              onClick={() => setActivePanel("details")}
+              className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
+              aria-label="Back to details"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                arrow_back
+              </span>
+            </button>
+          ) : (
+            <div aria-hidden="true" />
+          )}
+          <h3 className="justify-self-center text-xl font-black text-[#0D1E4C]">{panelTitle}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
+            className="flex h-11 w-11 items-center justify-center justify-self-end rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
             aria-label="Close task details"
           >
             <span className="material-symbols-outlined text-xl" aria-hidden="true">
               close
             </span>
           </button>
-          <h3 className="justify-self-center text-xl font-black text-[#0D1E4C]">Details</h3>
-          <span className="justify-self-end rounded-full border border-white/60 bg-white/40 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-[#0D1E4C]">
-            View only
-          </span>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
-              {formatPillLabel(task.status, "Open")}
-            </span>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${priorityTone.chip}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
-              {formatPillLabel(task.priority, "Medium")} PRIORITY
-            </span>
-          </div>
+        {activePanel === "details" ? (
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
+                {formatPillLabel(task.status, "Open")}
+              </span>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${priorityTone.chip}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
+                {formatPillLabel(task.priority, "Medium")} PRIORITY
+              </span>
+            </div>
 
-          <h2 className="text-xl font-black text-[#0D1E4C]">{task.title || "Untitled task"}</h2>
+            <h2 className="text-xl font-black text-[#0D1E4C]">{task.title || "Untitled task"}</h2>
 
-          {task.description ? (
-            <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-[#475569]">{task.description}</p>
-          ) : (
-            <p className="text-sm font-semibold text-[#94a3b8]">No description.</p>
-          )}
-
-          <TimelineRail start={task.start_datetime} end={task.end_datetime} />
-
-          <section className="space-y-2">
-            <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Assigned to</p>
-            {assignees.length ? (
-              assignees.map((assignee) => <AssigneeProfile key={assignee.user_id} employee={assignee} />)
+            {task.description ? (
+              <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-[#475569]">{task.description}</p>
             ) : (
-              <AssigneeProfile employee={null} />
+              <p className="text-sm font-semibold text-[#94a3b8]">No description.</p>
             )}
-          </section>
 
-          {task.requiredSkills?.length ? (
+            <TimelineRail start={task.start_datetime} end={task.end_datetime} />
+
             <section className="space-y-2">
-              <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Required skills</p>
-              <div className="flex flex-wrap gap-1.5">
-                {task.requiredSkills.map((skill) => (
-                  <span
-                    key={skill.skill_id}
-                    className="rounded-full bg-white/60 px-3 py-1 text-xs font-bold text-[#0D1E4C]"
+              <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Assigned to</p>
+              {assignees.length ? (
+                assignees.map((assignee) => <AssigneeProfile key={assignee.user_id} employee={assignee} />)
+              ) : (
+                <AssigneeProfile employee={null} />
+              )}
+            </section>
+
+            {task.requiredSkills?.length ? (
+              <section className="space-y-2">
+                <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Required skills</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {task.requiredSkills.map((skill) => (
+                    <span
+                      key={skill.skill_id}
+                      className="rounded-full bg-white/60 px-3 py-1 text-xs font-bold text-[#0D1E4C]"
+                    >
+                      {skill.skill_name}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <div className="flex items-center justify-center gap-8 pt-1">
+              <button
+                type="button"
+                onClick={() => setActivePanel("comments")}
+                className="flex items-center gap-1.5 text-[#667085] transition hover:text-[#0D1E4C]"
+                aria-label="Comments"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z"
+                  />
+                </svg>
+                <span className="text-xs font-bold">{comments.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivePanel("attachments")}
+                className="flex items-center gap-1.5 text-[#667085] transition hover:text-[#0D1E4C]"
+                aria-label="Attachments"
+              >
+                <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                  attach_file
+                </span>
+                <span className="text-xs font-bold">{attachments.length}</span>
+              </button>
+            </div>
+          </div>
+        ) : activePanel === "comments" ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-4">
+              {isLoadingExtras ? (
+                <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">Loading comments…</p>
+              ) : comments.length ? (
+                comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    onContextMenu={(event) => handleCommentContextMenu(event, comment)}
+                    className={`rounded-2xl bg-white/45 px-3.5 py-2.5 transition ${
+                      comment.userId === currentUserId ? "cursor-context-menu hover:bg-white/65" : ""
+                    } ${isDeletingCommentId === comment.id ? "opacity-40" : ""}`}
                   >
-                    {skill.skill_name}
+                    <div className="flex items-center gap-2">
+                      <AvatarCircle employee={comment.author} sizeClass="h-6 w-6" className="text-[9px]" />
+                      <span className="truncate text-xs font-black text-[#0D1E4C]">
+                        {getDisplayName(comment.author)}
+                      </span>
+                      <span className="ml-auto shrink-0 text-[10px] font-semibold text-[#94a3b8]">
+                        {formatRelativeTimestamp(comment.createdAt)}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 whitespace-pre-wrap text-sm font-medium leading-5 text-[#334155]">
+                      {comment.commentText}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">No comments yet.</p>
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-white/50 px-6 pb-6 pt-4">
+              {extrasError ? <p className="mb-2 text-xs font-semibold text-red-600">{extrasError}</p> : null}
+              <div className="flex items-end gap-2">
+                <textarea
+                  value={commentDraft}
+                  onChange={(event) => setCommentDraft(event.target.value)}
+                  placeholder="Write a comment…"
+                  rows={1}
+                  className="min-h-11 flex-1 resize-none rounded-2xl border border-white/60 bg-white/50 px-3.5 py-2.5 text-sm font-medium text-[#0D1E4C] outline-none placeholder:text-[#94a3b8] focus:border-[#2563EB]/50"
+                />
+                <button
+                  type="button"
+                  onClick={postComment}
+                  disabled={!commentDraft.trim() || isPostingComment}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/60 bg-slate-200 text-[#0D1E4C] transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Send comment"
+                >
+                  <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                    send
                   </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-6">
+            {extrasError ? <p className="text-xs font-semibold text-red-600">{extrasError}</p> : null}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) uploadAttachment(file);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-[#cbd5e1] bg-white/30 px-4 py-6 text-center transition hover:border-[#2563EB]/50 hover:bg-white/50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-2xl text-[#94a3b8]" aria-hidden="true">
+                upload_file
+              </span>
+              <span className="text-xs font-bold text-[#0D1E4C]">
+                {isUploading ? "Uploading…" : "Click to upload a file"}
+              </span>
+            </button>
+
+            {isLoadingExtras ? (
+              <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">Loading attachments…</p>
+            ) : attachments.length ? (
+              <div className="space-y-2">
+                {attachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="flex items-center gap-2 rounded-2xl bg-white/45 px-3.5 py-2.5 transition hover:bg-white/65"
+                  >
+                    <a
+                      href={attachment.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex min-w-0 flex-1 items-center gap-3"
+                    >
+                      <span className="material-symbols-outlined text-xl text-[#667085]" aria-hidden="true">
+                        description
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-black text-[#0D1E4C]">
+                          {attachment.fileName}
+                        </span>
+                        <span className="block text-[10px] font-semibold text-[#94a3b8]">
+                          {formatFileSize(attachment.fileSize)} · {getDisplayName(attachment.author)}
+                        </span>
+                      </span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => deleteAttachment(attachment.id)}
+                      disabled={isDeletingAttachmentId === attachment.id}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Delete ${attachment.fileName}`}
+                    >
+                      <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                        close
+                      </span>
+                    </button>
+                  </div>
                 ))}
               </div>
-            </section>
-          ) : null}
-        </div>
+            ) : (
+              <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">No attachments yet.</p>
+            )}
+          </div>
+        )}
 
-        <div className="shrink-0 px-6 pb-6 pt-2">
+        {activePanel === "details" ? (
+          <div className="shrink-0 px-6 pb-6 pt-2">
+            <button
+              type="button"
+              onClick={handleComplete}
+              disabled={isCompleting || isCompleted}
+              className={`w-full rounded-2xl border py-3 text-sm font-black transition disabled:cursor-not-allowed ${
+                isCompleted
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-white/60 bg-slate-200 text-slate-800 hover:scale-[1.02] disabled:opacity-60"
+              }`}
+            >
+              {isCompleted ? "Completed" : isCompleting ? "Marking…" : "Mark as Completed"}
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {commentContextMenu ? (
+        <>
           <button
             type="button"
-            onClick={handleComplete}
-            disabled={isCompleting || isCompleted}
-            className={`w-full rounded-2xl border py-3 text-sm font-black transition disabled:cursor-not-allowed ${
-              isCompleted
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-white/60 bg-slate-200 text-slate-800 hover:scale-[1.02] disabled:opacity-60"
-            }`}
+            className="pointer-events-auto fixed inset-0 z-[1000] cursor-default"
+            onClick={() => setCommentContextMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setCommentContextMenu(null);
+            }}
+            aria-label="Close menu"
+          />
+          <div
+            className="pointer-events-auto fixed z-[1001] w-40 overflow-hidden rounded-2xl border border-white/60 bg-white shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
+            style={{ top: commentContextMenu.y, left: commentContextMenu.x }}
           >
-            {isCompleted ? "Completed" : isCompleting ? "Marking…" : "Mark as Completed"}
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => {
+                deleteComment(commentContextMenu.commentId);
+                setCommentContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-bold text-red-600 transition hover:bg-red-50"
+            >
+              <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                delete
+              </span>
+              Delete
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>,
     document.body,
   );
@@ -2196,26 +2643,7 @@ export default function WorkspaceBoard({
 
     return rawColumns.map((column) => ({
       ...column,
-      tasks: column.tasks.map((task) => {
-        const owner = employeesById.get(task.owner_id);
-        const assignee = employeesById.get(task.assigned_to);
-        const assignees = (task.assigneeIds ?? [])
-          .map((userId) => employeesById.get(userId))
-          .filter(Boolean);
-
-        return {
-          ...task,
-          assignee: assignee ?? null,
-          assignees,
-          owner:
-            task.source === "optimus_ai"
-              ? task.reasons?.agentName || "Optimus AI"
-              : owner
-                ? getDisplayName(owner)
-                : "Manager",
-          ownerJobTitle: task.source === "optimus_ai" ? "" : owner ? getOccupation(owner) : "",
-        };
-      }),
+      tasks: column.tasks.map((task) => enrichTaskWithPeople(task, employeesById)),
     }));
   }, [employeesById, groups, tasks]);
 

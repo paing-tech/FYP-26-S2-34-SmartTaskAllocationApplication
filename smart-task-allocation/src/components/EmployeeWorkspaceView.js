@@ -1,43 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import WorkspaceBoard from "@/components/WorkspaceBoard";
+import { useEffect, useMemo, useState } from "react";
+import { TaskCard, TaskViewPanel, enrichTaskWithPeople } from "@/components/WorkspaceBoard";
+import Portal from "@/components/Portal";
+import TaskHistory from "@/components/TaskHistory";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
-
-const COLUMN_LAYOUT_STORAGE_KEY = "optima-board-columns";
-
-// Material Symbols only ships "view_column" (3 bars). These 4/5-bar variants
-// reuse its exact outer frame and gap so they read as the same icon family.
-const COLUMN_LAYOUT_OPTIONS = [
-  {
-    count: 3,
-    description: "3 large task groups",
-    path: "M200-280h133v-400H200v400ZM413-280h133v-400H413v400ZM626-280h133v-400H626v400Z",
-  },
-  {
-    count: 4,
-    description: "4 task groups (default)",
-    path: "M200-280h80v-400H200v400ZM360-280h80v-400H360v400ZM520-280h80v-400H520v400ZM680-280h80v-400H680v400Z",
-  },
-  {
-    count: 5,
-    description: "5 compact task groups",
-    path: "M200-280h48v-400H200v400ZM328-280h48v-400H328v400ZM456-280h48v-400H456v400ZM584-280h48v-400H584v400ZM712-280h48v-400H712v400Z",
-  },
-];
-
-const COLUMN_ICON_FRAME =
-  "M121-280v-400q0-33 23.5-56.5T201-760h559q33 0 56.5 23.5T840-680v400q0 33-23.5 56.5T760-200H201q-33 0-56.5-23.5T121-280Z";
-
-function ColumnLayoutIcon({ count, className = "h-5 w-5" }) {
-  const option = COLUMN_LAYOUT_OPTIONS.find((item) => item.count === count) ?? COLUMN_LAYOUT_OPTIONS[1];
-
-  return (
-    <svg viewBox="0 -960 960 960" className={className} fill="currentColor" aria-hidden="true">
-      <path d={COLUMN_ICON_FRAME + option.path} fillRule="evenodd" />
-    </svg>
-  );
-}
 
 function formatRelativeTime(value) {
   if (!value) return "";
@@ -60,8 +27,9 @@ function formatRelativeTime(value) {
   return new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-function ActivityLogPreview({ activity = [] }) {
+function ActivityLogPreview({ activity = [], onReload }) {
   const [startIndex, setStartIndex] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
   const entry = activity[startIndex] ?? null;
   const canShowNewer = startIndex > 0;
   const canShowOlder = startIndex + 1 < activity.length;
@@ -79,28 +47,40 @@ function ActivityLogPreview({ activity = [] }) {
   }
 
   const controls = (
-    <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
+    <div className="flex shrink-0 items-center gap-2">
+      <div className="inline-flex overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={showNewer}
+          disabled={!canShowNewer}
+          className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+          aria-label="Show newer activity"
+        >
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">
+            keyboard_arrow_up
+          </span>
+        </button>
+        <div className="w-px bg-white/60" />
+        <button
+          type="button"
+          onClick={showOlder}
+          disabled={!canShowOlder}
+          className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+          aria-label="Show older activity"
+        >
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">
+            keyboard_arrow_down
+          </span>
+        </button>
+      </div>
       <button
         type="button"
-        onClick={showNewer}
-        disabled={!canShowNewer}
-        className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
-        aria-label="Show newer activity"
+        onClick={() => setIsExpanded(true)}
+        className="flex h-7 w-8 items-center justify-center rounded-full border border-white/60 bg-white/30 text-[#0D1E4C] shadow-sm backdrop-blur-sm transition hover:bg-white/60"
+        aria-label="Expand task history"
       >
         <span className="material-symbols-outlined text-lg" aria-hidden="true">
-          keyboard_arrow_up
-        </span>
-      </button>
-      <div className="w-px bg-white/60" />
-      <button
-        type="button"
-        onClick={showOlder}
-        disabled={!canShowOlder}
-        className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
-        aria-label="Show older activity"
-      >
-        <span className="material-symbols-outlined text-lg" aria-hidden="true">
-          keyboard_arrow_down
+          expand_content
         </span>
       </button>
     </div>
@@ -111,15 +91,30 @@ function ActivityLogPreview({ activity = [] }) {
       <div className="flex items-center gap-2">
         {entry ? (
           <article className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/50 bg-white/30 px-3.5 py-2 text-sm backdrop-blur-sm">
-            <span className="text-[#52627a]">You marked</span>
-            <span className="max-w-60 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
-              {entry.taskTitle || "Task"}
-            </span>
-            <span className="text-[#52627a]">as</span>
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-bold text-emerald-700">
-              {entry.toStatus}
-            </span>
-            <span className="ml-auto shrink-0 text-[#94a3b8]">{formatRelativeTime(entry.changedAt)}</span>
+            {entry.type === "assignment" ? (
+              <>
+                <span className="max-w-35 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
+                  {entry.assignedBy}
+                </span>
+                <span className="text-[#52627a]">assigned</span>
+                <span className="max-w-60 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
+                  {entry.taskTitle || "Task"}
+                </span>
+                <span className="text-[#52627a]">to you</span>
+              </>
+            ) : (
+              <>
+                <span className="text-[#52627a]">You marked</span>
+                <span className="max-w-60 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
+                  {entry.taskTitle || "Task"}
+                </span>
+                <span className="text-[#52627a]">as</span>
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-bold text-emerald-700">
+                  {entry.toStatus}
+                </span>
+              </>
+            )}
+            <span className="ml-auto shrink-0 text-[#94a3b8]">{formatRelativeTime(entry.occurredAt)}</span>
           </article>
         ) : (
           <div className="flex-1 rounded-full border border-dashed border-white/60 bg-white/20 px-3.5 py-2 text-sm font-bold text-[#94a3b8]">
@@ -129,18 +124,51 @@ function ActivityLogPreview({ activity = [] }) {
 
         {controls}
       </div>
+
+      {isExpanded ? (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-transparent p-4 backdrop-blur-lg"
+            onClick={() => setIsExpanded(false)}
+          >
+            <div
+              className="h-full max-h-[calc(80vh-4rem)] w-full max-w-7xl overflow-hidden rounded-[28px] border border-white/60 bg-white/60 backdrop-blur-3xl p-8 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <TaskHistory
+                activity={activity}
+                onClose={async () => {
+                  setIsExpanded(false);
+                  await onReload?.();
+                }}
+              />
+            </div>
+          </div>
+        </Portal>
+      ) : null}
     </section>
   );
 }
 
 export default function EmployeeWorkspaceView() {
-  const [columnLayout, setColumnLayoutState] = useState(4);
   const [tasks, setTasks] = useState([]);
-  const [groups, setGroups] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [activity, setActivity] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [editingTask, setEditingTask] = useState(null);
+
+  const employeesById = useMemo(
+    () => new Map(employees.map((employee) => [employee.user_id, employee])),
+    [employees],
+  );
+  const enrichedTasks = useMemo(
+    () => tasks.map((task) => enrichTaskWithPeople(task, employeesById)),
+    [tasks, employeesById],
+  );
+  const currentEditingTask = editingTask
+    ? enrichedTasks.find((task) => task.task_id === editingTask.task_id) ?? null
+    : null;
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -166,11 +194,10 @@ export default function EmployeeWorkspaceView() {
       ]);
 
       if (!tasksResponse.ok) {
-        throw new Error(tasksResult.error || "Could not load workspace.");
+        throw new Error(tasksResult.error || "Could not load tasks.");
       }
 
       setTasks(tasksResult.tasks ?? []);
-      setGroups(tasksResult.groups ?? []);
       setEmployees(tasksResult.employees ?? []);
       setActivity(activityResponse.ok ? activityResult.activity ?? [] : []);
     } catch (loadError) {
@@ -187,26 +214,9 @@ export default function EmployeeWorkspaceView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const stored = Number(window.localStorage.getItem(COLUMN_LAYOUT_STORAGE_KEY));
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time read of a browser-only API on mount
-    if ([3, 4, 5].includes(stored)) setColumnLayoutState(stored);
-  }, []);
-
-  function selectColumnLayout(count) {
-    setColumnLayoutState(count);
-    window.localStorage.setItem(COLUMN_LAYOUT_STORAGE_KEY, String(count));
-  }
-
   async function completeTask(task) {
     if (!task?.task_id) return;
 
-    const previousTasks = tasks;
-    setTasks((current) =>
-      current.map((currentTask) =>
-        currentTask.task_id === task.task_id ? { ...currentTask, status: "Completed" } : currentTask,
-      ),
-    );
     setError("");
 
     try {
@@ -221,13 +231,17 @@ export default function EmployeeWorkspaceView() {
         throw new Error(result.error || "Could not mark task as completed.");
       }
 
+      // Completed tasks move to Task History — take it off the active board
+      // and close its detail panel if it was open.
+      setTasks((current) => current.filter((currentTask) => currentTask.task_id !== task.task_id));
+      setEditingTask(null);
+
       const activityResponse = await fetch("/api/employee-activity", { headers: await authHeaders() });
       const activityResult = await activityResponse.json();
       if (activityResponse.ok) {
         setActivity(activityResult.activity ?? []);
       }
     } catch (completeError) {
-      setTasks(previousTasks);
       setError(completeError.message);
       throw completeError;
     }
@@ -235,47 +249,48 @@ export default function EmployeeWorkspaceView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="relative mb-4 flex shrink-0 items-center justify-center">
-        <h1 className="text-2xl font-black text-[#0D1E4C]">My Workspace</h1>
-        <div className="absolute right-0 flex items-center gap-2">
-          <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 px-1 py-1.5 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
-            {COLUMN_LAYOUT_OPTIONS.map((option) => {
-              const isSelected = option.count === columnLayout;
+      <div className="mb-4 shrink-0">
+        <h1 className="text-2xl font-black text-[#0D1E4C]">Tasks</h1>
+        {error ? (
+          <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700">
+            {error}
+          </p>
+        ) : null}
+      </div>
 
-              return (
-                <button
-                  type="button"
-                  key={option.count}
-                  onClick={() => selectColumnLayout(option.count)}
-                  aria-label={`${option.count} columns`}
-                  aria-pressed={isSelected}
-                  title={`${option.count} columns — ${option.description}`}
-                  className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                    isSelected ? "bg-[#0D1E4C] text-white" : "text-[#0D1E4C] hover:bg-white/60"
-                  }`}
-                >
-                  <ColumnLayoutIcon count={option.count} className="h-4 w-4" />
-                </button>
-              );
-            })}
-          </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="flex h-full items-start gap-6 px-1 py-3">
+          {enrichedTasks.map((task) => (
+            <div key={task.task_id} className="w-80 shrink-0">
+              <TaskCard
+                employees={employees}
+                onComplete={completeTask}
+                onOpen={setEditingTask}
+                task={task}
+                tasks={tasks}
+                viewOnly
+              />
+            </div>
+          ))}
+
+          {!enrichedTasks.length && !isLoading ? (
+            <div className="flex w-full items-center justify-center rounded-2xl border-2 border-dashed border-[#cbd5e1] px-6 py-16 text-center text-sm font-bold text-[#94a3b8]">
+              No tasks assigned to you.
+            </div>
+          ) : null}
         </div>
       </div>
 
-      <div className="min-h-0 flex-1">
-        <WorkspaceBoard
-          columnLayout={columnLayout}
-          employees={employees}
-          error={error}
-          groups={groups}
-          isLoading={isLoading}
-          onTaskComplete={completeTask}
-          tasks={tasks}
-          viewOnly
-        />
-      </div>
+      <ActivityLogPreview activity={activity} onReload={loadWorkspaceData} />
 
-      <ActivityLogPreview activity={activity} />
+      {currentEditingTask ? (
+        <TaskViewPanel
+          employees={employees}
+          onClose={() => setEditingTask(null)}
+          onComplete={completeTask}
+          task={currentEditingTask}
+        />
+      ) : null}
     </div>
   );
 }
