@@ -1,78 +1,178 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import WorkspaceBoard from "@/components/WorkspaceBoard";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
-const columns = [
-  "Task",
-  "Owner",
-  "Assigned to",
-  "Status",
-  "Priority",
-  "Due Date",
-  "Timeline",
-  "Comments",
-  "Files",
-  "Last updated",
+const COLUMN_LAYOUT_STORAGE_KEY = "optima-board-columns";
+
+// Material Symbols only ships "view_column" (3 bars). These 4/5-bar variants
+// reuse its exact outer frame and gap so they read as the same icon family.
+const COLUMN_LAYOUT_OPTIONS = [
+  {
+    count: 3,
+    description: "3 large task groups",
+    path: "M200-280h133v-400H200v400ZM413-280h133v-400H413v400ZM626-280h133v-400H626v400Z",
+  },
+  {
+    count: 4,
+    description: "4 task groups (default)",
+    path: "M200-280h80v-400H200v400ZM360-280h80v-400H360v400ZM520-280h80v-400H520v400ZM680-280h80v-400H680v400Z",
+  },
+  {
+    count: 5,
+    description: "5 compact task groups",
+    path: "M200-280h48v-400H200v400ZM328-280h48v-400H328v400ZM456-280h48v-400H456v400ZM584-280h48v-400H584v400ZM712-280h48v-400H712v400Z",
+  },
 ];
 
-const groupColors = ["#579BFC", "#00C875", "#FDAB3D", "#DF2F4A", "#A855F7"];
+const COLUMN_ICON_FRAME =
+  "M121-280v-400q0-33 23.5-56.5T201-760h559q33 0 56.5 23.5T840-680v400q0 33-23.5 56.5T760-200H201q-33 0-56.5-23.5T121-280Z";
 
-const statusStyles = {
-  Open: "bg-[#579BFC] text-white",
-  "In Progress": "bg-[#FDAB3D] text-white",
-  Completed: "bg-[#00C875] text-white",
-  Cancelled: "bg-[#DF2F4A] text-white",
-};
+function ColumnLayoutIcon({ count, className = "h-5 w-5" }) {
+  const option = COLUMN_LAYOUT_OPTIONS.find((item) => item.count === count) ?? COLUMN_LAYOUT_OPTIONS[1];
+
+  return (
+    <svg viewBox="0 -960 960 960" className={className} fill="currentColor" aria-hidden="true">
+      <path d={COLUMN_ICON_FRAME + option.path} fillRule="evenodd" />
+    </svg>
+  );
+}
+
+function formatRelativeTime(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.round(diffMs / 60000);
+
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function ActivityLogPreview({ activity = [] }) {
+  const [startIndex, setStartIndex] = useState(0);
+  const entry = activity[startIndex] ?? null;
+  const canShowNewer = startIndex > 0;
+  const canShowOlder = startIndex + 1 < activity.length;
+
+  useEffect(() => {
+    queueMicrotask(() => setStartIndex(0));
+  }, [activity]);
+
+  function showNewer() {
+    setStartIndex((current) => Math.max(0, current - 1));
+  }
+
+  function showOlder() {
+    setStartIndex((current) => Math.min(Math.max(activity.length - 1, 0), current + 1));
+  }
+
+  const controls = (
+    <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
+      <button
+        type="button"
+        onClick={showNewer}
+        disabled={!canShowNewer}
+        className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+        aria-label="Show newer activity"
+      >
+        <span className="material-symbols-outlined text-lg" aria-hidden="true">
+          keyboard_arrow_up
+        </span>
+      </button>
+      <div className="w-px bg-white/60" />
+      <button
+        type="button"
+        onClick={showOlder}
+        disabled={!canShowOlder}
+        className="flex h-7 w-8 items-center justify-center text-[#0D1E4C] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-35"
+        aria-label="Show older activity"
+      >
+        <span className="material-symbols-outlined text-lg" aria-hidden="true">
+          keyboard_arrow_down
+        </span>
+      </button>
+    </div>
+  );
+
+  return (
+    <section className="mt-4 shrink-0 rounded-full border border-white/50 bg-white/20 px-4 py-2.5 shadow-[0_18px_50px_rgba(13,30,76,0.12)] backdrop-blur-xl">
+      <div className="flex items-center gap-2">
+        {entry ? (
+          <article className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/50 bg-white/30 px-3.5 py-2 text-sm backdrop-blur-sm">
+            <span className="text-[#52627a]">You marked</span>
+            <span className="max-w-60 truncate rounded-full border border-[#0D1E4C]/15 bg-white/70 px-3 py-1 font-bold text-[#0D1E4C]">
+              {entry.taskTitle || "Task"}
+            </span>
+            <span className="text-[#52627a]">as</span>
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-bold text-emerald-700">
+              {entry.toStatus}
+            </span>
+            <span className="ml-auto shrink-0 text-[#94a3b8]">{formatRelativeTime(entry.changedAt)}</span>
+          </article>
+        ) : (
+          <div className="flex-1 rounded-full border border-dashed border-white/60 bg-white/20 px-3.5 py-2 text-sm font-bold text-[#94a3b8]">
+            No activity yet.
+          </div>
+        )}
+
+        {controls}
+      </div>
+    </section>
+  );
+}
 
 export default function EmployeeWorkspaceView() {
-  const [workspaces, setWorkspaces] = useState([]);
+  const [columnLayout, setColumnLayoutState] = useState(4);
   const [tasks, setTasks] = useState([]);
   const [groups, setGroups] = useState([]);
-  const [members, setMembers] = useState([]);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [employees, setEmployees] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [error, setError] = useState("");
-
-  const selectedWorkspace = useMemo(
-    () =>
-      workspaces.find(
-        (workspace) => String(workspace.workspace_id) === String(selectedWorkspaceId),
-      ) ?? null,
-    [selectedWorkspaceId, workspaces],
-  );
+  const [isLoading, setIsLoading] = useState(true);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
     const { data } = await supabase.auth.getSession();
-
     return {
       Authorization: `Bearer ${data.session?.access_token ?? ""}`,
     };
   }
 
-  async function loadWorkspace(workspaceId = selectedWorkspaceId) {
+  async function loadWorkspaceData() {
     setError("");
+    setIsLoading(true);
 
     try {
-      const query = workspaceId ? `?workspaceId=${workspaceId}` : "";
-      const response = await fetch(`/api/employee-workspaces${query}`, {
-        headers: await authHeaders(),
-      });
-      const result = await response.json();
+      const headers = await authHeaders();
+      const [tasksResponse, activityResponse] = await Promise.all([
+        fetch("/api/employee-tasks", { headers }),
+        fetch("/api/employee-activity", { headers }),
+      ]);
+      const [tasksResult, activityResult] = await Promise.all([
+        tasksResponse.json(),
+        activityResponse.json(),
+      ]);
 
-      if (!response.ok) {
-        throw new Error(result.error || "Could not load workspace.");
+      if (!tasksResponse.ok) {
+        throw new Error(tasksResult.error || "Could not load workspace.");
       }
 
-      setWorkspaces(result.workspaces ?? []);
-      setTasks(result.tasks ?? []);
-      setGroups(result.groups ?? []);
-      setMembers(result.members ?? []);
-      setSelectedWorkspaceId(
-        result.selectedWorkspaceId ?? result.workspaces?.[0]?.workspace_id ?? "",
-      );
+      setTasks(tasksResult.tasks ?? []);
+      setGroups(tasksResult.groups ?? []);
+      setEmployees(tasksResult.employees ?? []);
+      setActivity(activityResponse.ok ? activityResult.activity ?? [] : []);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -81,344 +181,101 @@ export default function EmployeeWorkspaceView() {
   }
 
   useEffect(() => {
-    const timeout = setTimeout(() => loadWorkspace(""), 0);
-
-    return () => clearTimeout(timeout);
+    (async () => {
+      await loadWorkspaceData();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <div
-      className={`grid h-full min-h-0 overflow-hidden rounded-2xl transition-[grid-template-columns] ${
-        isSidebarCollapsed
-          ? "lg:grid-cols-[40px_minmax(0,1fr)]"
-          : "lg:grid-cols-[300px_minmax(0,1fr)]"
-      }`}
-    >
-      <aside className="relative overflow-visible border-r border-white/40 px-3 py-4">
-        <button
-          type="button"
-          onClick={() => setIsSidebarCollapsed((current) => !current)}
-          className="absolute right-1.5 top-6.5 flex items-center justify-center font-bold text-[#1E293B] hover:text-[#1E40AF]"
-          aria-label={isSidebarCollapsed ? "Expand workspace menu" : "Collapse workspace menu"}
-          title={isSidebarCollapsed ? "Expand workspace menu" : "Collapse workspace menu"}
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{ fontSize: "26px" }}
-            aria-hidden="true"
-          >
-            {isSidebarCollapsed ? "left_panel_open" : "left_panel_close"}
-          </span>
-        </button>
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(COLUMN_LAYOUT_STORAGE_KEY));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time read of a browser-only API on mount
+    if ([3, 4, 5].includes(stored)) setColumnLayoutState(stored);
+  }, []);
 
-        {isSidebarCollapsed ? (
-          <div className="flex h-full flex-col items-center pt-20 text-[#07183b]">
-            <span className="rotate-90 whitespace-nowrap text-md font-semibold tracking-widest">
-              Workspace
-            </span>
-          </div>
-        ) : (
-          <>
-            <h2 className="pt-2 text-lg font-medium text-[#0D1E4C]">Workspace</h2>
-            <div className="mt-6 space-y-2">
-              {workspaces.map((workspace) => {
-                const isActive = workspace.workspace_id === selectedWorkspaceId;
+  function selectColumnLayout(count) {
+    setColumnLayoutState(count);
+    window.localStorage.setItem(COLUMN_LAYOUT_STORAGE_KEY, String(count));
+  }
 
-                return (
-                  <button
-                    key={workspace.workspace_id}
-                    type="button"
-                    onClick={() => loadWorkspace(workspace.workspace_id)}
-                    className={`flex h-12 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition ${
-                      isActive
-                        ? "bg-[#cfe7ff] text-[#233246]"
-                        : "text-[#667085] hover:bg-[#eef6ff] hover:text-[#233246]"
-                    }`}
-                  >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-md text-xl text-[#475467]">
-                      ▣
-                    </span>
-                    <span className="min-w-0 truncate">{workspace.workspace_name}</span>
-                  </button>
-                );
-              })}
+  async function completeTask(task) {
+    if (!task?.task_id) return;
 
-              {!workspaces.length && !isLoading ? (
-                <p className="rounded-md border border-dashed border-[#c4ccdc] px-3 py-4 text-sm text-[#667085]">
-                  Assigned workspaces will appear here.
-                </p>
-              ) : null}
-            </div>
-          </>
-        )}
-      </aside>
+    const previousTasks = tasks;
+    setTasks((current) =>
+      current.map((currentTask) =>
+        currentTask.task_id === task.task_id ? { ...currentTask, status: "Completed" } : currentTask,
+      ),
+    );
+    setError("");
 
-      <section className="flex min-h-0 min-w-0 flex-col pl-6">
-        <div className="shrink-0 border-b border-[#d6deed] pr-6 py-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-3xl font-bold text-[#2f3442]">
-              {selectedWorkspace?.workspace_name ?? "Workspace"}
-            </h1>
-            <span className="rounded-full border border-[#c4ccdc] bg-white/40 px-3 py-1 text-xs font-bold text-[#667085]">
-              View only
-            </span>
-          </div>
+    try {
+      const response = await fetch("/api/employee-tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ taskId: task.task_id }),
+      });
+      const result = await response.json();
 
-          {error ? (
-            <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-              {error}
-            </p>
-          ) : null}
-        </div>
+      if (!response.ok) {
+        throw new Error(result.error || "Could not mark task as completed.");
+      }
 
-        <div className="min-h-0 flex-1 overflow-auto py-6 pr-6">
-          {selectedWorkspace ? (
-            <>
-              {(groups.length ? groups : [{ group_id: "__default", group_name: "To-Do" }]).map(
-                (group, index) => {
-                  const firstGroupId = groups[0]?.group_id;
-                  const groupTasks = tasks.filter(
-                    (task) =>
-                      task.group_id === group.group_id ||
-                      ((group.group_id === firstGroupId || group.group_id === "__default") &&
-                        task.group_id == null),
-                  );
-
-                  return (
-                    <ReadOnlyTaskGroup
-                      key={group.group_id}
-                      title={group.group_name}
-                      color={groupColors[index % groupColors.length]}
-                      tasks={groupTasks}
-                      members={members}
-                    />
-                  );
-                },
-              )}
-
-              {!tasks.length ? (
-                <p className="mt-4 rounded-xl border border-dashed border-white/60 px-6 py-12 text-center text-sm font-medium text-[#0D1E4C]/60">
-                  No tasks assigned to you in this workspace.
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p className="mt-4 rounded-xl border border-dashed border-white/60 px-6 py-12 text-center text-sm font-medium text-[#0D1E4C]/60">
-              Workspaces with tasks assigned to you will appear here.
-            </p>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function ReadOnlyTaskGroup({ title, color, tasks, members }) {
-  const gridTemplateColumns = `32px 44px ${columns
-    .map((column) => (column === "Task" ? "360px" : "190px"))
-    .join(" ")}`;
+      const activityResponse = await fetch("/api/employee-activity", { headers: await authHeaders() });
+      const activityResult = await activityResponse.json();
+      if (activityResponse.ok) {
+        setActivity(activityResult.activity ?? []);
+      }
+    } catch (completeError) {
+      setTasks(previousTasks);
+      setError(completeError.message);
+      throw completeError;
+    }
+  }
 
   return (
-    <section className="mb-10 w-max min-w-full rounded-xl">
-      <div className="mb-3 flex min-w-full items-center gap-4">
-        <span
-          className="sticky left-0 z-30 flex items-center gap-3 rounded-md pr-4 text-2xl font-bold"
-          style={{ color }}
-        >
-          <span className="text-xl">⌄</span>
-          {title}
-        </span>
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="relative mb-4 flex shrink-0 items-center justify-center">
+        <h1 className="text-2xl font-black text-[#0D1E4C]">My Workspace</h1>
+        <div className="absolute right-0 flex items-center gap-2">
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 px-1 py-1.5 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
+            {COLUMN_LAYOUT_OPTIONS.map((option) => {
+              const isSelected = option.count === columnLayout;
 
-      <div className="overflow-visible">
-        <div
-          className="sticky top-0 z-10 grid border-b border-[#d6deed] text-sm font-bold text-[#2f3442]"
-          style={{ gridTemplateColumns }}
-        >
-          <div className="sticky left-0 z-40 bg-white p-2" style={{ gridColumn: "span 2" }} />
-          {columns.map((column) => (
-            <div
-              key={column}
-              className={`p-3 ${
-                column === "Task" ? "sticky left-[76px] z-40 bg-white" : "bg-white/30 backdrop-blur-sm"
-              }`}
-            >
-              {column}
-            </div>
-          ))}
-        </div>
-
-        {tasks.length ? (
-          tasks.map((task) => (
-            <ReadOnlyTaskRow
-              key={task.task_id}
-              task={task}
-              members={members}
-              gridTemplateColumns={gridTemplateColumns}
-            />
-          ))
-        ) : (
-          <div
-            className="grid border-b border-[#d6deed] text-sm text-[#667085]"
-            style={{ gridTemplateColumns }}
-          >
-            <div className="sticky left-0 z-20 bg-white" />
-            <div className="sticky left-[32px] z-20 bg-white p-3" />
-            <div className="p-3" style={{ gridColumn: `span ${columns.length}` }}>
-              No tasks in this group.
-            </div>
+              return (
+                <button
+                  type="button"
+                  key={option.count}
+                  onClick={() => selectColumnLayout(option.count)}
+                  aria-label={`${option.count} columns`}
+                  aria-pressed={isSelected}
+                  title={`${option.count} columns — ${option.description}`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                    isSelected ? "bg-[#0D1E4C] text-white" : "text-[#0D1E4C] hover:bg-white/60"
+                  }`}
+                >
+                  <ColumnLayoutIcon count={option.count} className="h-4 w-4" />
+                </button>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
-    </section>
-  );
-}
 
-function ReadOnlyTaskRow({ task, members, gridTemplateColumns }) {
-  const status = task.status || "Open";
-
-  return (
-    <div
-      className="relative grid border-b border-[#d6deed] bg-transparent text-sm text-[#2f3442] transition hover:bg-white/20"
-      style={{ gridTemplateColumns }}
-    >
-      <div className="sticky left-0 z-20 flex items-center justify-center bg-white p-2 text-[#cbd5e1]">
-        <span className="select-none text-base font-bold leading-none">⋮⋮</span>
-      </div>
-      <div className="sticky left-[32px] z-20 flex items-center justify-center bg-white p-3" />
-      {columns.map((column) => (
-        <ReadOnlyTaskCell
-          key={column}
-          column={column}
-          task={task}
-          status={status}
-          members={members}
+      <div className="min-h-0 flex-1">
+        <WorkspaceBoard
+          columnLayout={columnLayout}
+          employees={employees}
+          error={error}
+          groups={groups}
+          isLoading={isLoading}
+          onTaskComplete={completeTask}
+          tasks={tasks}
+          viewOnly
         />
-      ))}
+      </div>
+
+      <ActivityLogPreview activity={activity} />
     </div>
   );
-}
-
-function ReadOnlyTaskCell({ column, task, status, members }) {
-  if (column === "Task") {
-    return (
-      <div className="sticky left-[76px] z-20 block min-h-14 w-full overflow-hidden bg-white p-3 text-left">
-        <p className="truncate font-semibold">{task.title}</p>
-        {task.description ? (
-          <p className="mt-1 line-clamp-1 text-xs text-[#667085]">{task.description}</p>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (column === "Status") {
-    return (
-      <div className="p-2">
-        <span
-          className={`flex h-10 w-full items-center justify-center rounded-md px-2 text-center text-sm font-bold ${
-            statusStyles[status] ?? statusStyles.Open
-          }`}
-        >
-          {status}
-        </span>
-      </div>
-    );
-  }
-
-  if (column === "Owner") {
-    return <TableText value={memberName(members, task.owner_id)} />;
-  }
-
-  if (column === "Assigned to") {
-    const member = members.find((entry) => entry.user_id === task.assigned_to);
-
-    return (
-      <div className="flex min-h-14 items-center justify-center gap-2 p-2 text-sm font-semibold text-[#667085]">
-        {member ? (
-          <>
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#07183b] text-xs font-bold text-white">
-              {getInitials(member)}
-            </span>
-            <span className="min-w-0 truncate">{getDisplayName(member)}</span>
-          </>
-        ) : (
-          <span className="text-[#98a2b3]">Unassigned</span>
-        )}
-      </div>
-    );
-  }
-
-  if (column === "Priority") {
-    return <TableText value={task.priority ?? "Medium"} />;
-  }
-
-  if (column === "Due Date") {
-    return <TableText value={formatDate(task.end_datetime)} />;
-  }
-
-  if (column === "Timeline") {
-    return <TableText value={formatTimeline(task.start_datetime, task.end_datetime)} />;
-  }
-
-  if (column === "Comments") {
-    return <TableText value="—" />;
-  }
-
-  if (column === "Files") {
-    return <TableText value="—" />;
-  }
-
-  if (column === "Last updated") {
-    return <TableText value={formatDate(task.updated_at)} />;
-  }
-
-  return <TableText value="-" />;
-}
-
-function TableText({ value }) {
-  return <div className="min-h-14 p-3 text-center text-[#667085]">{value || "-"}</div>;
-}
-
-function memberName(members, userId) {
-  const member = members.find((entry) => entry.user_id === userId);
-  return member ? getDisplayName(member) : "—";
-}
-
-function getDisplayName(member) {
-  return member?.full_name || member?.username || member?.email || "Employee";
-}
-
-function getInitials(member) {
-  const name = getDisplayName(member);
-  const parts = name.split(/[\s._-]+/).filter(Boolean);
-
-  if (!parts.length) {
-    return "?";
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
-function formatDate(value) {
-  if (!value) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(value));
-}
-
-function formatTimeline(start, end) {
-  if (!start && !end) {
-    return "-";
-  }
-
-  return `${formatDate(start)} - ${formatDate(end)}`;
 }

@@ -708,7 +708,7 @@ export function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign
   );
 }
 
-export function TaskCard({ compact = false, employees, groupName, onAiAssign, onApprove, onAssignEmployee, onOpen, onReject, onUnassignEmployee, task, tasks }) {
+export function TaskCard({ compact = false, employees, groupName, onAiAssign, onApprove, onAssignEmployee, onComplete, onOpen, onReject, onUnassignEmployee, task, tasks, viewOnly = false }) {
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const actionLabels = getTaskActionLabels(task);
@@ -717,6 +717,7 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
   const isAiCreated = task.source === "optimus_ai";
   const isPendingApproval = isAiCreated && task.ai_state !== "accepted";
   const approvedBy = task.reasons?.approvedBy;
+  const isCompleted = getStatusKey(task.status) === "completed";
 
   async function handleApprove(event) {
     event.stopPropagation();
@@ -735,6 +736,17 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
     setIsDeciding(true);
     try {
       await onReject?.(task);
+    } finally {
+      setIsDeciding(false);
+    }
+  }
+
+  async function handleComplete(event) {
+    event.stopPropagation();
+    if (isDeciding || isCompleted) return;
+    setIsDeciding(true);
+    try {
+      await onComplete?.(task);
     } finally {
       setIsDeciding(false);
     }
@@ -804,7 +816,20 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
           ) : (
             <AssigneeProfile employee={null} />
           )}
-          {isPendingApproval ? (
+          {viewOnly ? (
+            <button
+              type="button"
+              onClick={handleComplete}
+              disabled={isDeciding || isCompleted}
+              className={`mt-1 w-full rounded-2xl border text-[11px] font-black transition disabled:cursor-not-allowed ${
+                isCompleted
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-white/60 bg-slate-200 text-slate-800 hover:scale-[1.05] hover:border-slate-300 disabled:opacity-60"
+              } ${compact ? "px-3 py-2" : "px-3 py-2.5"}`}
+            >
+              {isCompleted ? "Completed" : isDeciding ? "Marking…" : "Mark as Completed"}
+            </button>
+          ) : isPendingApproval ? (
             <div className="mt-1 inline-flex w-full overflow-hidden rounded-full border border-white/60 bg-slate-200 shadow-sm backdrop-blur-sm">
               <button
                 type="button"
@@ -1793,6 +1818,130 @@ export function TaskEditPanel({
   );
 }
 
+// Read-only sibling of TaskEditPanel — same slide-in shell, but nothing on
+// it is editable. Used by the employee board, where task details are for
+// viewing only; the sole action is marking the task complete (also
+// available directly on the card).
+export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
+  const [isCompleting, setIsCompleting] = useState(false);
+
+  if (!task) return null;
+
+  const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
+  const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
+  const isCompleted = getStatusKey(task.status) === "completed";
+  const assignees = (task.assigneeIds ?? [])
+    .map((userId) => employees.find((employee) => employee.user_id === userId))
+    .filter(Boolean);
+
+  async function handleComplete() {
+    if (isCompleting || isCompleted) return;
+    setIsCompleting(true);
+    try {
+      await onComplete?.(task);
+    } finally {
+      setIsCompleting(false);
+    }
+  }
+
+  return createPortal(
+    <div className="pointer-events-none fixed inset-y-0 right-0 z-[999] flex w-full items-start justify-end px-7 pb-8 pt-26">
+      <button
+        type="button"
+        className="pointer-events-auto absolute inset-0 cursor-default"
+        onClick={onClose}
+        aria-label="Close task details"
+      />
+      <div className="pointer-events-auto relative z-10 flex max-h-[calc(100vh-9.5rem)] w-full max-w-sm flex-col overflow-hidden rounded-[2rem] border border-white/60 bg-white/10 shadow-[0_24px_80px_rgba(13,30,76,0.25)] backdrop-blur-md">
+        <div className="grid shrink-0 grid-cols-3 items-center gap-4 px-6 pb-6 pt-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
+            aria-label="Close task details"
+          >
+            <span className="material-symbols-outlined text-xl" aria-hidden="true">
+              close
+            </span>
+          </button>
+          <h3 className="justify-self-center text-xl font-black text-[#0D1E4C]">Details</h3>
+          <span className="justify-self-end rounded-full border border-white/60 bg-white/40 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-[#0D1E4C]">
+            View only
+          </span>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
+              {formatPillLabel(task.status, "Open")}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${priorityTone.chip}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
+              {formatPillLabel(task.priority, "Medium")} PRIORITY
+            </span>
+          </div>
+
+          <h2 className="text-xl font-black text-[#0D1E4C]">{task.title || "Untitled task"}</h2>
+
+          {task.description ? (
+            <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-[#475569]">{task.description}</p>
+          ) : (
+            <p className="text-sm font-semibold text-[#94a3b8]">No description.</p>
+          )}
+
+          <TimelineRail start={task.start_datetime} end={task.end_datetime} />
+
+          <section className="space-y-2">
+            <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Assigned to</p>
+            {assignees.length ? (
+              assignees.map((assignee) => <AssigneeProfile key={assignee.user_id} employee={assignee} />)
+            ) : (
+              <AssigneeProfile employee={null} />
+            )}
+          </section>
+
+          {task.requiredSkills?.length ? (
+            <section className="space-y-2">
+              <p className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Required skills</p>
+              <div className="flex flex-wrap gap-1.5">
+                {task.requiredSkills.map((skill) => (
+                  <span
+                    key={skill.skill_id}
+                    className="rounded-full bg-white/60 px-3 py-1 text-xs font-bold text-[#0D1E4C]"
+                  >
+                    {skill.skill_name}
+                  </span>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        <div className="shrink-0 px-6 pb-6 pt-2">
+          <button
+            type="button"
+            onClick={handleComplete}
+            disabled={isCompleting || isCompleted}
+            className={`w-full rounded-2xl border py-3 text-sm font-black transition disabled:cursor-not-allowed ${
+              isCompleted
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-white/60 bg-slate-200 text-slate-800 hover:scale-[1.02] disabled:opacity-60"
+            }`}
+          >
+            {isCompleted ? "Completed" : isCompleting ? "Marking…" : "Mark as Completed"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function DeleteGroupModal({ count, name, onCancel, onConfirm }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -1872,7 +2021,7 @@ function DeleteGroupModal({ count, name, onCancel, onConfirm }) {
   );
 }
 
-function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRename }) {
+function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRename, viewOnly = false }) {
   // Keyed by `name` at the call site, so a rename (local or external) remounts
   // this with a fresh draftName instead of needing an effect to resync it.
   const [draftName, setDraftName] = useState(name);
@@ -1889,6 +2038,16 @@ function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRe
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, [isMenuOpen]);
+
+  if (viewOnly) {
+    return (
+      <div className="mb-4 flex shrink-0 items-center gap-2 px-1">
+        <span className="h-4 w-4 rounded-full border-2 border-[#cbd5e1]" />
+        <span className="min-w-0 flex-1 truncate text-sm font-black text-[#0D1E4C]">{name}</span>
+        <span className="rounded-full bg-[#eef2f8] px-2 py-0.5 text-xs font-bold text-[#94a3b8]">{count}</span>
+      </div>
+    );
+  }
 
   function saveName() {
     const nextName = draftName.trim();
@@ -2012,6 +2171,7 @@ export default function WorkspaceBoard({
   onTaskApprove,
   onTaskArchive,
   onTaskAssignEmployee,
+  onTaskComplete,
   onTaskCreate,
   onTaskDelete,
   onTaskReject,
@@ -2019,6 +2179,7 @@ export default function WorkspaceBoard({
   onTaskUpdate,
   skills = [],
   tasks = [],
+  viewOnly = false,
 }) {
   const [editingTask, setEditingTask] = useState(null);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
@@ -2164,6 +2325,7 @@ export default function WorkspaceBoard({
               onRename={onGroupRename}
               onGroupCreate={onGroupCreate}
               onGroupDelete={onGroupDelete}
+              viewOnly={viewOnly}
             />
 
             <div
@@ -2184,11 +2346,13 @@ export default function WorkspaceBoard({
                   onAiAssign={onTaskAiAssign}
                   onApprove={onTaskApprove}
                   onAssignEmployee={onTaskAssignEmployee}
+                  onComplete={onTaskComplete}
                   onOpen={setEditingTask}
                   onReject={onTaskReject}
                   onUnassignEmployee={onTaskUnassignEmployee}
                   task={task}
                   tasks={tasks}
+                  viewOnly={viewOnly}
                 />
               ))}
 
@@ -2209,60 +2373,71 @@ export default function WorkspaceBoard({
         ) : null}
       </div>
 
-      <div className="absolute right-2 top-1/2 z-30 -translate-y-1/2">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setIsAddMenuOpen((current) => !current);
-          }}
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/10 text-3xl font-light leading-none text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.18)] backdrop-blur-xl transition hover:scale-105 hover:bg-white"
-          aria-label="Add"
-        >
-          +
-        </button>
-        {isAddMenuOpen ? (
-          <div
-            onClick={(event) => event.stopPropagation()}
-            className="absolute right-0 -top-4 w-44 px-2 py-2 overflow-hidden rounded-3xl border border-white/60 bg-white backdrop-blur-3xl shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
+      {!viewOnly ? (
+        <div className="absolute right-2 top-1/2 z-30 -translate-y-1/2">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsAddMenuOpen((current) => !current);
+            }}
+            className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/10 text-3xl font-light leading-none text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.18)] backdrop-blur-xl transition hover:scale-105 hover:bg-white"
+            aria-label="Add"
           >
-            <button
-              type="button"
-              onClick={() => {
-                setIsAddMenuOpen(false);
-                handleOpenNewTask();
-              }}
-              className="block w-full py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
+            +
+          </button>
+          {isAddMenuOpen ? (
+            <div
+              onClick={(event) => event.stopPropagation()}
+              className="absolute right-0 -top-4 w-44 px-2 py-2 overflow-hidden rounded-3xl border border-white/60 bg-white backdrop-blur-3xl shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
             >
-              Add New Task
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsAddMenuOpen(false);
-                handleCreateGroup();
-              }}
-              disabled={isCreatingGroup}
-              className="block w-full py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
-            >
-              Add New Group
-            </button>
-          </div>
-        ) : null}
-      </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddMenuOpen(false);
+                  handleOpenNewTask();
+                }}
+                className="block w-full py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
+              >
+                Add New Task
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddMenuOpen(false);
+                  handleCreateGroup();
+                }}
+                disabled={isCreatingGroup}
+                className="block w-full py-2.5 text-center text-sm font-bold rounded-full text-[#0D1E4C] hover:bg-neutral-100"
+              >
+                Add New Group
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {currentEditingTask ? (
-        <TaskEditPanel
-          key={currentEditingTask?.task_id ?? "new"}
-          groups={groups}
-          skills={skills}
-          task={currentEditingTask}
-          onArchive={onTaskArchive}
-          onClose={() => setEditingTask(null)}
-          onDelete={onTaskDelete}
-          onSave={handleTaskSave}
-          onSkillCreate={onSkillCreate}
-        />
+        viewOnly ? (
+          <TaskViewPanel
+            employees={employees}
+            onClose={() => setEditingTask(null)}
+            onComplete={onTaskComplete}
+            task={currentEditingTask}
+          />
+        ) : (
+          <TaskEditPanel
+            key={currentEditingTask?.task_id ?? "new"}
+            groups={groups}
+            skills={skills}
+            task={currentEditingTask}
+            onArchive={onTaskArchive}
+            onClose={() => setEditingTask(null)}
+            onDelete={onTaskDelete}
+            onSave={handleTaskSave}
+            onSkillCreate={onSkillCreate}
+          />
+        )
       ) : null}
     </div>
   );
