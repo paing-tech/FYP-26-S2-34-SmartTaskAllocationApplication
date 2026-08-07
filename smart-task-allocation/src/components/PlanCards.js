@@ -32,7 +32,11 @@ function getCtaLabel(tier, currentPlan) {
   const rank = PLAN_RANK[tier] ?? 0;
   const currentRank = PLAN_RANK[currentPlan] ?? 0;
 
-  if (rank < currentRank) return "Downgrade";
+  if (rank < currentRank) {
+    if (tier === "pro") return "Switch to Pro";
+    if (tier === "starter") return "Switch to Starter";
+    return "Switch Plan";
+  }
   if (tier === "pro") return "Upgrade to Pro";
   if (tier === "team") return "Choose Team";
   return "Switch Plan";

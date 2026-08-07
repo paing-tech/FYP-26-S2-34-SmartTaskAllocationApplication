@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import Portal from "@/components/Portal";
@@ -115,36 +116,35 @@ export function PlanProvider({ children }) {
       {lockedFeature ? (
         <Portal>
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
             onClick={() => setLockedFeatureKey(null)}
           >
             <div
-              className="w-full max-w-sm rounded-[28px] border border-white/60 bg-white p-7 text-center shadow-[0_28px_80px_rgba(0,0,0,0.25)]"
+              className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#0b0b0d] p-16 text-center shadow-[0_28px_80px_rgba(0,0,0,0.45)]"
               onClick={(event) => event.stopPropagation()}
             >
-              <span
-                className="material-symbols-outlined mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#EEF2FF] text-3xl text-[#7C3AED]"
-                aria-hidden="true"
-              >
-                lock
-              </span>
-              <h3 className="mt-4 text-lg font-black text-[#0D1E4C]">{lockedFeature.feature_name}</h3>
-              <p className="mt-2 text-sm font-medium text-[#52627a]">
-                {lockedFeature.description || "This feature isn't available on your current plan."} Upgrade to Pro
-                or Team to unlock it.
+              <Image
+                src="/premium-optima.png"
+                alt="Optima Premium"
+                width={96}
+                height={96}
+                className="mx-auto h-40 w-40 object-contain"
+              />
+              <p className="mt-5 whitespace-nowrap text-sm font-medium text-white">
+                Upgrade to Pro or Team to unlock this feature
               </p>
               <div className="mt-6 flex items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={() => setLockedFeatureKey(null)}
-                  className="rounded-full border border-[#e2e8f0] px-5 py-2.5 text-sm font-bold text-[#52627a] transition hover:bg-[#f8fafc]"
+                  className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-white/10"
                 >
                   Not now
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsChoosingPlan(true)}
-                  className="rounded-full bg-[#0D1E4C] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#132763]"
+                  className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-[#0b0b0d] transition hover:bg-white/90"
                 >
                   View Plans
                 </button>
@@ -157,13 +157,13 @@ export function PlanProvider({ children }) {
       {isChoosingPlan ? (
         <Portal>
           <div className="fixed inset-0 z-[110] overflow-y-auto bg-black/70 p-6 backdrop-blur-md">
-            <div className="mx-auto flex max-w-6xl items-center justify-between pb-6 pt-2">
+            <div className="relative mx-auto flex max-w-6xl items-center justify-center pb-6 pt-2">
               <h2 className="text-2xl font-black text-white">Choose your plan</h2>
               <button
                 type="button"
                 onClick={closeAll}
                 aria-label="Close"
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/30 text-white transition hover:bg-white/10"
+                className="absolute right-0 flex h-11 w-11 items-center justify-center rounded-full border border-white/30 text-white transition hover:bg-white/10"
               >
                 <span className="material-symbols-outlined text-xl" aria-hidden="true">
                   close
