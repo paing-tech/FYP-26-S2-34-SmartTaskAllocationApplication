@@ -35,6 +35,7 @@ export const sideMenuNavigation = {
     items: [
       { label: "Content", href: "/platformadmin/content", icon: "content" },
       { label: "Agents", href: "/platformadmin/agents", icon: "agents" },
+      { label: "Features", href: "/platformadmin/features", icon: "settings" },
     ],
   },
 };

@@ -215,7 +215,7 @@ export default function AllocationHistory({ onClose } = {}) {
                   tasks={completedTasks}
                   viewOnly
                 />
-                <p className="mt-1.5 px-1 text-right text-xs font-semibold text-[#94a3b8]">
+                <p className="mt-1.5 px-1 text-center text-xs font-semibold text-[#94a3b8]">
                   on {formatDateTime(task.updated_at)}
                 </p>
               </div>

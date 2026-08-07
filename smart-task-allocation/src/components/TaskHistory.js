@@ -3,11 +3,6 @@
 import { useMemo, useState } from "react";
 import { TaskCard, TaskViewPanel } from "@/components/WorkspaceBoard";
 
-function formatTime(iso) {
-  const date = new Date(iso);
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
-
 function formatDateHeader(iso) {
   const date = new Date(iso);
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -76,7 +71,7 @@ export default function TaskHistory({ activity = [], completedTasks = [], employ
                   tasks={completedTasks}
                   viewOnly
                 />
-                <p className="mt-1.5 px-1 text-right text-xs font-semibold text-[#94a3b8]">
+                <p className="mt-1.5 px-1 text-center text-xs font-semibold text-[#94a3b8]">
                   on {formatDateTime(task.updated_at)}
                 </p>
               </div>
@@ -125,7 +120,9 @@ export default function TaskHistory({ activity = [], completedTasks = [], employ
                         </span>
                       </>
                     )}
-                    <span className="ml-auto shrink-0 text-sm text-[#52627a]">{formatTime(entry.occurredAt)}</span>
+                    <span className="ml-auto shrink-0 text-sm text-[#52627a]">
+                      on {formatDateTime(entry.occurredAt)}
+                    </span>
                   </div>
                 ))}
               </div>

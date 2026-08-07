@@ -8,6 +8,7 @@ import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
 import TopInformationBar from "@/components/TopInformationBar";
 import { useAppearance } from "@/components/appearance/AppearanceContext";
 import AIAutomationChat from "@/components/AIAutomationChat";
+import { PlanProvider, usePlanGate } from "@/components/PlanProvider";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { getAgentAvatarSrc } from "@/lib/agentAvatars";
 
@@ -162,10 +163,11 @@ function NavIcon({ name }) {
   );
 }
 
-export default function SideMenuLayout({ actor, children }) {
+function SideMenuLayoutInner({ actor, children }) {
   const pathname = usePathname();
   const navigation = sideMenuNavigation[actor];
   const { backgroundStyle } = useAppearance();
+  const { guard } = usePlanGate();
   const [isAutomationChatOpen, setIsAutomationChatOpen] = useState(false);
   const [agentAvatarKey, setAgentAvatarKey] = useState(null);
 
@@ -242,7 +244,8 @@ export default function SideMenuLayout({ actor, children }) {
           <button
             type="button"
             onClick={() => {
-              if (!pathname.startsWith(`/${actor}/agents`)) setIsAutomationChatOpen(true);
+              if (pathname.startsWith(`/${actor}/agents`)) return;
+              guard("optimus_ai", () => setIsAutomationChatOpen(true));
             }}
             title="Optimus AI"
             aria-label="Open Optimus AI chat"
@@ -265,5 +268,13 @@ export default function SideMenuLayout({ actor, children }) {
         <AIAutomationChat actor={actor} onClose={() => setIsAutomationChatOpen(false)} />
       ) : null}
     </main>
+  );
+}
+
+export default function SideMenuLayout({ actor, children }) {
+  return (
+    <PlanProvider>
+      <SideMenuLayoutInner actor={actor}>{children}</SideMenuLayoutInner>
+    </PlanProvider>
   );
 }

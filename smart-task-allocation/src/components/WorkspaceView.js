@@ -5,6 +5,7 @@ import WorkspaceCalendar from "@/components/WorkspaceCalendar";
 import WorkspaceBoard, { AvatarCircle, buildBoardColumns } from "@/components/WorkspaceBoard";
 import AllocationHistory from "@/components/AllocationHistory";
 import Portal from "@/components/Portal";
+import { usePlanGate } from "@/components/PlanProvider";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 const VIEWS = [
@@ -98,11 +99,7 @@ function InsightPill({ label, value, detail, progress = 1, tone = "blue" }) {
   const ringColor = tone === "red" ? "#DC2626" : "#2563EB";
 
   return (
-    <div
-      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-sm backdrop-blur-xl ${
-        tone === "red" ? "border-red-200 bg-red-50/70 text-red-700" : "border-white/60 bg-white/25 text-[#0D1E4C]"
-      }`}
-    >
+    <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/25 px-3 py-1.5 text-[#0D1E4C] shadow-sm backdrop-blur-xl">
       <span
         className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-black"
         style={{
@@ -122,6 +119,7 @@ function InsightPill({ label, value, detail, progress = 1, tone = "blue" }) {
 }
 
 function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
+  const { guard } = usePlanGate();
   const [startIndex, setStartIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isReassigning, setIsReassigning] = useState(false);
@@ -175,7 +173,7 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
       </div>
       <button
         type="button"
-        onClick={() => setIsExpanded(true)}
+        onClick={() => guard("allocation_history", () => setIsExpanded(true))}
         className="flex h-7 w-8 items-center justify-center rounded-full border border-white/60 bg-white/30 text-[#0D1E4C] shadow-sm backdrop-blur-sm transition hover:bg-white/60"
         aria-label="Expand allocation history"
       >
@@ -260,6 +258,7 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
 }
 
 export default function WorkspaceView() {
+  const { guard, isLocked } = usePlanGate();
   const [view, setView] = useState("board");
   const [columnLayout, setColumnLayoutState] = useState(4);
   const [tasks, setTasks] = useState([]);
@@ -810,6 +809,11 @@ export default function WorkspaceView() {
   // once the match comes back instead of guessing beforehand.
   async function aiAssignTask(task) {
     if (!task?.task_id) return;
+
+    if (isLocked("ai_auto_assign")) {
+      guard("ai_auto_assign");
+      return;
+    }
 
     setError("");
 
