@@ -6,17 +6,17 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import Portal from "@/components/Portal";
 
 const PRIORITY_TONES = {
-  low: { chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#22c55e]" },
-  medium: { chip: "bg-[#fff7ed] text-[#b45309]", dot: "bg-[#f59e0b]" },
-  high: { chip: "bg-[#fef2f2] text-[#b91c1c]", dot: "bg-[#ef4444]" },
-  urgent: { chip: "bg-[#fef2f2] text-[#b91c1c]", dot: "bg-[#ef4444]" },
+  low: { chip: "text-[#15803d]", dot: "bg-[#22c55e]" },
+  medium: { chip: "text-[#b45309]", dot: "bg-[#f59e0b]" },
+  high: { chip: "text-[#b91c1c]", dot: "bg-[#ef4444]" },
+  urgent: { chip: "text-[#b91c1c]", dot: "bg-[#ef4444]" },
 };
 
 const STATUS_TONES = {
-  open: { chip: "bg-[#eff6ff] text-[#1d4ed8]", dot: "bg-[#579BFC]" },
-  "in progress": { chip: "bg-[#fff7ed] text-[#b45309]", dot: "bg-[#FDAB3D]" },
-  completed: { chip: "bg-[#ecfdf5] text-[#15803d]", dot: "bg-[#00C875]" },
-  cancelled: { chip: "bg-[#fef2f2] text-[#b91c1c]", dot: "bg-[#DF2F4A]" },
+  open: { chip: "text-[#1d4ed8]", dot: "bg-[#579BFC]" },
+  "in progress": { chip: "text-[#b45309]", dot: "bg-[#FDAB3D]" },
+  completed: { chip: "text-[#15803d]", dot: "bg-[#00C875]" },
+  cancelled: { chip: "text-[#b91c1c]", dot: "bg-[#DF2F4A]" },
 };
 
 const AVATAR_COLORS = ["#1E40AF", "#0F766E", "#7C3AED", "#B45309", "#BE185D"];
@@ -410,11 +410,7 @@ function TimelineRail({ end, start }) {
     : null;
 
   if (!startLabel && !endLabel) {
-    return (
-      <div className="mt-3 rounded-xl bg-[#f8fafc] px-3 py-2 text-[11px] font-black uppercase tracking-wide text-[#94a3b8]">
-        No timeline
-      </div>
-    );
+    return <div className="mt-3 h-1" aria-hidden="true" />;
   }
 
   return (
@@ -834,7 +830,7 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full font-black tracking-wide ${statusTone.chip} ${
+            className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 font-black tracking-wide ${statusTone.chip} ${
               compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
             }`}
           >
@@ -842,12 +838,12 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
             {formatPillLabel(task.status, "Open")}
           </span>
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full font-black tracking-wide ${priorityTone.chip} ${
+            className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 font-black tracking-wide ${priorityTone.chip} ${
               compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
             }`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
-            {formatPillLabel(task.priority, "Medium")} PRIORITY
+            {formatPillLabel(task.priority, "Medium")}
           </span>
         </div>
 
@@ -910,7 +906,7 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
                 event.stopPropagation();
                 setIsAssignOpen(true);
               }}
-              className={`mt-1 w-full rounded-2xl border border-white/60 bg-slate-200 text-[11px] font-black text-slate-800 transition hover:scale-[1.05] hover:border-slate-300 ${
+              className={`mt-1 w-full rounded-2xl border border-slate-200 bg-slate-200 text-[11px] font-black text-slate-800 transition hover:scale-[1.05] hover:border-slate-300 ${
                 compact ? "px-3 py-2" : "px-3 py-2.5"
               }`}
             >
@@ -2117,16 +2113,16 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, task }) {
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-[10px] font-black tracking-wide ${statusTone.chip}`}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
                 {formatPillLabel(task.status, "Open")}
               </span>
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${priorityTone.chip}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-[10px] font-black tracking-wide ${priorityTone.chip}`}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
-                {formatPillLabel(task.priority, "Medium")} PRIORITY
+                {formatPillLabel(task.priority, "Medium")}
               </span>
             </div>
 
