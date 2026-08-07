@@ -696,7 +696,7 @@ export default function TopInformationBar({ actor }) {
           </button>
 
           {isProfileOpen ? (
-            <div className="absolute right-0 top-14 w-52 rounded-[28px] border border-white/60 bg-slate-200 p-6 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
+            <div className="absolute right-0 top-14 w-52 rounded-[28px] border border-white/60 bg-slate-200 px-6 py-4 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
               <div className="flex items-center gap-3 px-3 py-2">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a2a66] text-white">
                   {profile.profilePictureUrl ? (

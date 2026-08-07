@@ -40,14 +40,14 @@ export async function GET(request) {
     const [{ data: statusRows, error: statusError }, { data: assignmentRows, error: assignmentError }] =
       await Promise.all([
         supabase
-          .from("task_status_history")
-          .select("task_status_history_id, task_id, from_status, to_status, changed_at, task:task_id(title)")
+          .from("task_history")
+          .select("task_history_id, task_id, from_status, to_status, changed_at, task:task_id(title)")
           .eq("user_id", account.user_id)
           .order("changed_at", { ascending: false })
           .limit(50),
         supabase
           .from("task_assignment")
-          .select("assignment_id, task_id, assigned_by, assigned_at, task:task_id(title)")
+          .select("assignment_id, task_id, assigned_by, assigned_at")
           .eq("user_id", account.user_id)
           .order("assigned_at", { ascending: false })
           .limit(50),
@@ -61,9 +61,23 @@ export async function GET(request) {
       return NextResponse.json({ error: assignmentError.message }, { status: 400 });
     }
 
+    // task_assignment has no foreign-key constraint to task (unlike
+    // task_history), so PostgREST can't embed `task:task_id(title)` for it —
+    // resolve titles with a plain follow-up query instead.
+    const assignmentTaskIds = [...new Set((assignmentRows ?? []).map((row) => row.task_id))];
+    let assignmentTaskTitleById = new Map();
+
+    if (assignmentTaskIds.length) {
+      const { data: assignmentTasks } = await supabase
+        .from("task")
+        .select("task_id, title")
+        .in("task_id", assignmentTaskIds);
+      assignmentTaskTitleById = new Map((assignmentTasks ?? []).map((row) => [row.task_id, row.title]));
+    }
+
     const statusEvents = (statusRows ?? []).map((row) => ({
       type: "status_change",
-      id: `status-${row.task_status_history_id}`,
+      id: `status-${row.task_history_id}`,
       taskId: row.task_id,
       taskTitle: row.task?.title ?? "Task",
       fromStatus: row.from_status,
@@ -75,7 +89,7 @@ export async function GET(request) {
       type: "assignment",
       id: `assignment-${row.assignment_id}`,
       taskId: row.task_id,
-      taskTitle: row.task?.title ?? "Task",
+      taskTitle: assignmentTaskTitleById.get(row.task_id) ?? "Task",
       assignedBy: row.assigned_by || "Manager",
       occurredAt: row.assigned_at,
     }));

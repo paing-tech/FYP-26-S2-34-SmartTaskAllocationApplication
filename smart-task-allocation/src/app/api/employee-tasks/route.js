@@ -235,12 +235,19 @@ export async function PATCH(request) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
-    await supabase.from("task_status_history").insert({
+    // Best-effort: the task is already marked Completed above, so a failure
+    // here shouldn't block that — but it must not be swallowed silently
+    // either, since this is the only place Task History gets its data from.
+    const { error: historyError } = await supabase.from("task_history").insert({
       task_id: taskId,
       user_id: account.user_id,
       from_status: fromStatus,
       to_status: "Completed",
     });
+
+    if (historyError) {
+      console.error("Failed to record task_history:", historyError.message);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

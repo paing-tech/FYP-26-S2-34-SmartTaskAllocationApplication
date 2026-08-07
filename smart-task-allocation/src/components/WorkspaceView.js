@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import WorkspaceCalendar from "@/components/WorkspaceCalendar";
 import WorkspaceBoard, { AvatarCircle, buildBoardColumns } from "@/components/WorkspaceBoard";
 import AllocationHistory from "@/components/AllocationHistory";
@@ -251,9 +251,50 @@ export default function WorkspaceView() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isMissionControlOpen, setIsMissionControlOpen] = useState(false);
-  const today = new Date();
+  const [taskSearch, setTaskSearch] = useState("");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
+  const [selectedPriorities, setSelectedPriorities] = useState([]);
+  const [dueTodayOnly, setDueTodayOnly] = useState(false);
+  const filterMenuRef = useRef(null);
   const totalTasks = tasks.length;
-  const dueTodayCount = tasks.filter((task) => isSameLocalDay(task.end_datetime, today)).length;
+  const dueTodayCount = tasks.filter((task) => isSameLocalDay(task.end_datetime)).length;
+  const priorityOptions = useMemo(
+    () => Array.from(new Set(tasks.map((task) => task.priority).filter(Boolean))).sort(),
+    [tasks],
+  );
+  const filteredTasks = useMemo(() => {
+    const normalizedSearch = taskSearch.trim().toLowerCase();
+    const today = new Date();
+
+    return tasks.filter((task) => {
+      const groupId = task.group_id == null ? "ungrouped" : String(task.group_id);
+      const groupName = groups.find((group) => String(group.group_id) === groupId)?.group_name ?? "Ungrouped";
+      const searchable = `${task.title ?? ""} ${task.description ?? ""} ${task.priority ?? ""} ${groupName}`;
+
+      if (normalizedSearch && !searchable.toLowerCase().includes(normalizedSearch)) return false;
+      if (selectedGroupIds.length && !selectedGroupIds.includes(groupId)) return false;
+      if (selectedPriorities.length && !selectedPriorities.includes(task.priority)) return false;
+      if (dueTodayOnly && !isSameLocalDay(task.end_datetime, today)) return false;
+      return true;
+    });
+  }, [tasks, groups, taskSearch, selectedGroupIds, selectedPriorities, dueTodayOnly]);
+  const activeFilterCount = selectedGroupIds.length + selectedPriorities.length + Number(dueTodayOnly);
+
+  useEffect(() => {
+    function closeFilterMenu(event) {
+      if (!filterMenuRef.current?.contains(event.target)) setIsFilterOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeFilterMenu);
+    return () => document.removeEventListener("pointerdown", closeFilterMenu);
+  }, []);
+
+  function toggleFilterValue(setter, value) {
+    setter((current) =>
+      current.includes(value) ? current.filter((currentValue) => currentValue !== value) : [...current, value],
+    );
+  }
 
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
@@ -263,7 +304,7 @@ export default function WorkspaceView() {
   // Same grouping WorkspaceBoard uses for its columns, reused here so the
   // quick-view overlay always matches the real board layout exactly.
   const missionControlColumns = useMemo(() => {
-    const columns = buildBoardColumns({ groups, tasks });
+    const columns = buildBoardColumns({ groups, tasks: filteredTasks });
     return columns.map((column) => ({
       ...column,
       tasks: column.tasks.map((task) => ({
@@ -271,7 +312,7 @@ export default function WorkspaceView() {
         assignees: (task.assigneeIds ?? []).map((userId) => employeesById.get(userId)).filter(Boolean),
       })),
     }));
-  }, [groups, tasks, employeesById]);
+  }, [groups, filteredTasks, employeesById]);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -940,8 +981,8 @@ export default function WorkspaceView() {
           ))}
         </div>
         {view === "board" ? (
-          <div className="absolute right-0 flex items-center gap-2">
-            <div className="hidden items-center gap-2 xl:flex">
+          <>
+            <div className="absolute left-0 hidden items-center gap-2 xl:flex">
               <InsightPill label="Total tasks" value={totalTasks} />
               <InsightPill
                 label="Due today"
@@ -949,39 +990,150 @@ export default function WorkspaceView() {
                 progress={totalTasks ? dueTodayCount / totalTasks : 0}
               />
             </div>
-            <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 px-1 py-1.5 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
-              {COLUMN_LAYOUT_OPTIONS.map((option) => {
-                const isSelected = option.count === columnLayout;
+            <div className="absolute right-0 flex items-center gap-2">
+              <div className="relative w-44 2xl:w-52">
+                <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#64748B]" aria-hidden="true">
+                  search
+                </span>
+                <input
+                  value={taskSearch}
+                  onChange={(event) => setTaskSearch(event.target.value)}
+                  placeholder="Search tasks"
+                  className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-5 text-sm text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
+                />
+              </div>
 
-                return (
-                  <button
-                    type="button"
-                    key={option.count}
-                    onClick={() => selectColumnLayout(option.count)}
-                    aria-label={`${option.count} columns`}
-                    aria-pressed={isSelected}
-                    title={`${option.count} columns — ${option.description}`}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                      isSelected ? "bg-[#0D1E4C] text-white" : "text-[#0D1E4C] hover:bg-white/60"
-                    }`}
-                  >
-                    <ColumnLayoutIcon count={option.count} className="h-4 w-4" />
-                  </button>
-                );
-              })}
+              <div ref={filterMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsFilterOpen((open) => !open)}
+                  aria-label="Filter tasks"
+                  aria-expanded={isFilterOpen}
+                  className={`relative flex h-11 w-11 items-center justify-center rounded-full border border-white/70 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/60 ${
+                    isFilterOpen || activeFilterCount ? "bg-[#0D1E4C] text-white" : "bg-white/35 text-[#0D1E4C]"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                    filter_list
+                  </span>
+                  {activeFilterCount ? (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#2563EB] px-1 text-[10px] font-black text-white">
+                      {activeFilterCount}
+                    </span>
+                  ) : null}
+                </button>
+
+                {isFilterOpen ? (
+                  <div className="absolute right-0 top-13 z-40 w-72 rounded-[24px] border border-white/70 bg-white/60 p-3 shadow-[0_20px_55px_rgba(13,30,76,0.22)] backdrop-blur-2xl">
+                    <div>
+                      <p className="px-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Task group</p>
+                      <div className="mt-1 max-h-36 space-y-0.5 overflow-y-auto">
+                        {groups.map((group) => {
+                          const value = String(group.group_id);
+                          const checked = selectedGroupIds.includes(value);
+                          return (
+                            <button
+                              key={group.group_id}
+                              type="button"
+                              onClick={() => toggleFilterValue(setSelectedGroupIds, value)}
+                              className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                            >
+                              <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#94A3B8] bg-white/40"}`}>
+                                {checked ? <span className="text-[11px]">✓</span> : null}
+                              </span>
+                              <span className="truncate">{group.group_name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 border-t border-white/60 pt-3">
+                      <p className="px-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Priority</p>
+                      <div className="mt-1 space-y-0.5">
+                        {priorityOptions.map((priority) => {
+                          const checked = selectedPriorities.includes(priority);
+                          return (
+                            <button
+                              key={priority}
+                              type="button"
+                              onClick={() => toggleFilterValue(setSelectedPriorities, priority)}
+                              className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                            >
+                              <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#94A3B8] bg-white/40"}`}>
+                                {checked ? <span className="text-[11px]">✓</span> : null}
+                              </span>
+                              {priority}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 border-t border-white/60 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => setDueTodayOnly((current) => !current)}
+                        className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                      >
+                        <span className={`flex h-4 w-4 items-center justify-center rounded border ${dueTodayOnly ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#94A3B8] bg-white/40"}`}>
+                          {dueTodayOnly ? <span className="text-[11px]">✓</span> : null}
+                        </span>
+                        Due today
+                      </button>
+                    </div>
+
+                    {activeFilterCount ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedGroupIds([]);
+                          setSelectedPriorities([]);
+                          setDueTodayOnly(false);
+                        }}
+                        className="mt-3 w-full rounded-full px-3 py-2 text-xs font-bold text-[#64748B] transition hover:bg-white/70 hover:text-[#0D1E4C]"
+                      >
+                        Clear filters
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="inline-flex items-center gap-0.5 rounded-full border border-white/70 bg-white/35 px-1 py-1.5 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
+                {COLUMN_LAYOUT_OPTIONS.map((option) => {
+                  const isSelected = option.count === columnLayout;
+
+                  return (
+                    <button
+                      type="button"
+                      key={option.count}
+                      onClick={() => selectColumnLayout(option.count)}
+                      aria-label={`${option.count} columns`}
+                      aria-pressed={isSelected}
+                      title={`${option.count} columns — ${option.description}`}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                        isSelected ? "bg-[#0D1E4C] text-white" : "text-[#0D1E4C] hover:bg-white/60"
+                      }`}
+                    >
+                      <ColumnLayoutIcon count={option.count} className="h-4 w-4" />
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMissionControlOpen(true)}
+                aria-label="Open quick view"
+                title="Quick view"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/35 text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/60"
+              >
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                  view_compact_alt
+                </span>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsMissionControlOpen(true)}
-              aria-label="Open quick view"
-              title="Quick view"
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/35 text-[#0D1E4C] shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl transition hover:bg-white/60"
-            >
-              <span className="material-symbols-outlined text-xl" aria-hidden="true">
-                view_compact_alt
-              </span>
-            </button>
-          </div>
+          </>
         ) : null}
       </div>
 
@@ -1024,7 +1176,7 @@ export default function WorkspaceView() {
             onTaskUnassignEmployee={unassignEmployeeFromTask}
             onTaskUpdate={updateTask}
             skills={skills}
-            tasks={tasks}
+            tasks={filteredTasks}
           />
         )}
       </div>

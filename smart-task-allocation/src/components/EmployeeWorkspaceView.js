@@ -206,7 +206,13 @@ export default function EmployeeWorkspaceView() {
 
       setTasks(tasksResult.tasks ?? []);
       setEmployees(tasksResult.employees ?? []);
-      setActivity(activityResponse.ok ? activityResult.activity ?? [] : []);
+
+      if (activityResponse.ok) {
+        setActivity(activityResult.activity ?? []);
+      } else {
+        setActivity([]);
+        setError(activityResult.error || "Could not load task history.");
+      }
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -247,6 +253,8 @@ export default function EmployeeWorkspaceView() {
       const activityResult = await activityResponse.json();
       if (activityResponse.ok) {
         setActivity(activityResult.activity ?? []);
+      } else {
+        setError(activityResult.error || "Could not refresh task history.");
       }
     } catch (completeError) {
       setError(completeError.message);
