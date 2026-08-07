@@ -243,6 +243,10 @@ function getSmartAllocationLabel(task) {
     return "Matched department";
   }
 
+  if (reason?.allocationKind === "least_busy") {
+    return "Assigned to least busy teammate";
+  }
+
   return "Smart task allocation";
 }
 

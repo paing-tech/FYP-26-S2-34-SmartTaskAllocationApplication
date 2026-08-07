@@ -540,7 +540,7 @@ async function autoAllocateOptimusTasks(supabase, { organizationId }) {
       .from("user_account")
       .select("user_id, department:department_id(department_name)")
       .eq("organization_id", organizationId),
-    supabase.from("task").select("task_id, title").eq("organization_id", organizationId),
+    supabase.from("task").select("task_id, title, assigned_to, status").eq("organization_id", organizationId),
   ]);
 
   if (requiredSkillError) {
@@ -569,6 +569,18 @@ async function autoAllocateOptimusTasks(supabase, { organizationId }) {
   const departmentNames = [
     ...new Set((employeeAccounts ?? []).map((employee) => employee.department?.department_name).filter(Boolean)),
   ];
+
+  // Fallback tier: how many open/in-progress tasks is each employee already
+  // carrying? Used only when no employee scores a positive skill/history/
+  // department match, so a task never silently sits unassigned (and
+  // consequently never recorded in allocation history) just because it's a
+  // freshly-created, generic-titled task with no signal to go on yet.
+  const activeCountByUserId = new Map();
+  for (const orgTask of allOrgTasks ?? []) {
+    if (!orgTask.assigned_to) continue;
+    if (["completed", "cancelled"].includes(String(orgTask.status || "").toLowerCase())) continue;
+    activeCountByUserId.set(orgTask.assigned_to, (activeCountByUserId.get(orgTask.assigned_to) ?? 0) + 1);
+  }
 
   const skillsByUserId = new Map();
   if (employeeIds.length) {
@@ -643,24 +655,56 @@ async function autoAllocateOptimusTasks(supabase, { organizationId }) {
       }
     }
 
+    // No skill/history/department signal fired for anyone — rather than
+    // leave the task unassigned (and so never recorded in allocation
+    // history), fall back to whichever employee currently has the fewest
+    // open tasks.
+    if (!bestEmployeeId && employeeIds.length) {
+      let leastBusyId = null;
+      let leastBusyCount = Infinity;
+
+      for (const employeeId of employeeIds) {
+        const count = activeCountByUserId.get(employeeId) ?? 0;
+        if (count < leastBusyCount) {
+          leastBusyCount = count;
+          leastBusyId = employeeId;
+        }
+      }
+
+      if (leastBusyId) {
+        bestEmployeeId = leastBusyId;
+        bestBreakdown = { skillScore: 0, historyCount: 0, isDepartmentMatch: false, isFallback: true };
+      }
+    }
+
     if (!bestEmployeeId) {
       continue;
     }
 
+    // Counts as load for the rest of this batch too, so several
+    // newly-created tasks with no signal spread across the team instead of
+    // all landing on whoever was least busy at the start.
+    activeCountByUserId.set(bestEmployeeId, (activeCountByUserId.get(bestEmployeeId) ?? 0) + 1);
+
     const allocationReasons = [];
-    if (bestBreakdown.skillScore > 0) {
-      const matchedNames = requiredSkills.map((skill) => skill.name).filter(Boolean);
-      allocationReasons.push(`Matched required skills: ${matchedNames.join(", ")}`);
-    }
-    if (bestBreakdown.historyCount > 0) {
-      allocationReasons.push(`Assigned to "${task.title}" ${bestBreakdown.historyCount} time(s) before`);
-    }
-    if (bestBreakdown.isDepartmentMatch) {
-      allocationReasons.push(`Matches ${matchedDepartment} department`);
+    if (bestBreakdown.isFallback) {
+      allocationReasons.push("No strong skill, history, or department match — assigned to the least busy employee");
+    } else {
+      if (bestBreakdown.skillScore > 0) {
+        const matchedNames = requiredSkills.map((skill) => skill.name).filter(Boolean);
+        allocationReasons.push(`Matched required skills: ${matchedNames.join(", ")}`);
+      }
+      if (bestBreakdown.historyCount > 0) {
+        allocationReasons.push(`Assigned to "${task.title}" ${bestBreakdown.historyCount} time(s) before`);
+      }
+      if (bestBreakdown.isDepartmentMatch) {
+        allocationReasons.push(`Matches ${matchedDepartment} department`);
+      }
     }
 
-    const allocationKind =
-      bestBreakdown.skillScore > 0
+    const allocationKind = bestBreakdown.isFallback
+      ? "least_busy"
+      : bestBreakdown.skillScore > 0
         ? "skill_match"
         : bestBreakdown.historyCount > 0
           ? "history_pattern"
