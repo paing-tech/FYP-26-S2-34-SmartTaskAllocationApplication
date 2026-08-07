@@ -11,7 +11,6 @@ const PILL_GAP = 8;
 const ROW_PADDING = 10;
 const MIN_ROW_HEIGHT = 64;
 const PILL_MIN_WIDTH = 220;
-const MULTIDAY_INSET = 4;
 
 const PRIORITY_PILL_TONES = {
   low: "border-amber-50 bg-amber-300",
@@ -37,6 +36,13 @@ function formatHour(hour) {
   if (hour === 0) return "12 AM";
   if (hour === 12) return "12 PM";
   return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
 }
 
 function isSameDay(a, b) {
@@ -147,10 +153,9 @@ function AvatarStack({ assignees }) {
   );
 }
 
-function TaskPill({ employees, groupName, onAiAssign, onAssignEmployee, onOpen, onUnassignEmployee, style, task, tasks, variant = "timed" }) {
+function TaskPill({ employees, groupName, onAiAssign, onAssignEmployee, onOpen, onUnassignEmployee, style, task, tasks }) {
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const tone = PRIORITY_PILL_TONES[getPriorityKey(task.priority)] ?? PRIORITY_PILL_TONES.medium;
-  const isMultiDay = variant === "multiday";
 
   return (
     <>
@@ -166,9 +171,7 @@ function TaskPill({ employees, groupName, onAiAssign, onAssignEmployee, onOpen, 
         }}
         title={task.title || "Untitled task"}
         style={style}
-        className={`pointer-events-auto absolute flex cursor-pointer justify-between gap-3 overflow-hidden border px-4 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone} ${
-          isMultiDay ? "items-start rounded-2xl pt-3" : "items-center rounded-full"
-        }`}
+        className={`pointer-events-auto absolute flex cursor-pointer items-center justify-between gap-3 overflow-hidden rounded-full border px-4 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone}`}
       >
         <span className="flex min-w-0 shrink items-center gap-2">
           <span className="truncate text-xs font-black text-white">{task.title || "Untitled task"}</span>
@@ -189,6 +192,67 @@ function TaskPill({ employees, groupName, onAiAssign, onAssignEmployee, onOpen, 
             Assign
           </button>
         </span>
+      </div>
+
+      {isAssignOpen ? (
+        <AssignEmployeeModal
+          employees={employees}
+          groupName={groupName}
+          task={task}
+          tasks={tasks}
+          onAiAssign={() => onAiAssign?.(task)}
+          onAssign={(employeeId) => onAssignEmployee?.(task, employeeId)}
+          onClose={() => setIsAssignOpen(false)}
+          onUnassign={(employeeId) => onUnassignEmployee?.(task, employeeId)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+// Multi-day tasks don't fit naturally into an hour-by-hour day grid, so
+// instead of stretching (or awkwardly compacting) them into it, they get
+// their own simple pill in a separate list below the grid, with the date
+// range shown directly instead of being implied by position/width.
+function MultiDayTaskPill({ employees, groupName, onAiAssign, onAssignEmployee, onOpen, onUnassignEmployee, range, task, tasks }) {
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
+  const tone = PRIORITY_PILL_TONES[getPriorityKey(task.priority)] ?? PRIORITY_PILL_TONES.medium;
+
+  return (
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(task)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpen(task);
+          }
+        }}
+        title={task.title || "Untitled task"}
+        className={`flex cursor-pointer items-center gap-3 overflow-hidden rounded-full border px-4 py-2.5 text-left shadow-sm backdrop-blur-sm transition hover:shadow-md ${tone}`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-xs font-black text-white">{task.title || "Untitled task"}</span>
+          <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-700">
+            {task.status || "Open"}
+          </span>
+        </span>
+        <span className="shrink-0 text-[10px] font-bold text-white/85">
+          {formatDate(range.start)} – {formatDate(range.end)}
+        </span>
+        <AvatarStack assignees={task.assignees ?? []} />
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsAssignOpen(true);
+          }}
+          className="shrink-0 rounded-full border border-white/70 bg-white/70 px-3 py-1.5 text-[10px] font-black text-[#0D1E4C] transition hover:scale-110 hover:bg-white"
+        >
+          Assign
+        </button>
       </div>
 
       {isAssignOpen ? (
@@ -265,52 +329,50 @@ export default function WorkspaceCalendar({
     [employeesById, tasks, weekEnd, weekStart],
   );
 
-  const { multiDayBars, multiDayLaneCount, rowHeights, sameDayByDay } = useMemo(() => {
+  const sameDayTasks = useMemo(
+    () => scheduledTasks.filter(({ range }) => isSameDay(range.start, range.end)),
+    [scheduledTasks],
+  );
+
+  // Sorted so tasks starting soonest lead the list, regardless of week nav.
+  const multiDayTasks = useMemo(
+    () =>
+      scheduledTasks
+        .filter(({ range }) => !isSameDay(range.start, range.end))
+        .sort((a, b) => a.range.start.getTime() - b.range.start.getTime()),
+    [scheduledTasks],
+  );
+
+  const { rowHeights, sameDayByDay } = useMemo(() => {
     const sameDay = new Map();
-    const multiDay = [];
 
-    scheduledTasks.forEach(({ task, range }) => {
+    sameDayTasks.forEach(({ task, range }) => {
       const clippedStart = range.start < weekStart ? weekStart : range.start;
-      const clippedEnd = range.end > weekEnd ? weekEnd : range.end;
       const startOffsetMs = clippedStart.getTime() - weekStart.getTime();
-      const endOffsetMs = clippedEnd.getTime() - weekStart.getTime();
-
       const startDayIndex = Math.min(6, Math.floor(startOffsetMs / DAY_MS));
-      const isMidnightBoundary = endOffsetMs % DAY_MS === 0;
-      const endDayIndex = Math.max(
-        startDayIndex,
-        Math.min(6, isMidnightBoundary ? endOffsetMs / DAY_MS - 1 : Math.floor(endOffsetMs / DAY_MS)),
+      const dayStartMs = weekStart.getTime() + startDayIndex * DAY_MS;
+
+      let startHour = (clippedStart.getTime() - dayStartMs) / (60 * 60 * 1000);
+      let endHour = Math.max(
+        startHour + 0.5,
+        (Math.min(range.end.getTime(), dayStartMs + DAY_MS) - dayStartMs) / (60 * 60 * 1000),
       );
 
-      if (startDayIndex === endDayIndex) {
-        const dayStartMs = weekStart.getTime() + startDayIndex * DAY_MS;
-        let startHour = (clippedStart.getTime() - dayStartMs) / (60 * 60 * 1000);
-        let endHour = Math.max(
-          startHour + 0.5,
-          (Math.min(clippedEnd.getTime(), dayStartMs + DAY_MS) - dayStartMs) / (60 * 60 * 1000),
-        );
-
-        if (range.isAllDay) {
-          startHour = 0;
-          endHour = 24;
-        }
-
-        const list = sameDay.get(startDayIndex) ?? [];
-        list.push({ endHour, endMs: dayStartMs + endHour * 3600000, startHour, startMs: clippedStart.getTime(), task });
-        sameDay.set(startDayIndex, list);
-      } else {
-        multiDay.push({
-          endDayIndex,
-          endMs: weekStart.getTime() + (endDayIndex + 1) * DAY_MS,
-          startDayIndex,
-          startMs: weekStart.getTime() + startDayIndex * DAY_MS,
-          task,
-        });
+      if (range.isAllDay) {
+        startHour = 0;
+        endHour = 24;
       }
-    });
 
-    const multiDayLaned = assignLanes(multiDay);
-    const multiDayLaneCount = multiDayLaned[0]?.laneCount ?? 0;
+      const list = sameDay.get(startDayIndex) ?? [];
+      list.push({
+        endHour,
+        endMs: dayStartMs + endHour * 3600000,
+        startHour,
+        startMs: clippedStart.getTime(),
+        task,
+      });
+      sameDay.set(startDayIndex, list);
+    });
 
     const laneCountByDay = days.map((_, dayIndex) => {
       const items = sameDay.get(dayIndex) ?? [];
@@ -319,28 +381,14 @@ export default function WorkspaceCalendar({
       return laned[0]?.laneCount ?? 0;
     });
 
-    const heights = laneCountByDay.map((ownLaneCount) => {
-      const totalLanes = multiDayLaneCount + ownLaneCount;
-      if (totalLanes === 0) return MIN_ROW_HEIGHT;
-      const contentHeight = totalLanes * PILL_HEIGHT + (totalLanes - 1) * PILL_GAP;
+    const heights = laneCountByDay.map((laneCount) => {
+      if (laneCount === 0) return MIN_ROW_HEIGHT;
+      const contentHeight = laneCount * PILL_HEIGHT + (laneCount - 1) * PILL_GAP;
       return Math.max(MIN_ROW_HEIGHT, ROW_PADDING * 2 + contentHeight);
     });
 
-    const tops = [];
-    heights.reduce((acc, height, index) => {
-      tops[index] = acc;
-      return acc + height;
-    }, 0);
-
-    const bars = multiDayLaned.map((item) => ({
-      laneIndex: item.laneIndex,
-      task: item.task,
-      top: tops[item.startDayIndex] + MULTIDAY_INSET,
-      height: tops[item.endDayIndex] + heights[item.endDayIndex] - tops[item.startDayIndex] - MULTIDAY_INSET * 2,
-    }));
-
-    return { multiDayBars: bars, multiDayLaneCount, rowHeights: heights, sameDayByDay: sameDay };
-  }, [days, scheduledTasks, weekEnd, weekStart]);
+    return { rowHeights: heights, sameDayByDay: sameDay };
+  }, [days, sameDayTasks, weekStart]);
 
   function goToPreviousWeek() {
     setWeekStart((current) => addDays(current, -7));
@@ -421,7 +469,7 @@ export default function WorkspaceCalendar({
             <div className="w-3 shrink-0" aria-hidden="true" />
           </div>
 
-          {/* Day rows + multi-day overlay */}
+          {/* Day rows */}
           <div className="relative">
             {days.map((day, dayIndex) => {
               const dayPills = sameDayByDay.get(dayIndex) ?? [];
@@ -447,7 +495,7 @@ export default function WorkspaceCalendar({
                   </div>
 
                   <div className="pointer-events-none relative flex-1">
-                    {/* Grid lines: lowest layer, behind the multi-day overlay */}
+                    {/* Grid lines */}
                     <div
                       className="pointer-events-none absolute inset-0 grid"
                       style={{ gridTemplateColumns: "repeat(24, 1fr)" }}
@@ -460,7 +508,7 @@ export default function WorkspaceCalendar({
                       ))}
                     </div>
 
-                    {/* Same-day pills: topmost layer, above the multi-day overlay */}
+                    {/* Pills */}
                     <div className="pointer-events-none absolute inset-0 z-20">
                       {dayPills.map((pill) => (
                         <TaskPill
@@ -476,7 +524,7 @@ export default function WorkspaceCalendar({
                           style={{
                             left: `${(pill.startHour / 24) * 100}%`,
                             width: `max(${((pill.endHour - pill.startHour) / 24) * 100}%, ${PILL_MIN_WIDTH}px)`,
-                            top: `${ROW_PADDING + (multiDayLaneCount + pill.laneIndex) * (PILL_HEIGHT + PILL_GAP)}px`,
+                            top: `${ROW_PADDING + pill.laneIndex * (PILL_HEIGHT + PILL_GAP)}px`,
                             height: `${PILL_HEIGHT}px`,
                           }}
                         />
@@ -488,34 +536,31 @@ export default function WorkspaceCalendar({
                 </div>
               );
             })}
-
-            {multiDayBars.length ? (
-              <div className="pointer-events-none absolute inset-y-0 left-28 right-3 z-10">
-                {multiDayBars.map((bar) => (
-                  <TaskPill
-                    key={bar.task.task_id}
-                    employees={employees}
-                    groupName={groupsById.get(bar.task.group_id)?.group_name ?? "Ungrouped"}
-                    onAiAssign={onTaskAiAssign}
-                    onAssignEmployee={onTaskAssignEmployee}
-                    onOpen={setEditingTask}
-                    onUnassignEmployee={onTaskUnassignEmployee}
-                    task={bar.task}
-                    tasks={tasks}
-                    variant="multiday"
-                    style={{
-                      left: "0px",
-                      right: "0px",
-                      top: `${bar.top}px`,
-                      height: `${bar.height}px`,
-                    }}
-                  />
-                ))}
-              </div>
-            ) : null}
           </div>
         </div>
       </div>
+
+      {multiDayTasks.length ? (
+        <div className="mt-3 shrink-0">
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#94a3b8]">Multi-day tasks</p>
+          <div className="flex flex-wrap gap-2">
+            {multiDayTasks.map(({ task, range }) => (
+              <MultiDayTaskPill
+                key={task.task_id}
+                employees={employees}
+                groupName={groupsById.get(task.group_id)?.group_name ?? "Ungrouped"}
+                onAiAssign={onTaskAiAssign}
+                onAssignEmployee={onTaskAssignEmployee}
+                onOpen={setEditingTask}
+                onUnassignEmployee={onTaskUnassignEmployee}
+                range={range}
+                task={task}
+                tasks={tasks}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {editingTask ? (
         <TaskEditPanel

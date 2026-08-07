@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { TaskCard, TaskViewPanel, enrichTaskWithPeople } from "@/components/WorkspaceBoard";
 import Portal from "@/components/Portal";
 import TaskHistory from "@/components/TaskHistory";
+import TaskTimeline from "@/components/TaskTimeline";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 function formatRelativeTime(value) {
@@ -157,6 +158,7 @@ export default function EmployeeWorkspaceView() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [editingTask, setEditingTask] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
@@ -166,6 +168,11 @@ export default function EmployeeWorkspaceView() {
     () => tasks.map((task) => enrichTaskWithPeople(task, employeesById)),
     [tasks, employeesById],
   );
+  const filteredTasks = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return enrichedTasks;
+    return enrichedTasks.filter((task) => (task.title || "").toLowerCase().includes(query));
+  }, [enrichedTasks, searchQuery]);
   const currentEditingTask = editingTask
     ? enrichedTasks.find((task) => task.task_id === editingTask.task_id) ?? null
     : null;
@@ -250,7 +257,21 @@ export default function EmployeeWorkspaceView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-4 shrink-0">
-        <h1 className="text-2xl font-black text-[#0D1E4C]">Tasks</h1>
+        <div className="relative flex items-center justify-center">
+          <h1 className="text-2xl font-black text-[#0D1E4C]">My Tasks</h1>
+          <div className="absolute right-0 flex items-center gap-2 rounded-full border border-white/70 bg-white/35 px-3.5 py-2 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
+            <span className="material-symbols-outlined text-lg text-[#0D1E4C]" aria-hidden="true">
+              search
+            </span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search for tasks"
+              className="w-44 bg-transparent text-sm font-semibold text-[#0D1E4C] outline-none placeholder:text-[#94a3b8]"
+            />
+          </div>
+        </div>
         {error ? (
           <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700">
             {error}
@@ -258,9 +279,9 @@ export default function EmployeeWorkspaceView() {
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="flex h-full items-start gap-6 px-1 py-3">
-          {enrichedTasks.map((task) => (
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex items-start gap-6 overflow-x-auto px-1 py-3">
+          {filteredTasks.map((task) => (
             <div key={task.task_id} className="w-80 shrink-0">
               <TaskCard
                 employees={employees}
@@ -273,12 +294,14 @@ export default function EmployeeWorkspaceView() {
             </div>
           ))}
 
-          {!enrichedTasks.length && !isLoading ? (
+          {!filteredTasks.length && !isLoading ? (
             <div className="flex w-full items-center justify-center rounded-2xl border-2 border-dashed border-[#cbd5e1] px-6 py-16 text-center text-sm font-bold text-[#94a3b8]">
-              No tasks assigned to you.
+              {searchQuery.trim() ? "No tasks match your search." : "No tasks assigned to you."}
             </div>
           ) : null}
         </div>
+
+        <TaskTimeline employees={employees} onOpen={setEditingTask} tasks={filteredTasks} />
       </div>
 
       <ActivityLogPreview activity={activity} onReload={loadWorkspaceData} />

@@ -206,7 +206,7 @@ export default function TopInformationBar({ actor }) {
   const [smartTasksRefreshMessage, setSmartTasksRefreshMessage] = useState("");
   const [accountSearchItems, setAccountSearchItems] = useState([]);
   const [isLoadingSearchItems, setIsLoadingSearchItems] = useState(false);
-  const [profile, setProfile] = useState({ email: "", name: "" });
+  const [profile, setProfile] = useState({ email: "", name: "", profilePictureUrl: "" });
   const [now, setNow] = useState(() => new Date());
   const [isDemo, setIsDemo] = useState(false);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
@@ -360,11 +360,36 @@ export default function TopInformationBar({ actor }) {
     const { data } = await supabase.auth.getSession();
     const user = data.session?.user;
 
-    setProfile({
+    const fallbackProfile = {
       email: user?.email ?? "Signed in user",
       name: user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "Profile",
-    });
+      profilePictureUrl: user?.user_metadata?.avatar_url ?? "",
+    };
+
+    try {
+      const response = await fetch("/api/my-profile", {
+        headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not load profile.");
+      }
+
+      setProfile({
+        email: result.profile.email || fallbackProfile.email,
+        name: result.profile.full_name || result.profile.username || fallbackProfile.name,
+        profilePictureUrl: result.profile.profile_picture_url || fallbackProfile.profilePictureUrl,
+      });
+    } catch {
+      setProfile(fallbackProfile);
+    }
   }
+
+  useEffect(() => {
+    const timeout = window.setTimeout(loadProfile, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   async function openProfileMenu() {
     if (!isProfileOpen) {
@@ -657,16 +682,38 @@ export default function TopInformationBar({ actor }) {
             aria-label="Profile"
             title="Profile"
           >
-            <UserIcon />
+            {profile.profilePictureUrl ? (
+              <Image
+                src={profile.profilePictureUrl}
+                alt={profile.name || "Profile"}
+                width={44}
+                height={44}
+                className="h-11 w-11 rounded-full object-cover"
+              />
+            ) : (
+              <UserIcon />
+            )}
           </button>
 
           {isProfileOpen ? (
-            <div className="absolute right-0 top-14 w-72 rounded-xl border border-white/60 bg-white/20 p-3 shadow-[0_18px_60px_rgba(7,24,59,0.16)] backdrop-blur-lg">
-              <div className="rounded-lg bg-[#f8faff] p-3">
-                <p className="text-sm font-bold text-[#07183b]">{profile.name}</p>
-                <p className="mt-1 truncate text-xs text-[#61708a]">{profile.email}</p>
+            <div className="absolute right-0 top-14 w-72 rounded-[28px] border border-white/60 bg-white/20 p-2 shadow-[0_18px_60px_rgba(7,24,59,0.16)] backdrop-blur-lg">
+              <div className="flex items-center gap-3 px-3 py-2">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a2a66] text-white">
+                  {profile.profilePictureUrl ? (
+                    <Image
+                      src={profile.profilePictureUrl}
+                      alt=""
+                      width={44}
+                      height={44}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <UserIcon />
+                  )}
+                </span>
+                <p className="min-w-0 truncate text-sm font-bold text-[#07183b]">{profile.name}</p>
                 {isDemo ? (
-                  <span className="mt-2 inline-flex rounded-full bg-[#eef6ff] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#0a2a66]">
+                  <span className="ml-auto shrink-0 rounded-full bg-[#eef6ff] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#0a2a66]">
                     Demo mode
                   </span>
                 ) : null}
@@ -701,7 +748,7 @@ export default function TopInformationBar({ actor }) {
                 </div>
               ) : null}
 
-              <div className="mt-3 grid gap-2">
+              <div className="mt-1 grid gap-1">
                 {isDemo ? null : (
                   <button
                     type="button"
@@ -709,7 +756,7 @@ export default function TopInformationBar({ actor }) {
                       setIsProfileCardOpen(true);
                       setIsProfileOpen(false);
                     }}
-                    className="rounded-md px-3 py-2 text-left text-sm font-bold text-[#07183b] hover:bg-[#eef6ff]"
+                    className="rounded-full px-3 py-2 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
                   >
                     View profile
                   </button>
@@ -717,7 +764,7 @@ export default function TopInformationBar({ actor }) {
                 <button
                   type="button"
                   onClick={isDemo ? exitDemo : signOut}
-                  className="rounded-md px-3 py-2 text-left text-sm font-bold text-red-700 hover:bg-red-50"
+                  className="rounded-full px-3 py-2 text-left text-sm font-bold text-red-700 transition hover:bg-red-50/80"
                 >
                   {isDemo ? "Exit demo" : "Log out"}
                 </button>
