@@ -2542,7 +2542,18 @@ function DeleteGroupModal({ groupId, groups = [], name, onCancel, onConfirm, tas
   );
 }
 
-function ColumnHeader({ count, groupId, groups, name, onGroupDelete, onRename, tasks, viewOnly = false }) {
+function ColumnHeader({
+  count,
+  groupId,
+  groups,
+  name,
+  onDragHandleEnd,
+  onDragHandleStart,
+  onGroupDelete,
+  onRename,
+  tasks,
+  viewOnly = false,
+}) {
   // Keyed by `name` at the call site, so a rename (local or external) remounts
   // this with a fresh draftName instead of needing an effect to resync it.
   const [draftName, setDraftName] = useState(name);
@@ -2595,7 +2606,23 @@ function ColumnHeader({ count, groupId, groups, name, onGroupDelete, onRename, t
 
   return (
     <div className="mb-4 flex shrink-0 items-center gap-2 px-1">
-      <span className="h-4 w-4 rounded-full border-2 border-[#cbd5e1]" />
+      <span
+        draggable
+        onDragStart={(event) => onDragHandleStart?.(event)}
+        onDragEnd={onDragHandleEnd}
+        className="flex h-4 w-4 shrink-0 cursor-grab items-center justify-center text-[#94a3b8] transition hover:text-[#0D1E4C] active:cursor-grabbing"
+        aria-label={`Drag to reorder ${name}`}
+        title="Drag to reorder"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="9" cy="5" r="1.5" />
+          <circle cx="9" cy="12" r="1.5" />
+          <circle cx="9" cy="19" r="1.5" />
+          <circle cx="15" cy="5" r="1.5" />
+          <circle cx="15" cy="12" r="1.5" />
+          <circle cx="15" cy="19" r="1.5" />
+        </svg>
+      </span>
       <input
         type="text"
         value={draftName}
@@ -2683,6 +2710,7 @@ export default function WorkspaceBoard({
   onGroupCreate,
   onGroupDelete,
   onGroupRename,
+  onGroupReorder,
   onSkillCreate,
   onTaskAiAssign,
   onTaskApprove,
@@ -2701,6 +2729,8 @@ export default function WorkspaceBoard({
   const [editingTask, setEditingTask] = useState(null);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [draggedGroupId, setDraggedGroupId] = useState(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState(null);
   const boardScrollRef = useRef(null);
   const previousGroupCountRef = useRef(groups.length);
   const employeesById = useMemo(
@@ -2790,6 +2820,46 @@ export default function WorkspaceBoard({
     await onTaskUpdate?.(task, updates);
   }
 
+  // Column reorder: the drag handle in ColumnHeader starts the drag; drop
+  // targets are the column containers themselves, so dropping anywhere on a
+  // column (not just its header) moves the dragged one into that slot.
+  function handleColumnDragStart(event, groupId) {
+    setDraggedGroupId(groupId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(groupId));
+  }
+
+  function handleColumnDragOver(event, groupId) {
+    if (draggedGroupId == null) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (!sameId(dragOverGroupId, groupId)) setDragOverGroupId(groupId);
+  }
+
+  function handleColumnDrop(targetGroupId) {
+    const sourceGroupId = draggedGroupId;
+    setDraggedGroupId(null);
+    setDragOverGroupId(null);
+
+    if (sourceGroupId == null || sameId(sourceGroupId, targetGroupId)) return;
+
+    const currentOrder = columns.map((column) => column.id);
+    const fromIndex = currentOrder.findIndex((id) => sameId(id, sourceGroupId));
+    const toIndex = currentOrder.findIndex((id) => sameId(id, targetGroupId));
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    const nextOrder = [...currentOrder];
+    const [moved] = nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(toIndex, 0, moved);
+
+    onGroupReorder?.(nextOrder);
+  }
+
+  function handleColumnDragEnd() {
+    setDraggedGroupId(null);
+    setDragOverGroupId(null);
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm font-bold text-[#52627a]">
@@ -2812,7 +2882,13 @@ export default function WorkspaceBoard({
         {columns.map((column) => (
           <div
             key={column.id}
-            className="flex shrink-0 flex-col"
+            onDragOver={viewOnly ? undefined : (event) => handleColumnDragOver(event, column.id)}
+            onDrop={viewOnly ? undefined : () => handleColumnDrop(column.id)}
+            className={`flex shrink-0 flex-col rounded-2xl transition ${
+              !viewOnly && sameId(dragOverGroupId, column.id) && !sameId(draggedGroupId, column.id)
+                ? "outline-2 outline-offset-4 outline-[#2563EB]/50"
+                : ""
+            } ${!viewOnly && sameId(draggedGroupId, column.id) ? "opacity-40" : ""}`}
             style={getColumnWidthStyle(columnLayout)}
           >
             <ColumnHeader
@@ -2821,6 +2897,8 @@ export default function WorkspaceBoard({
               groups={groups}
               name={column.name}
               count={column.tasks.length}
+              onDragHandleEnd={handleColumnDragEnd}
+              onDragHandleStart={(event) => handleColumnDragStart(event, column.id)}
               onRename={onGroupRename}
               onGroupDelete={onGroupDelete}
               tasks={column.tasks}

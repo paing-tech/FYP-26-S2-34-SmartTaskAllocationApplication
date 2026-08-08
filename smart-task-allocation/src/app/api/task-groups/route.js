@@ -95,16 +95,42 @@ export async function POST(request) {
   }
 }
 
-// Rename a task group.
+// Rename a task group, or (passing orderedGroupIds instead) persist a new
+// column order after a drag-and-drop reorder — each id's array index becomes
+// its sort_order.
 export async function PATCH(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireManager(request, supabase);
+    const { user, error: authError } = await requireManager(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { groupId, groupName } = await request.json();
+    const { groupId, groupName, orderedGroupIds } = await request.json();
+
+    if (Array.isArray(orderedGroupIds)) {
+      const organizationId = await getManagerOrganizationId(supabase, user);
+      if (!organizationId) {
+        return NextResponse.json({ error: "Organization ID is required." }, { status: 400 });
+      }
+
+      const updates = orderedGroupIds.map((id, index) =>
+        supabase
+          .from("task_group")
+          .update({ sort_order: index, updated_at: new Date().toISOString() })
+          .eq("group_id", id)
+          .eq("organization_id", organizationId),
+      );
+      const results = await Promise.all(updates);
+      const failed = results.find((result) => result.error);
+
+      if (failed) {
+        return NextResponse.json({ error: failed.error.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
     if (!groupId) {
       return NextResponse.json({ error: "Group ID is required." }, { status: 400 });
     }

@@ -310,6 +310,8 @@ export default function WorkspaceView() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isMissionControlOpen, setIsMissionControlOpen] = useState(false);
+  const [draggedMissionTask, setDraggedMissionTask] = useState(null);
+  const [missionDropGroupId, setMissionDropGroupId] = useState(null);
   const [taskSearch, setTaskSearch] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedGroupIds, setSelectedGroupIds] = useState([]);
@@ -622,6 +624,35 @@ export default function WorkspaceView() {
     }
   }
 
+  // Drag-and-drop column reorder — applied optimistically so the columns
+  // don't snap back while the PATCH is in flight.
+  async function reorderGroups(orderedGroupIds) {
+    const previousGroups = groups;
+    const groupById = new Map(groups.map((group) => [String(group.group_id), group]));
+    const nextGroups = orderedGroupIds.map((id) => groupById.get(String(id))).filter(Boolean);
+
+    if (nextGroups.length !== groups.length) return;
+
+    setGroups(nextGroups);
+    setError("");
+
+    try {
+      const response = await fetch("/api/task-groups", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ orderedGroupIds }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reorder task groups.");
+      }
+    } catch (reorderError) {
+      setGroups(previousGroups);
+      setError(reorderError.message);
+    }
+  }
+
   async function createGroup() {
     setError("");
 
@@ -741,6 +772,29 @@ export default function WorkspaceView() {
       setError(updateError.message);
       throw updateError;
     }
+  }
+
+  // Quick view's task pills are draggable between columns — resend every
+  // other field as-is (see updateTask's full-record PATCH gotcha) with just
+  // groupId changed.
+  function dropMissionTaskOnGroup(targetGroupId) {
+    const task = draggedMissionTask;
+    setDraggedMissionTask(null);
+    setMissionDropGroupId(null);
+
+    if (!task || String(task.group_id ?? "") === String(targetGroupId ?? "")) return;
+
+    updateTask(task, {
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      groupId: targetGroupId,
+      requiredSkillIds: (task.requiredSkills ?? []).map((skill) => skill.skill_id),
+      startDatetime: task.start_datetime,
+      endDatetime: task.end_datetime,
+      assignedTo: task.assigned_to,
+    });
   }
 
   async function archiveTask(task) {
@@ -1372,6 +1426,7 @@ export default function WorkspaceView() {
             onGroupCreate={createGroup}
             onGroupDelete={deleteGroup}
             onGroupRename={renameGroup}
+            onGroupReorder={reorderGroups}
             onSkillCreate={createSkill}
             onTaskAiAssign={aiAssignTask}
             onTaskApprove={approveAiTask}
@@ -1400,6 +1455,10 @@ export default function WorkspaceView() {
             className="fixed inset-0 z-80 bg-transparent backdrop-blur-lg"
             onClick={() => setIsMissionControlOpen(false)}
           >
+            <h2 className="fixed left-1/2 top-8 z-90 -translate-x-1/2 text-2xl font-black text-[#0D1E4C]">
+              Quick View
+            </h2>
+
             <button
               type="button"
               onClick={() => setIsMissionControlOpen(false)}
@@ -1416,12 +1475,36 @@ export default function WorkspaceView() {
               onClick={(event) => event.stopPropagation()}
             >
               {missionControlColumns.map((column) => (
-                <div key={column.id} className="flex w-80 shrink-0 flex-col">
+                <div
+                  key={column.id}
+                  onDragOver={(event) => {
+                    if (!draggedMissionTask) return;
+                    event.preventDefault();
+                    if (missionDropGroupId !== column.id) setMissionDropGroupId(column.id);
+                  }}
+                  onDrop={() => dropMissionTaskOnGroup(column.id)}
+                  className="flex w-80 shrink-0 flex-col"
+                >
                   <h3 className="mb-4 shrink-0 text-center text-xl font-black text-[#0D1E4C]">{column.name}</h3>
-                  <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-1 pb-4 pt-1">
+                  <div
+                    className={`flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto rounded-3xl px-1 pb-4 pt-1 transition ${
+                      missionDropGroupId === column.id ? "outline-2 outline-offset-4 outline-[#2563EB]/50" : ""
+                    }`}
+                  >
                     {column.tasks.length ? (
                       column.tasks.map((task) => (
-                        <div key={task.task_id} className="relative">
+                        <div
+                          key={task.task_id}
+                          draggable
+                          onDragStart={() => setDraggedMissionTask(task)}
+                          onDragEnd={() => {
+                            setDraggedMissionTask(null);
+                            setMissionDropGroupId(null);
+                          }}
+                          className={`relative cursor-grab active:cursor-grabbing ${
+                            draggedMissionTask?.task_id === task.task_id ? "opacity-40" : ""
+                          }`}
+                        >
                           <div className="rounded-full border border-white/60 bg-white/60 px-5 py-4 shadow-sm">
                             <span
                               className="block text-center text-sm font-bold text-[#0D1E4C]"
