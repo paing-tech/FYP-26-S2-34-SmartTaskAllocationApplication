@@ -1,9 +1,11 @@
 "use client";
 
-import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import SignUpForm from "@/components/SignUpForm";
 import ProfileDetailCard from "@/components/ProfileDetailCard";
 import Portal from "@/components/Portal";
+import AccountActivityLog from "@/components/AccountActivityLog";
+import PendingInvitations from "@/components/PendingInvitations";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 // Lighter than the font's default weight (400) so the action icons read as
@@ -206,6 +208,8 @@ function AccountActionsMenu({ account, roleIdByName, onRequestAction }) {
                     type: "role",
                     title: `${promote.label}?`,
                     roleId: roleIdByName.get(promote.targetRoleName.toLowerCase()),
+                    action: "promote",
+                    targetLabel: account.full_name || account.username,
                   })
                 }
               />
@@ -220,6 +224,8 @@ function AccountActionsMenu({ account, roleIdByName, onRequestAction }) {
                     type: "role",
                     title: `${demote.label}?`,
                     roleId: roleIdByName.get(demote.targetRoleName.toLowerCase()),
+                    action: "demote",
+                    targetLabel: account.full_name || account.username,
                   })
                 }
               />
@@ -236,6 +242,8 @@ function AccountActionsMenu({ account, roleIdByName, onRequestAction }) {
                     title: "Suspend Account?",
                     accountStatus: "Suspended",
                     tone: "danger",
+                    action: "suspend",
+                    targetLabel: account.full_name || account.username,
                   })
                 }
               />
@@ -249,6 +257,8 @@ function AccountActionsMenu({ account, roleIdByName, onRequestAction }) {
                     type: "status",
                     title: "Activate Account?",
                     accountStatus: "Active",
+                    action: "activate",
+                    targetLabel: account.full_name || account.username,
                   })
                 }
               />
@@ -263,6 +273,8 @@ function AccountActionsMenu({ account, roleIdByName, onRequestAction }) {
                   type: "delete",
                   title: "Delete Account?",
                   tone: "danger",
+                  action: "delete",
+                  targetLabel: account.full_name || account.username,
                 })
               }
             />
@@ -401,17 +413,6 @@ function AccountActions({ account, isSelf, roleIdByName, onRequestAction }) {
   );
 }
 
-// Reserves the page's remaining space for features not built yet, so the
-// accounts list doesn't stretch to fill the whole page.
-function PlaceholderSection({ title, description }) {
-  return (
-    <section className="rounded-3xl border border-dashed border-white/60 bg-white/20 p-6">
-      <h2 className="text-lg font-bold text-[#07183b]">{title}</h2>
-      <p className="mt-1 text-sm font-semibold text-[#64748B]">{description}</p>
-    </section>
-  );
-}
-
 function escapeCsvValue(value) {
   const stringValue = String(value ?? "");
   return /[",\n]/.test(stringValue) ? `"${stringValue.replace(/"/g, '""')}"` : stringValue;
@@ -432,9 +433,6 @@ export default function AccountsPageContent() {
   const [pendingAction, setPendingAction] = useState(null);
   const [viewProfileUserId, setViewProfileUserId] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [searchWidth, setSearchWidth] = useState(null);
-  const searchWrapperRef = useRef(null);
-  const actionsGroupRef = useRef(null);
 
   function toggleRole(roleName) {
     setRoleFilter((current) =>
@@ -525,27 +523,16 @@ export default function AccountsPageContent() {
     return Array.from(names).sort();
   }, [accounts]);
 
-  // Keeps the search bar exactly as wide as the Export data + Add User
-  // buttons combined — measured live since button width depends on font
-  // rendering, not something safe to hardcode.
-  useLayoutEffect(() => {
-    function measure() {
-      const groupRect = actionsGroupRef.current?.getBoundingClientRect();
-      if (groupRect) {
-        setSearchWidth(Math.max(160, groupRect.width));
-      }
-    }
-
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-
   // Accounts after search + role + department filters (but before the status
   // filter), so the status pill counts reflect the other active filters.
+  // Pending accounts live in the Pending Invitations section instead — they
+  // have no meaningful job title/department/role yet, so they're excluded
+  // from this table entirely.
   const searchAndDeptFiltered = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return accounts.filter((account) => {
+      if (account.account_status === "Pending") return false;
+
       const searchable = `${account.full_name ?? ""} ${account.username} ${account.email} ${account.job_title ?? ""} ${account.role?.role_name ?? ""} ${account.department?.department_name ?? ""}`;
       if (!searchable.toLowerCase().includes(normalizedSearch)) return false;
 
@@ -564,7 +551,7 @@ export default function AccountsPageContent() {
   }, [accounts, search, roleFilter, departmentFilter]);
 
   const statusCounts = useMemo(() => {
-    const counts = { All: searchAndDeptFiltered.length, Active: 0, Suspended: 0, Pending: 0 };
+    const counts = { All: searchAndDeptFiltered.length, Active: 0, Suspended: 0 };
     for (const account of searchAndDeptFiltered) {
       if (account.account_status in counts) counts[account.account_status] += 1;
     }
@@ -579,17 +566,21 @@ export default function AccountsPageContent() {
 
   async function performPendingAction() {
     if (!pendingAction) return;
-    const { account, type, roleId, accountStatus } = pendingAction;
+    const { account, type, roleId, accountStatus, action, targetLabel } = pendingAction;
 
     if (type === "delete") {
-      const response = await fetch(`/api/accounts?userId=${account.user_id}`, {
+      const params = new URLSearchParams({ userId: account.user_id });
+      if (action) params.set("action", action);
+      if (targetLabel) params.set("targetLabel", targetLabel);
+
+      const response = await fetch(`/api/accounts?${params.toString()}`, {
         method: "DELETE",
         headers: await authHeaders(),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not delete account.");
     } else {
-      const body = { userId: account.user_id };
+      const body = { userId: account.user_id, action, targetLabel };
       if (type === "role") body.roleId = roleId;
       if (type === "status") body.accountStatus = accountStatus;
 
@@ -611,7 +602,9 @@ export default function AccountsPageContent() {
   // or filters.
   function handleExportCsv() {
     const headers = ["Full Name", "Username", "Email", "Job Title", "Phone Number", "Department", "Role", "Status"];
-    const rows = accounts.map((account) => [
+    const rows = accounts
+      .filter((account) => account.account_status !== "Pending")
+      .map((account) => [
       account.full_name ?? "",
       account.username ?? "",
       account.email ?? "",
@@ -637,7 +630,7 @@ export default function AccountsPageContent() {
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="shrink-0 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-        {["All", "Active", "Suspended", "Pending"].map((status) => {
+        {["All", "Active", "Suspended"].map((status) => {
           const active = statusFilter === status;
           return (
             <button
@@ -807,11 +800,7 @@ export default function AccountsPageContent() {
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          <div
-            ref={searchWrapperRef}
-            className="relative"
-            style={searchWidth ? { width: searchWidth } : undefined}
-          >
+          <div className="relative w-82">
             <span
               className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#64748B]"
               style={ICON_WEIGHT}
@@ -826,7 +815,7 @@ export default function AccountsPageContent() {
               className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
             />
           </div>
-          <div ref={actionsGroupRef} className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
               onClick={handleExportCsv}
@@ -919,8 +908,13 @@ export default function AccountsPageContent() {
           ) : null}
       </div>
 
-      <div className="min-h-0 flex-3 space-y-4 overflow-y-auto pb-1">
-        <PlaceholderSection title="Activity Logs" description="A history of account and permission changes. Coming soon." />
+      <div className="flex min-h-0 flex-3 gap-4 pb-1">
+        <div className="min-h-0 flex-7 overflow-y-auto">
+          <AccountActivityLog />
+        </div>
+        <div className="min-h-0 flex-3 overflow-y-auto">
+          <PendingInvitations onAccountsChanged={loadAccounts} />
+        </div>
       </div>
 
       {isFormOpen ? (

@@ -11,6 +11,20 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const ALLOWED_ACTIVITY_ACTIONS = ["approve", "suspend", "activate", "promote", "demote", "delete"];
+
+async function logAccountActivity(supabase, { organizationId, actorUserId, targetUserId, targetLabel, action }) {
+  if (!ALLOWED_ACTIVITY_ACTIONS.includes(action)) return;
+
+  await supabase.from("account_activity_log").insert({
+    organization_id: organizationId,
+    actor_user_id: actorUserId,
+    target_user_id: targetUserId,
+    target_label: cleanString(targetLabel) || null,
+    action,
+  });
+}
+
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
@@ -85,7 +99,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { userId, username, email, roleId, organizationId, accountStatus } =
+    const { userId, username, email, roleId, organizationId, accountStatus, action, targetLabel } =
       await request.json();
 
     // The admin may only modify accounts inside their own organization, and
@@ -146,6 +160,16 @@ export async function PATCH(request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    if (action) {
+      await logAccountActivity(supabase, {
+        organizationId: requesterOrgId,
+        actorUserId: user.id,
+        targetUserId: userId,
+        targetLabel,
+        action,
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -163,6 +187,8 @@ export async function DELETE(request) {
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    const action = searchParams.get("action");
+    const targetLabel = searchParams.get("targetLabel");
 
     if (!userId) {
       return NextResponse.json({ error: "User ID is required." }, { status: 400 });
@@ -183,6 +209,18 @@ export async function DELETE(request) {
         { error: "Account not found in your organization." },
         { status: 404 },
       );
+    }
+
+    // Log before deleting — account_activity_log.target_user_id has a real FK
+    // to user_account.user_id, so it must reference a still-existing row.
+    if (action) {
+      await logAccountActivity(supabase, {
+        organizationId: requesterOrgId,
+        actorUserId: user.id,
+        targetUserId: userId,
+        targetLabel,
+        action,
+      });
     }
 
     const { error: accountError } = await supabase

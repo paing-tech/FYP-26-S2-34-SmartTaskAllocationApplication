@@ -114,7 +114,7 @@ export default function SignUpForm({ onClose, onSuccess }) {
   }
 
   return (
-    <section className="relative w-full max-w-md rounded-[28px] border border-[#d8e0ee] bg-white px-10 pt-8 pb-10 shadow-[0_28px_80px_rgba(0,0,0,0.25)]">
+    <section className="relative w-full max-w-md rounded-[28px] border border-[#d8e0ee] bg-slate-100 px-10 pt-8 pb-10 shadow-[0_28px_80px_rgba(0,0,0,0.25)]">
       <button
         type="button"
         onClick={onClose}

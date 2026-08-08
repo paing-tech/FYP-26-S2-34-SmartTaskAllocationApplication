@@ -69,6 +69,7 @@ export async function POST(request) {
         username: temporaryUsername,
         email: cleanEmail,
         account_status: "Pending",
+        invited_by: user.id,
       },
       { onConflict: "user_id" },
     );

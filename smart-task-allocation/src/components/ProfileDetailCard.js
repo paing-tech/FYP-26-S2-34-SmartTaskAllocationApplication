@@ -262,7 +262,7 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
   const name = profile?.full_name || profile?.username || profile?.email || "Profile";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center 0 bg-white/60 px-4">
       <div className="relative w-full max-w-sm max-h-[90vh] overflow-hidden rounded-[40px] shadow-2xl">
         {loadError ? (
           <div className="bg-white p-6">
