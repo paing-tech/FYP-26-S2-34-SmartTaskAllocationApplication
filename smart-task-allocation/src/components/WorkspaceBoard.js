@@ -475,31 +475,64 @@ function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isA
   const name = getDisplayName(employee);
   const availabilityLabel = getEmployeeAvailabilityLabel(employee, activeTaskCount);
   const skills = employee?.skills ?? [];
+  const [isAssignedPanelOpen, setIsAssignedPanelOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isAssignedPanelOpen) return undefined;
+
+    function close() {
+      setIsAssignedPanelOpen(false);
+    }
+
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [isAssignedPanelOpen]);
 
   return (
-    <div className="group relative z-0 hover:z-20">
-      {/* Stacked card behind the profile card — peeks out at rest, then
-          expands downward on hover to reveal this employee's current
-          assignments. */}
-      <div className="absolute inset-x-3 top-full z-0 max-h-3 overflow-hidden rounded-b-3xl border border-t-0 border-white/50 bg-white/70 px-4 pb-0 pt-6 shadow-sm backdrop-blur-xl transition-all duration-300 ease-out group-hover:max-h-64 group-hover:pb-4">
-        <p className="text-center text-[11px] font-black uppercase tracking-wide text-[#94a3b8]">Assigned to</p>
-        <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
-          {assignedTasks.length ? (
-            assignedTasks.map((assignedTask) => (
-              <div
-                key={assignedTask.task_id}
-                className="truncate rounded-full bg-white/90 px-3 py-1.5 text-center text-xs font-bold text-[#0D1E4C] shadow-sm"
-              >
-                {assignedTask.title || "Untitled task"}
-              </div>
-            ))
-          ) : (
-            <p className="text-center text-xs font-semibold text-[#94a3b8]">No active tasks</p>
-          )}
-        </div>
-      </div>
+    <div className="relative">
+      <div className="relative flex flex-col items-center rounded-3xl border border-white/60 bg-white/70 p-4 text-center shadow-sm backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (activeTaskCount) setIsAssignedPanelOpen((current) => !current);
+          }}
+          disabled={!activeTaskCount}
+          aria-label={`${activeTaskCount} assigned task${activeTaskCount === 1 ? "" : "s"}`}
+          title="Assigned tasks"
+          className={`absolute right-3 top-3 flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black transition ${
+            activeTaskCount ? "text-[#0D1E4C] hover:text-[#2563EB]" : "cursor-not-allowed text-[#cbd5e1]"
+          }`}
+        >
+          {activeTaskCount}
+          <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+            assignment
+          </span>
+        </button>
 
-      <div className="relative z-10 flex flex-col items-center rounded-3xl border border-white/60 bg-white/70 p-4 text-center shadow-sm backdrop-blur-xl">
+        {isAssignedPanelOpen ? (
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className="absolute inset-x-0 top-10 z-30 rounded-2xl border border-white/60 bg-white p-3 text-left shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
+          >
+            <p className="text-center text-[11px] font-black uppercase tracking-wide text-[#94a3b8]">Assigned to</p>
+            <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+              {assignedTasks.length ? (
+                assignedTasks.map((assignedTask) => (
+                  <div
+                    key={assignedTask.task_id}
+                    className="truncate rounded-full bg-[#f8faff] px-3 py-1.5 text-center text-xs font-bold text-[#0D1E4C]"
+                  >
+                    {assignedTask.title || "Untitled task"}
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-xs font-semibold text-[#94a3b8]">No active tasks</p>
+              )}
+            </div>
+          </div>
+        ) : null}
+
         <span
           className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${
             AVAILABILITY_TONES[availabilityLabel] ?? DEFAULT_AVAILABILITY_TONE
@@ -534,24 +567,24 @@ function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isA
           </span>
         ) : null}
 
-        {skills.length ? (
-          <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-            {skills.map((skill) => (
-              <span
-                key={skill}
-                className="truncate rounded-full bg-[#eef2f8] px-2.5 py-1 text-[10px] font-bold text-[#52627a]"
-              >
-                {skill}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {/* Fixed min-height reserved regardless of skill count, so every
+            card in the same row lines up to the same height. */}
+        <div className="mt-3 flex min-h-13 w-full flex-wrap content-start justify-center gap-1.5">
+          {skills.map((skill) => (
+            <span
+              key={skill}
+              className="truncate rounded-full bg-[#eef2f8] px-2.5 py-1 text-[10px] font-bold text-[#52627a]"
+            >
+              {skill}
+            </span>
+          ))}
+        </div>
 
         <button
           type="button"
           onClick={() => onAssign(employee.user_id)}
           disabled={isAssigned || isSubmitting}
-          className={`mt-4 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
+          className={`mt-1 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
             isAssigned
               ? "cursor-not-allowed bg-[#eef2f8] text-[#94a3b8]"
               : "bg-[#2563EB] text-white hover:bg-[#1d4ed8]"
@@ -2966,7 +2999,7 @@ export default function WorkspaceBoard({
           {isAddMenuOpen ? (
             <div
               onClick={(event) => event.stopPropagation()}
-              className="absolute right-0 -top-4 w-44 px-2 py-2 overflow-hidden rounded-3xl border border-white/60 bg-white backdrop-blur-3xl shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
+              className="absolute right-0 -top-4 w-44 px-2 py-2 overflow-hidden rounded-3xl border border-white/60 bg-slate-200 backdrop-blur-3xl shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
             >
               <button
                 type="button"

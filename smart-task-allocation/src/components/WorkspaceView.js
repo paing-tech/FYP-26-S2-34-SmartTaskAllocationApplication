@@ -1455,7 +1455,7 @@ export default function WorkspaceView() {
             className="fixed inset-0 z-80 bg-transparent backdrop-blur-lg"
             onClick={() => setIsMissionControlOpen(false)}
           >
-            <h2 className="fixed left-1/2 top-8 z-90 -translate-x-1/2 text-2xl font-black text-[#0D1E4C]">
+            <h2 className="fixed left-1/2 top-24 z-90 -translate-x-1/2 text-2xl font-black text-[#0D1E4C]">
               Quick View
             </h2>
 
