@@ -6,12 +6,22 @@ import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
 import ProfileDetailCard from "@/components/ProfileDetailCard";
+import { usePlanGate } from "@/components/PlanProvider";
 import {
   DEMO_ROLES,
   clearDemoSession,
   demoAuthHeaders,
   isDemoSession,
 } from "@/lib/demoClient";
+
+const PLAN_TIER_CHIP_TONES = {
+  pro: "bg-[#7C3AED]",
+  team: "bg-[#CA8A04]",
+};
+
+function capitalize(value) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+}
 
 const roleActions = {
   manager: [
@@ -29,8 +39,6 @@ const roleActions = {
     },
     { label: "View team", href: "/manager/team", group: "Team" },
     { label: "Open attendance", href: "/manager/attendance", group: "Attendance" },
-    { label: "Review archive", href: "/manager/archive", group: "Archive" },
-    { label: "Get support", href: "/manager/support", group: "Support" },
   ],
   useradmin: [
     { label: "Create account", href: "/useradmin/accounts", group: "Accounts" },
@@ -39,7 +47,6 @@ const roleActions = {
   ],
   employee: [
     { label: "Open workspace", href: "/employee/workspace", group: "Workspace" },
-    { label: "Get support", href: "/employee/support", group: "Support" },
   ],
 };
 
@@ -126,6 +133,7 @@ function BellIcon() {
 export default function TopInformationBar({ actor }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { plan, openPlanPicker } = usePlanGate();
   const searchInputRef = useRef(null);
   const [query, setQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -485,7 +493,7 @@ export default function TopInformationBar({ actor }) {
           <button
             type="button"
             onClick={openProfileMenu}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#0a2a66] text-white shadow-sm transition hover:bg-[#07183b]"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0a2a66] text-white shadow-sm transition hover:bg-[#07183b]"
             aria-label="Profile"
             title="Profile"
           >
@@ -495,15 +503,25 @@ export default function TopInformationBar({ actor }) {
                 alt={profile.name || "Profile"}
                 width={44}
                 height={44}
-                className="h-11 w-11 rounded-full object-cover"
+                className="h-10 w-10 rounded-full object-cover"
               />
             ) : (
               <UserIcon />
             )}
           </button>
 
+          {plan && plan !== "starter" ? (
+            <span
+              className={`pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[7px] font-black text-white shadow-sm ${
+                PLAN_TIER_CHIP_TONES[plan] ?? "bg-[#0a2a66]"
+              }`}
+            >
+              {capitalize(plan)}
+            </span>
+          ) : null}
+
           {isProfileOpen ? (
-            <div className="absolute right-0 top-14 w-52 rounded-[28px] border border-white/60 bg-slate-200 px-6 py-4 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
+            <div className="absolute right-0 top-14 w-52 rounded-[28px] border border-white/60 bg-slate-200 px-4 py-4 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
               <div className="flex items-center gap-3 px-3 py-2">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a2a66] text-white">
                   {profile.profilePictureUrl ? (
@@ -563,17 +581,45 @@ export default function TopInformationBar({ actor }) {
                       setIsProfileCardOpen(true);
                       setIsProfileOpen(false);
                     }}
-                    className="rounded-full px-4 py-3 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
+                    className="flex items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
                   >
-                    View profile
+                    <span className="material-symbols-outlined text-lg text-[#94a3b8]" aria-hidden="true">
+                      id_card
+                    </span>
+                    View Profile
                   </button>
                 )}
+                {!isDemo && plan ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      openPlanPicker();
+                    }}
+                    className="flex items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
+                  >
+                    <span className="material-symbols-outlined text-lg text-[#94a3b8]" aria-hidden="true">
+                      diamond
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">Your Plan</span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black text-white ${
+                        PLAN_TIER_CHIP_TONES[plan] ?? "bg-[#94a3b8]"
+                      }`}
+                    >
+                      {capitalize(plan)}
+                    </span>
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={isDemo ? exitDemo : signOut}
-                  className="rounded-full px-4 py-3 text-left text-sm font-bold text-red-700 transition hover:bg-red-50/80"
+                  className="flex items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-bold text-red-700 transition hover:bg-red-50/80"
                 >
-                  {isDemo ? "Exit demo" : "Log out"}
+                  <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                    logout
+                  </span>
+                  {isDemo ? "Exit demo" : "Log Out"}
                 </button>
               </div>
             </div>

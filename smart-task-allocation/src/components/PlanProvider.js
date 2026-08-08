@@ -106,8 +106,13 @@ export function PlanProvider({ children }) {
     setError("");
   }
 
+  const openPlanPicker = useCallback(() => setIsChoosingPlan(true), []);
+
   const lockedFeature = lockedFeatureKey ? featureByKey.get(lockedFeatureKey) : null;
-  const value = useMemo(() => ({ plan, isLocked, guard }), [plan, isLocked, guard]);
+  const value = useMemo(
+    () => ({ plan, isLocked, guard, openPlanPicker }),
+    [plan, isLocked, guard, openPlanPicker],
+  );
 
   return (
     <PlanContext.Provider value={value}>

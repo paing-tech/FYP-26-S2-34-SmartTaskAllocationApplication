@@ -96,32 +96,21 @@ function NavIcon({ name }) {
     );
   }
 
-  if (name === "archive") {
-    return (
-      <svg {...commonProps}>
-        <rect x="3" y="4" width="18" height="4" rx="1" />
-        <path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" />
-        <path d="M10 12h4" />
-      </svg>
-    );
-  }
-
-  if (name === "support") {
-    return (
-      <svg {...commonProps}>
-        <circle cx="12" cy="12" r="10" />
-        <path d="M9.09 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4" />
-        <path d="M12 17h.01" />
-      </svg>
-    );
-  }
-
   if (name === "tile_large") {
     // Material Symbols "tile_large" (outlined) — filled glyph, so it uses
     // its own attrs rather than commonProps' stroke-based line-icon style.
     return (
       <svg className="h-5 w-5 shrink-0" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
         <path d="M120-120v-240h320v240H120Zm400 0v-240h320v240H520Zm-320-80h160v-80H200v80Zm400 0h160v-80H600v80ZM120-440v-400h720v400H120Zm160 200Zm400 0Z" />
+      </svg>
+    );
+  }
+
+  if (name === "groups") {
+    // Material Symbols "groups" (outlined) — filled glyph, same as tile_large above.
+    return (
+      <svg className="h-5 w-5 shrink-0" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+        <path d="M0-240v-63q0-43 44-70t116-27q13 0 25 .5t23 2.5q-14 21-21 44t-7 48v65H0Zm240 0v-65q0-32 17.5-58.5T307-410q32-20 76.5-30t96.5-10q53 0 97.5 10t76.5 30q32 20 49 46.5t17 58.5v65H240Zm540 0v-65q0-26-6.5-49T754-397q11-2 22.5-2.5t23.5-.5q72 0 116 26.5t44 70.5v63H780Zm-455-80h311q-10-20-55.5-35T480-370q-55 0-100.5 15T325-320ZM160-440q-33 0-56.5-23.5T80-520q0-34 23.5-57t56.5-23q34 0 57 23t23 57q0 33-23 56.5T160-440Zm640 0q-33 0-56.5-23.5T720-520q0-34 23.5-57t56.5-23q34 0 57 23t23 57q0 33-23 56.5T800-440Zm-320-40q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T600-600q0 50-34.5 85T480-480Zm0-80q17 0 28.5-11.5T520-600q0-17-11.5-28.5T480-640q-17 0-28.5 11.5T440-600q0 17 11.5 28.5T480-560Zm1 240Zm-1-280Z" />
       </svg>
     );
   }
