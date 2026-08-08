@@ -19,14 +19,14 @@ const PRIORITY_PILL_TONES = {
   urgent: "border-red-200 bg-red-500",
 };
 
-function startOfWeek(date) {
+export function startOfWeek(date) {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);
   result.setDate(result.getDate() - result.getDay()); // back to Sunday
   return result;
 }
 
-function addDays(date, days) {
+export function addDays(date, days) {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
@@ -290,8 +290,8 @@ export default function WorkspaceCalendar({
   onTaskUpdate,
   skills = [],
   tasks = [],
+  weekStart,
 }) {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [editingTask, setEditingTask] = useState(null);
 
   const days = useMemo(
@@ -299,12 +299,6 @@ export default function WorkspaceCalendar({
     [weekStart],
   );
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
-
-  const monthLabel = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(weekStart),
-    [weekStart],
-  );
 
   const today = useMemo(() => new Date(), []);
   const employeesById = useMemo(
@@ -394,14 +388,6 @@ export default function WorkspaceCalendar({
     return { rowHeights: heights, sameDayByDay: sameDay };
   }, [days, sameDayTasks, weekStart]);
 
-  function goToPreviousWeek() {
-    setWeekStart((current) => addDays(current, -7));
-  }
-
-  function goToNextWeek() {
-    setWeekStart((current) => addDays(current, 7));
-  }
-
   async function handleTaskSave(task, updates) {
     if (task?.isNew) {
       await onTaskCreate?.(updates);
@@ -429,29 +415,6 @@ export default function WorkspaceCalendar({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {/* Header: month nav */}
-      <div className="relative z-40 flex shrink-0 items-center justify-center px-2 pb-5">
-        <div className="flex items-center gap-3 text-lg font-bold text-[#0D1E4C]">
-          <button
-            type="button"
-            onClick={goToPreviousWeek}
-            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-white/60"
-            aria-label="Previous week"
-          >
-            ‹
-          </button>
-          <span className="min-w-28 text-center">{monthLabel}</span>
-          <button
-            type="button"
-            onClick={goToNextWeek}
-            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-white/60"
-            aria-label="Next week"
-          >
-            ›
-          </button>
-        </div>
-      </div>
-
       {/* Calendar card */}
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/60 bg-white/40 backdrop-blur-3xl">
         <div className="h-full overflow-auto">

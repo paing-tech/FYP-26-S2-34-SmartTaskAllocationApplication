@@ -15,6 +15,13 @@ function formatDateTime(iso) {
   return `${day} at ${time}`;
 }
 
+function formatCardDate(iso) {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return `${day}, ${time}`;
+}
+
 // Full-screen expansion of the workspace's compact activity pill — two
 // independently-scrolling sections: completed tasks as full task cards in a
 // horizontal row, and the sentence-style activity feed grouped by date
@@ -72,7 +79,7 @@ export default function TaskHistory({ activity = [], completedTasks = [], employ
                   viewOnly
                 />
                 <p className="mt-1.5 px-1 text-center text-xs font-semibold text-[#94a3b8]">
-                  on {formatDateTime(task.updated_at)}
+                  {formatCardDate(task.updated_at)}
                 </p>
               </div>
             ))}

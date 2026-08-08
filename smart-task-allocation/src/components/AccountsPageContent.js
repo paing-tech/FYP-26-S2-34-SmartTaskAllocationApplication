@@ -433,6 +433,7 @@ export default function AccountsPageContent() {
   const [pendingAction, setPendingAction] = useState(null);
   const [viewProfileUserId, setViewProfileUserId] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   function toggleRole(roleName) {
     setRoleFilter((current) =>
@@ -489,6 +490,15 @@ export default function AccountsPageContent() {
 
     return () => clearTimeout(timeout);
   }, []);
+
+  // Remounts AccountActivityLog/PendingInvitations (via their `key`) so they
+  // refetch too — they're self-contained data fetchers with no exposed
+  // reload method of their own.
+  function refreshAll() {
+    loadAccounts();
+    loadRoles();
+    setRefreshKey((key) => key + 1);
+  }
 
   useEffect(() => {
     (async () => {
@@ -799,8 +809,31 @@ export default function AccountsPageContent() {
           ) : null}
         </div>
 
+        <button
+          type="button"
+          onClick={refreshAll}
+          disabled={isLoading}
+          aria-label="Refresh"
+          title="Refresh"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#0A2540] transition hover:text-[#0D1E4C] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <svg
+            className={`h-4.5 w-4.5 ${isLoading ? "animate-spin" : ""}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
+          </svg>
+        </button>
+
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          <div className="relative w-82">
+          <div className="relative w-72">
             <span
               className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#64748B]"
               style={ICON_WEIGHT}
@@ -811,7 +844,7 @@ export default function AccountsPageContent() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search for users"
+              placeholder="Search users"
               className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
             />
           </div>
@@ -910,10 +943,10 @@ export default function AccountsPageContent() {
 
       <div className="flex min-h-0 flex-3 gap-4 pb-1">
         <div className="min-h-0 flex-7 overflow-y-auto">
-          <AccountActivityLog />
+          <AccountActivityLog key={refreshKey} />
         </div>
         <div className="min-h-0 flex-3 overflow-y-auto">
-          <PendingInvitations onAccountsChanged={loadAccounts} />
+          <PendingInvitations key={refreshKey} onAccountsChanged={loadAccounts} />
         </div>
       </div>
 

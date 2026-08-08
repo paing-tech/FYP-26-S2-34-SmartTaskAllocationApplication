@@ -138,6 +138,7 @@ export async function DELETE(request) {
     const { searchParams } = new URL(request.url);
     const groupId = searchParams.get("groupId");
     const migrateToGroupId = searchParams.get("migrateToGroupId");
+    const migrateTaskIds = (searchParams.get("migrateTaskIds") ?? "").split(",").filter(Boolean);
     const deleteTasks = searchParams.get("deleteTasks") === "true";
 
     if (!groupId) {
@@ -173,13 +174,33 @@ export async function DELETE(request) {
         }
       }
     } else if (migrateToGroupId) {
-      const { error: migrateError } = await supabase
+      let migrateQuery = supabase
         .from("task")
         .update({ group_id: migrateToGroupId, updated_at: new Date().toISOString() })
         .eq("group_id", groupId);
 
+      if (migrateTaskIds.length) {
+        migrateQuery = migrateQuery.in("task_id", migrateTaskIds);
+      }
+
+      const { error: migrateError } = await migrateQuery;
+
       if (migrateError) {
         return NextResponse.json({ error: migrateError.message }, { status: 400 });
+      }
+
+      // Anything not selected for migration is left behind — detach it
+      // rather than letting it silently vanish (the migrated tasks no
+      // longer match group_id === groupId, so this only touches leftovers).
+      if (migrateTaskIds.length) {
+        const { error: detachError } = await supabase
+          .from("task")
+          .update({ group_id: null })
+          .eq("group_id", groupId);
+
+        if (detachError) {
+          return NextResponse.json({ error: detachError.message }, { status: 400 });
+        }
       }
     } else {
       await supabase.from("task").update({ group_id: null }).eq("group_id", groupId);

@@ -116,6 +116,16 @@ function NavIcon({ name }) {
     );
   }
 
+  if (name === "tile_large") {
+    // Material Symbols "tile_large" (outlined) — filled glyph, so it uses
+    // its own attrs rather than commonProps' stroke-based line-icon style.
+    return (
+      <svg className="h-5 w-5 shrink-0" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+        <path d="M120-120v-240h320v240H120Zm400 0v-240h320v240H520Zm-320-80h160v-80H200v80Zm400 0h160v-80H600v80ZM120-440v-400h720v400H120Zm160 200Zm400 0Z" />
+      </svg>
+    );
+  }
+
   if (name === "agents") {
     return (
       <svg {...commonProps}>

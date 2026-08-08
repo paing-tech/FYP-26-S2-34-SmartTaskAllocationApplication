@@ -13,7 +13,7 @@ async function authHeaders() {
 
 function formatTimestamp(isoString) {
   if (!isoString) return "";
-  return new Date(isoString).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(isoString).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function InvitationRow({ invitation, busyAction, onApprove, onResend, onCancel }) {
@@ -21,13 +21,13 @@ function InvitationRow({ invitation, busyAction, onApprove, onResend, onCancel }
 
   return (
     <li className="space-y-2 rounded-2xl bg-white/40 px-4 py-3 backdrop-blur-md">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-bold text-[#0B1B32]">{invitation.email}</p>
-        <p className="mt-0.5 truncate text-xs font-medium text-[#64748B]">
-          {invitation.roleName ?? "No role"} · Invited by {invitation.invitedByName ?? "Unknown"} on{" "}
-          {formatTimestamp(invitation.createdAt)}
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-sm font-bold text-[#0B1B32]">{invitation.email}</p>
+        <span className="shrink-0 pr-2 text-xs font-semibold text-[#64748B]">{invitation.roleName ?? "No role"}</span>
       </div>
+      <p className="truncate text-xs font-medium text-[#64748B]">
+        Invited by {invitation.invitedByName ?? "Unknown"} on {formatTimestamp(invitation.createdAt)}
+      </p>
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -40,18 +40,18 @@ function InvitationRow({ invitation, busyAction, onApprove, onResend, onCancel }
         <button
           type="button"
           disabled={isBusy}
-          onClick={onResend}
-          className="rounded-full border border-[#C7DDEB] px-3 py-1.5 text-xs font-bold text-[#0D1E4C] transition hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {busyAction === "resend" ? "Resending..." : "Resend"}
-        </button>
-        <button
-          type="button"
-          disabled={isBusy}
           onClick={onCancel}
           className="rounded-full px-3 py-1.5 text-xs font-bold text-[#B42318] transition hover:bg-[#FEE4E2] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busyAction === "cancel" ? "Cancelling..." : "Cancel"}
+        </button>
+        <button
+          type="button"
+          disabled={isBusy}
+          onClick={onResend}
+          className="ml-auto rounded-full border border-[#C7DDEB] px-3 py-1.5 text-xs font-bold text-[#0D1E4C] transition hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busyAction === "resend" ? "Resending..." : "Resend"}
         </button>
       </div>
     </li>

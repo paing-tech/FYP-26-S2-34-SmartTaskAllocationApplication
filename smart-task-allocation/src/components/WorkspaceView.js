@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import WorkspaceCalendar from "@/components/WorkspaceCalendar";
+import WorkspaceCalendar, { addDays, startOfWeek } from "@/components/WorkspaceCalendar";
 import WorkspaceBoard, { AvatarCircle, buildBoardColumns } from "@/components/WorkspaceBoard";
 import AllocationHistory from "@/components/AllocationHistory";
 import Portal from "@/components/Portal";
@@ -44,6 +44,47 @@ function ColumnLayoutIcon({ count, className = "h-5 w-5" }) {
   return (
     <svg viewBox="0 -960 960 960" className={className} fill="currentColor" aria-hidden="true">
       <path d={COLUMN_ICON_FRAME + option.path} fillRule="evenodd" />
+    </svg>
+  );
+}
+
+function AgentsIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="8" width="16" height="11" rx="3" />
+      <path d="M12 4v4" />
+      <circle cx="12" cy="3" r="1" />
+      <path d="M9 13h.01" />
+      <path d="M15 13h.01" />
+      <path d="M2 13v2" />
+      <path d="M22 13v2" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ spinning }) {
+  return (
+    <svg
+      className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
     </svg>
   );
 }
@@ -276,7 +317,15 @@ export default function WorkspaceView() {
   const [dueTodayOnly, setDueTodayOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [isOptimusOn, setIsOptimusOn] = useState(false);
+  const [isTogglingOptimus, setIsTogglingOptimus] = useState(false);
+  const [isRefreshingSmartTasks, setIsRefreshingSmartTasks] = useState(false);
   const filterMenuRef = useRef(null);
+  const monthLabel = useMemo(
+    () => new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(weekStart),
+    [weekStart],
+  );
   const totalTasks = tasks.length;
   const dueTodayCount = tasks.filter((task) => isSameLocalDay(task.end_datetime)).length;
   const overdueCount = tasks.filter((task) => isTaskOverdue(task)).length;
@@ -456,70 +505,90 @@ export default function WorkspaceView() {
     window.localStorage.setItem(COLUMN_LAYOUT_STORAGE_KEY, String(count));
   }
 
-  useEffect(() => {
-    async function handleOptimusSettingChange(event) {
-      const detail = event.detail ?? {};
+  function goToPreviousWeek() {
+    setWeekStart((current) => addDays(current, -7));
+  }
 
-      if (detail.actor !== "manager") {
-        return;
-      }
+  function goToNextWeek() {
+    setWeekStart((current) => addDays(current, 7));
+  }
 
-      const actionByFeature = {
-        smart_task_creation: "set-ai-task-visibility",
-        smart_task_allocation: "auto-allocate-tasks",
-      };
-      const action = actionByFeature[detail.feature];
+  // Single toggle now stands in for the old separate Smart Task Creation /
+  // Smart Task Allocation switches — turning it on both un-hides pending
+  // Optimus AI suggestions (blue-border cards on the board) and lets Optimus
+  // auto-allocate tasks; turning it off hides those suggestions again.
+  async function toggleOptimus() {
+    if (isTogglingOptimus) return;
 
-      if (!action) {
-        return;
-      }
+    const nextValue = !isOptimusOn;
+    setIsTogglingOptimus(true);
+    setIsOptimusOn(nextValue);
+    setError("");
 
-      setError("");
-
-      try {
-        const response = await fetch("/api/tasks", {
+    try {
+      const headers = { "Content-Type": "application/json", ...(await authHeaders()) };
+      const [visibilityResponse, allocationResponse] = await Promise.all([
+        fetch("/api/tasks", {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-          body: JSON.stringify({
-            action,
-            enabled: Boolean(detail.enabled),
-          }),
-        });
-        const result = await response.json();
+          headers,
+          body: JSON.stringify({ action: "set-ai-task-visibility", enabled: nextValue }),
+        }),
+        fetch("/api/tasks", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ action: "auto-allocate-tasks", enabled: nextValue }),
+        }),
+      ]);
+      const [visibilityResult, allocationResult] = await Promise.all([
+        visibilityResponse.json(),
+        allocationResponse.json(),
+      ]);
 
-        if (!response.ok) {
-          throw new Error(result.error || "Could not update Optimus AI tasks.");
-        }
-
-        await loadWorkspaceData();
-      } catch (toggleError) {
-        setError(toggleError.message);
+      if (!visibilityResponse.ok) {
+        throw new Error(visibilityResult.error || "Could not update Optimus AI tasks.");
       }
+
+      if (!allocationResponse.ok) {
+        throw new Error(allocationResult.error || "Could not update Optimus AI allocation.");
+      }
+
+      await loadWorkspaceData();
+    } catch (toggleError) {
+      setIsOptimusOn(!nextValue);
+      setError(toggleError.message);
+    } finally {
+      setIsTogglingOptimus(false);
     }
+  }
 
-    window.addEventListener("optima:optimus-setting-change", handleOptimusSettingChange);
+  // Manual trigger for Smart Task Creation: looks at allocation history for
+  // due recurring tasks and common-sense follow-ups, skipping anything that
+  // already has an equivalent open task so repeat clicks don't pile up
+  // duplicates.
+  async function handleRefreshSmartTasks() {
+    if (isRefreshingSmartTasks) return;
+    setIsRefreshingSmartTasks(true);
+    setError("");
 
-    return () => {
-      window.removeEventListener("optima:optimus-setting-change", handleOptimusSettingChange);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "refresh-smart-tasks" }),
+      });
+      const result = await response.json();
 
-  // TopInformationBar performs the refresh-smart-tasks call itself (so it can
-  // show the result inline in its own panel) and just tells the board to
-  // reload once new tasks may have landed.
-  useEffect(() => {
-    function handleTasksRefreshed() {
-      loadWorkspaceData();
+      if (!response.ok) {
+        throw new Error(result.error || "Could not refresh smart tasks.");
+      }
+
+      await loadWorkspaceData();
+    } catch (refreshError) {
+      setError(refreshError.message);
+    } finally {
+      setIsRefreshingSmartTasks(false);
     }
-
-    window.addEventListener("optima:tasks-refreshed", handleTasksRefreshed);
-
-    return () => {
-      window.removeEventListener("optima:tasks-refreshed", handleTasksRefreshed);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
   async function renameGroup(groupId, groupName) {
     const cleanName = groupName.trim();
@@ -579,15 +648,20 @@ export default function WorkspaceView() {
     }
   }
 
-  // Deleting a group either migrates its tasks to a new group (migrateToGroupId)
-  // or deletes the tasks along with it (deleteTasks); omitting both just detaches
-  // the tasks (group_id -> null), matching the API's default behavior.
-  async function deleteGroup(groupId, { migrateToGroupId, deleteTasks } = {}) {
+  // Deleting a group either migrates its tasks to a new group (migrateToGroupId,
+  // optionally scoped to just migrateTaskIds — anything left behind is
+  // detached instead) or deletes the tasks along with it (deleteTasks);
+  // omitting all three just detaches every task (group_id -> null), matching
+  // the API's default behavior.
+  async function deleteGroup(groupId, { migrateToGroupId, migrateTaskIds, deleteTasks } = {}) {
     setError("");
 
     try {
       const params = new URLSearchParams({ groupId: String(groupId) });
       if (migrateToGroupId) params.set("migrateToGroupId", String(migrateToGroupId));
+      if (migrateToGroupId && migrateTaskIds?.length) {
+        params.set("migrateTaskIds", migrateTaskIds.join(","));
+      }
       if (deleteTasks) params.set("deleteTasks", "true");
 
       const response = await fetch(`/api/task-groups?${params.toString()}`, {
@@ -1023,40 +1097,86 @@ export default function WorkspaceView() {
             </button>
           ))}
         </div>
-        {view === "board" ? (
-          <>
-            <div className="absolute left-0 hidden items-center gap-2 xl:flex">
-              <InsightPill label="Total tasks" value={totalTasks} />
-              <InsightPill
-                label="Due today"
-                value={dueTodayCount}
-                progress={totalTasks ? dueTodayCount / totalTasks : 0}
-              />
-              <InsightPill
-                label="Overdue"
-                value={overdueCount}
-                progress={totalTasks ? overdueCount / totalTasks : 0}
-                tone="red"
-              />
-              <InsightPill
-                label="Unassigned"
-                value={unassignedCount}
-                progress={totalTasks ? unassignedCount / totalTasks : 0}
-              />
-            </div>
-            <div className="absolute right-0 flex items-center gap-2">
-              <div className="relative w-64">
-                <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#64748B]" aria-hidden="true">
-                  search
-                </span>
-                <input
-                  value={taskSearch}
-                  onChange={(event) => setTaskSearch(event.target.value)}
-                  placeholder="Search tasks"
-                  className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
-                />
-              </div>
+        <div className="absolute left-0 hidden items-center gap-2 xl:flex">
+          <InsightPill label="Total tasks" value={totalTasks} />
+          <InsightPill
+            label="Due today"
+            value={dueTodayCount}
+            progress={totalTasks ? dueTodayCount / totalTasks : 0}
+          />
+          <InsightPill
+            label="Overdue"
+            value={overdueCount}
+            progress={totalTasks ? overdueCount / totalTasks : 0}
+            tone="red"
+          />
+          <InsightPill
+            label="Unassigned"
+            value={unassignedCount}
+            progress={totalTasks ? unassignedCount / totalTasks : 0}
+          />
+          <button
+            type="button"
+            onClick={handleRefreshSmartTasks}
+            disabled={isRefreshingSmartTasks}
+            aria-label="Refresh smart tasks"
+            title="Refresh smart tasks"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-[#0D1E4C] transition hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshIcon spinning={isRefreshingSmartTasks} />
+          </button>
+        </div>
+        <div className="absolute right-0 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleOptimus}
+            disabled={isTogglingOptimus}
+            aria-pressed={isOptimusOn}
+            aria-label="Toggle Optimus AI"
+            title="Optimus AI"
+            className={`flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/35 shadow-[0_4px_10px_rgba(13,30,76,0.2),0_14px_32px_rgba(13,30,76,0.24)] backdrop-blur-xl transition hover:scale-105 disabled:cursor-not-allowed ${
+              isOptimusOn ? "text-[#2563EB]" : "text-[#0D1E4C]/40"
+            }`}
+          >
+            <AgentsIcon />
+          </button>
 
+          <div className="relative w-72">
+            <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#64748B]" aria-hidden="true">
+              search
+            </span>
+            <input
+              value={taskSearch}
+              onChange={(event) => setTaskSearch(event.target.value)}
+              placeholder="Search tasks"
+              className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
+            />
+          </div>
+
+          {view === "calendar" ? (
+            <div className="flex items-center gap-1 rounded-full border border-white/70 bg-white/35 px-2 py-1 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={goToPreviousWeek}
+                aria-label="Previous week"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-bold text-[#0D1E4C] transition hover:bg-white/60"
+              >
+                ‹
+              </button>
+              <span className="min-w-24 text-center text-sm font-bold text-[#0D1E4C]">{monthLabel}</span>
+              <button
+                type="button"
+                onClick={goToNextWeek}
+                aria-label="Next week"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-bold text-[#0D1E4C] transition hover:bg-white/60"
+              >
+                ›
+              </button>
+            </div>
+          ) : null}
+
+          {view === "board" ? (
+            <>
               <div ref={filterMenuRef} className="relative">
                 <button
                   type="button"
@@ -1218,9 +1338,9 @@ export default function WorkspaceView() {
                   view_compact_alt
                 </span>
               </button>
-            </div>
-          </>
-        ) : null}
+            </>
+          ) : null}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1">
@@ -1239,7 +1359,8 @@ export default function WorkspaceView() {
             onTaskUnassignEmployee={unassignEmployeeFromTask}
             onTaskUpdate={updateTask}
             skills={skills}
-            tasks={tasks}
+            tasks={filteredTasks}
+            weekStart={weekStart}
           />
         ) : (
           <WorkspaceBoard

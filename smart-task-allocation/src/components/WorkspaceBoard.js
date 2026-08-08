@@ -17,6 +17,7 @@ const STATUS_TONES = {
   "in progress": { chip: "text-[#b45309]", dot: "bg-[#FDAB3D]" },
   completed: { chip: "text-[#15803d]", dot: "bg-[#00C875]" },
   cancelled: { chip: "text-[#b91c1c]", dot: "bg-[#DF2F4A]" },
+  archived: { chip: "text-[#475569]", dot: "bg-[#94A3B8]" },
 };
 
 const AVATAR_COLORS = ["#1E40AF", "#0F766E", "#7C3AED", "#B45309", "#BE185D"];
@@ -768,6 +769,7 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
   const isPendingApproval = isAiCreated && task.ai_state !== "accepted";
   const approvedBy = task.reasons?.approvedBy;
   const isCompleted = getStatusKey(task.status) === "completed";
+  const isArchived = getStatusKey(task.status) === "archived";
 
   async function handleApprove(event) {
     event.stopPropagation();
@@ -866,7 +868,15 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
           ) : (
             <AssigneeProfile employee={null} />
           )}
-          {viewOnly ? (
+          {viewOnly && isArchived ? (
+            <div
+              className={`mt-1 w-full rounded-2xl border border-slate-200 bg-slate-100 text-center text-[11px] font-black text-slate-500 ${
+                compact ? "px-3 py-2" : "px-3 py-2.5"
+              }`}
+            >
+              Archived
+            </div>
+          ) : viewOnly ? (
             <button
               type="button"
               onClick={handleComplete}
@@ -1946,6 +1956,10 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, onReopen, t
   const priorityTone = PRIORITY_TONES[getPriorityKey(task.priority)] ?? PRIORITY_TONES.medium;
   const statusTone = STATUS_TONES[getStatusKey(task.status)] ?? STATUS_TONES.open;
   const isCompleted = getStatusKey(task.status) === "completed";
+  // Archived tasks land in this same read-only history view alongside
+  // completed ones, so they get the same "Mark as Open" reopen affordance
+  // instead of the "Mark as Completed" button, which wouldn't make sense.
+  const isClosed = isCompleted || getStatusKey(task.status) === "archived";
   const assignees = (task.assigneeIds ?? [])
     .map((userId) => employees.find((employee) => employee.user_id === userId))
     .filter(Boolean);
@@ -2347,7 +2361,7 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, onReopen, t
 
         {activePanel === "details" ? (
           <div className="shrink-0 px-6 pb-6 pt-2">
-            {isCompleted && onReopen ? (
+            {isClosed && onReopen ? (
               <button
                 type="button"
                 onClick={handleReopen}
@@ -2411,16 +2425,35 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, onReopen, t
   );
 }
 
-function DeleteGroupModal({ count, name, onCancel, onConfirm }) {
+function DeleteGroupModal({ groupId, groups = [], name, onCancel, onConfirm, tasks = [] }) {
+  const otherGroups = useMemo(
+    () => groups.filter((group) => !sameId(group.group_id, groupId)),
+    [groups, groupId],
+  );
+  const [selectedTaskIds, setSelectedTaskIds] = useState(() => new Set(tasks.map((task) => task.task_id)));
+  const [destinationGroupId, setDestinationGroupId] = useState(otherGroups[0]?.group_id ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleConfirm(migrate) {
+  function toggleTask(taskId) {
+    setSelectedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  async function handleDelete() {
     setIsSubmitting(true);
     setError("");
 
     try {
-      await onConfirm(migrate);
+      const migrateTaskIds = destinationGroupId ? [...selectedTaskIds] : [];
+      await onConfirm({
+        migrateToGroupId: migrateTaskIds.length ? destinationGroupId : null,
+        migrateTaskIds,
+      });
     } catch (confirmError) {
       setError(confirmError.message || "Could not delete group.");
       setIsSubmitting(false);
@@ -2430,33 +2463,54 @@ function DeleteGroupModal({ count, name, onCancel, onConfirm }) {
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/10 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-[999] flex items-center justify-center p-4"
         onClick={onCancel}
       >
         <div
-          className="w-full max-w-sm rounded-[28px] bg-white p-6 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
+          className="w-full max-w-sm rounded-3xl border border-white/60 bg-white/80 p-6 shadow-[0_28px_80px_rgba(0,0,0,0.3)] backdrop-blur-xl"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex items-start justify-between gap-3">
-            <h2 className="text-lg font-black text-[#0D1E4C]">Delete &quot;{name}&quot;?</h2>
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={isSubmitting}
-              aria-label="Cancel"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/70 hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="material-symbols-outlined text-xl" aria-hidden="true">
-                close
-              </span>
-            </button>
-          </div>
-
-          <p className="mt-3 text-sm font-semibold leading-6 text-[#52627a]">
-            {count > 0
-              ? `${count} task${count === 1 ? "" : "s"} exist in this group. Do you want to migrate them to a new group?`
-              : "This group has no tasks."}
+          <p className="text-center text-base font-bold text-[#0B1B32]">Delete &quot;{name}&quot;?</p>
+          <p className="mt-2 text-center text-sm font-semibold leading-6 text-[#52627a]">
+            {tasks.length ? "Do you want to migrate existing tasks?" : "This group has no tasks."}
           </p>
+
+          {tasks.length ? (
+            <div className="mt-4 max-h-40 space-y-0.5 overflow-y-auto rounded-2xl border border-white/60 bg-white/40 p-2">
+              {tasks.map((task) => {
+                const checked = selectedTaskIds.has(task.task_id);
+                return (
+                  <button
+                    key={task.task_id}
+                    type="button"
+                    onClick={() => toggleTask(task.task_id)}
+                    className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                  >
+                    {checked ? (
+                      <span className="material-symbols-outlined text-[18px] text-[#2563EB]" aria-hidden="true">
+                        check_circle
+                      </span>
+                    ) : (
+                      <span className="h-4 w-4 shrink-0 rounded-full border border-[#94A3B8] bg-white/40" />
+                    )}
+                    <span className="truncate">{task.title || "Untitled task"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {tasks.length ? (
+            otherGroups.length ? (
+              <div className="mt-3">
+                <GroupPicker groups={otherGroups} onChange={setDestinationGroupId} value={destinationGroupId} />
+              </div>
+            ) : (
+              <p className="mt-3 text-center text-xs font-semibold text-[#94a3b8]">
+                No other group to migrate to — these tasks will be ungrouped.
+              </p>
+            )
+          ) : null}
 
           {error ? (
             <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
@@ -2464,22 +2518,20 @@ function DeleteGroupModal({ count, name, onCancel, onConfirm }) {
             </p>
           ) : null}
 
-          <div className="mt-5 flex justify-end gap-2">
-            {count > 0 ? (
-              <button
-                type="button"
-                onClick={() => handleConfirm(true)}
-                disabled={isSubmitting}
-                className="rounded-full bg-[#0D1E4C] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#0a1838] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSubmitting ? "Migrating…" : "Migrate"}
-              </button>
-            ) : null}
+          <div className="mt-5 flex gap-2">
             <button
               type="button"
-              onClick={() => handleConfirm(false)}
+              onClick={onCancel}
               disabled={isSubmitting}
-              className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex-1 rounded-full border border-[#C7DDEB] py-2.5 text-sm font-bold text-[#0B1B32] transition hover:bg-[#F1F5F9] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isSubmitting}
+              className="flex-1 rounded-full bg-[#B42318] py-2.5 text-sm font-bold text-white transition hover:bg-[#8f1c13] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? "Deleting…" : "Delete"}
             </button>
@@ -2490,7 +2542,7 @@ function DeleteGroupModal({ count, name, onCancel, onConfirm }) {
   );
 }
 
-function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRename, viewOnly = false }) {
+function ColumnHeader({ count, groupId, groups, name, onGroupDelete, onRename, tasks, viewOnly = false }) {
   // Keyed by `name` at the call site, so a rename (local or external) remounts
   // this with a fresh draftName instead of needing an effect to resync it.
   const [draftName, setDraftName] = useState(name);
@@ -2536,14 +2588,8 @@ function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRe
     }
   }
 
-  async function handleDeleteConfirm(migrate) {
-    if (migrate) {
-      const newGroup = await onGroupCreate?.();
-      await onGroupDelete?.(groupId, { migrateToGroupId: newGroup?.group_id });
-    } else {
-      await onGroupDelete?.(groupId, { deleteTasks: true });
-    }
-
+  async function handleDeleteConfirm({ migrateToGroupId, migrateTaskIds }) {
+    await onGroupDelete?.(groupId, { migrateToGroupId, migrateTaskIds });
     setIsConfirmOpen(false);
   }
 
@@ -2607,10 +2653,12 @@ function ColumnHeader({ count, groupId, name, onGroupCreate, onGroupDelete, onRe
 
       {isConfirmOpen ? (
         <DeleteGroupModal
-          count={count}
+          groupId={groupId}
+          groups={groups}
           name={name}
           onCancel={() => setIsConfirmOpen(false)}
           onConfirm={handleDeleteConfirm}
+          tasks={tasks}
         />
       ) : null}
     </div>
@@ -2770,11 +2818,12 @@ export default function WorkspaceBoard({
             <ColumnHeader
               key={column.name}
               groupId={column.id}
+              groups={groups}
               name={column.name}
               count={column.tasks.length}
               onRename={onGroupRename}
-              onGroupCreate={onGroupCreate}
               onGroupDelete={onGroupDelete}
+              tasks={column.tasks}
               viewOnly={viewOnly}
             />
 

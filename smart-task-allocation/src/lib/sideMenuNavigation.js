@@ -3,7 +3,7 @@ export const sideMenuNavigation = {
     label: "User Admin",
     homeHref: "/useradmin/accounts",
     items: [
-      { label: "Dashboard", href: "/useradmin/accounts", icon: "users" },
+      { label: "Dashboard", href: "/useradmin/accounts", icon: "tile_large" },
       { label: "Organization", href: "/useradmin/organization", icon: "organization" },
       { label: "Agents", href: "/useradmin/agents", icon: "agents" },
     ],

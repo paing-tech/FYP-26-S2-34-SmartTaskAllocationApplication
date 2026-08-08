@@ -893,7 +893,7 @@ async function refreshSmartTasks(supabase, { organizationId, userId }) {
 
   const candidates = historyTitles
     .map((title) => ({
-      title: `Follow-up: ${title}`,
+      title,
       baseTitle: title,
       requiredSkillIds: inferredSkillIdsByTitle.get(title) ?? [],
     }))
@@ -964,6 +964,7 @@ export async function GET(request) {
     }
 
     const organizationId = await getManagerOrganizationId(supabase, user);
+    const includeArchived = new URL(request.url).searchParams.get("includeArchived") === "true";
 
     let query = supabase
       .from("task")
@@ -1038,7 +1039,7 @@ export async function GET(request) {
     const visibleTasks = (data ?? []).filter(
       (task) =>
         !["hidden", "dismissed"].includes(String(task.ai_state || "").toLowerCase()) &&
-        String(task.status || "").toLowerCase() !== "archived",
+        (includeArchived || String(task.status || "").toLowerCase() !== "archived"),
     );
 
     const tasks = visibleTasks.map((task) => {

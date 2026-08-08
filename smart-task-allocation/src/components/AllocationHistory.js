@@ -18,6 +18,13 @@ function formatDateTime(iso) {
   return `${day} at ${time}`;
 }
 
+function formatCardDate(iso) {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return `${day}, ${time}`;
+}
+
 export default function AllocationHistory({ onClose } = {}) {
   const [allocations, setAllocations] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -41,7 +48,7 @@ export default function AllocationHistory({ onClose } = {}) {
       const headers = await authHeaders();
       const [allocRes, tasksRes, empRes] = await Promise.all([
         fetch("/api/allocations", { headers }),
-        fetch("/api/tasks", { headers }),
+        fetch("/api/tasks?includeArchived=true", { headers }),
         fetch("/api/employees", { headers }),
       ]);
       const allocData = await allocRes.json();
@@ -72,7 +79,7 @@ export default function AllocationHistory({ onClose } = {}) {
   const completedTasks = useMemo(
     () =>
       tasks
-        .filter((task) => String(task.status || "").toLowerCase() === "completed")
+        .filter((task) => ["completed", "archived"].includes(String(task.status || "").toLowerCase()))
         .map((task) => enrichTaskWithPeople(task, employeeById)),
     [tasks, employeeById],
   );
@@ -216,14 +223,14 @@ export default function AllocationHistory({ onClose } = {}) {
                   viewOnly
                 />
                 <p className="mt-1.5 px-1 text-center text-xs font-semibold text-[#94a3b8]">
-                  on {formatDateTime(task.updated_at)}
+                  {formatCardDate(task.updated_at)}
                 </p>
               </div>
             ))}
           </div>
         ) : (
           <p className="rounded-2xl border border-dashed border-white/60 px-6 py-8 text-center text-sm font-medium text-[#0D1E4C]/60">
-            No completed tasks yet.
+            No completed or archived tasks yet.
           </p>
         )}
       </div>

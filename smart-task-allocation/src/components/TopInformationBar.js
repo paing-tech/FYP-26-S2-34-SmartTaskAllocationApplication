@@ -123,71 +123,6 @@ function BellIcon() {
   );
 }
 
-function AgentsIcon() {
-  return (
-    <svg
-      className="h-5 w-5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="4" y="8" width="16" height="11" rx="3" />
-      <path d="M12 4v4" />
-      <circle cx="12" cy="3" r="1" />
-      <path d="M9 13h.01" />
-      <path d="M15 13h.01" />
-      <path d="M2 13v2" />
-      <path d="M22 13v2" />
-    </svg>
-  );
-}
-
-function RefreshIcon({ spinning }) {
-  return (
-    <svg
-      className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <path d="M21 3v6h-6" />
-    </svg>
-  );
-}
-
-function OptimusToggle({ checked, label, onChange }) {
-  return (
-    <button
-      type="button"
-      onClick={onChange}
-      className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition hover:bg-white/15"
-      aria-pressed={checked}
-    >
-      <span className="text-sm font-black text-[#0D1E4C]">{label}</span>
-      <span
-        className={`flex h-6 w-11 items-center rounded-full p-1 transition ${
-          checked ? "bg-[#2563EB]" : "bg-white/35"
-        }`}
-      >
-        <span
-          className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${
-            checked ? "translate-x-5" : "translate-x-0"
-          }`}
-        />
-      </span>
-    </button>
-  );
-}
-
 export default function TopInformationBar({ actor }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -197,13 +132,6 @@ export default function TopInformationBar({ actor }) {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileCardOpen, setIsProfileCardOpen] = useState(false);
-  const [isOptimusPanelOpen, setIsOptimusPanelOpen] = useState(false);
-  const [optimusSettings, setOptimusSettings] = useState({
-    smartTaskCreation: false,
-    smartTaskAllocation: false,
-  });
-  const [isRefreshingSmartTasks, setIsRefreshingSmartTasks] = useState(false);
-  const [smartTasksRefreshMessage, setSmartTasksRefreshMessage] = useState("");
   const [accountSearchItems, setAccountSearchItems] = useState([]);
   const [isLoadingSearchItems, setIsLoadingSearchItems] = useState(false);
   const [profile, setProfile] = useState({ email: "", name: "", profilePictureUrl: "" });
@@ -398,7 +326,6 @@ export default function TopInformationBar({ actor }) {
 
     setIsProfileOpen((current) => !current);
     setIsNotificationsOpen(false);
-    setIsOptimusPanelOpen(false);
   }
 
   async function signOut() {
@@ -453,75 +380,6 @@ export default function TopInformationBar({ actor }) {
     setQuery("");
   }
 
-  // Dispatching the event here — in the click handler itself, rather than
-  // inside the setOptimusSettings updater — matters: updater functions run
-  // during React's render of this component, so a synchronous listener that
-  // calls setState on WorkspaceView from inside one triggers "Cannot update a
-  // component while rendering a different component".
-  function toggleOptimusSetting(key) {
-    const nextValue = !optimusSettings[key];
-
-    setOptimusSettings((current) => ({ ...current, [key]: nextValue }));
-
-    if (key === "smartTaskCreation") {
-      window.dispatchEvent(
-        new CustomEvent("optima:optimus-setting-change", {
-          detail: {
-            actor,
-            feature: "smart_task_creation",
-            enabled: nextValue,
-          },
-        }),
-      );
-    }
-
-    if (key === "smartTaskAllocation") {
-      window.dispatchEvent(
-        new CustomEvent("optima:optimus-setting-change", {
-          detail: {
-            actor,
-            feature: "smart_task_allocation",
-            enabled: nextValue,
-          },
-        }),
-      );
-    }
-
-  }
-
-  // Runs Smart Task Creation's allocation-history analysis on demand — the
-  // agent decides what's due/missing and creates it directly on the board
-  // (skipping anything that already has an equivalent open task) rather than
-  // this being a background toggle.
-  async function handleRefreshSmartTasks() {
-    if (isRefreshingSmartTasks) return;
-    setIsRefreshingSmartTasks(true);
-    setSmartTasksRefreshMessage("");
-
-    try {
-      const response = await fetch("/api/tasks", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ action: "refresh-smart-tasks" }),
-      });
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Could not refresh smart tasks.");
-      }
-
-      const createdCount = (result.recurringCreated ?? 0) + (result.historyCreated ?? 0);
-      setSmartTasksRefreshMessage(
-        createdCount ? `Created ${createdCount} new task${createdCount === 1 ? "" : "s"}.` : "No new tasks needed.",
-      );
-      window.dispatchEvent(new CustomEvent("optima:tasks-refreshed"));
-    } catch (refreshError) {
-      setSmartTasksRefreshMessage(refreshError.message || "Could not refresh smart tasks.");
-    } finally {
-      setIsRefreshingSmartTasks(false);
-    }
-  }
-
   function runSearchResult(item) {
     closeSearch();
 
@@ -574,7 +432,6 @@ export default function TopInformationBar({ actor }) {
               setIsSearchOpen(true);
               setIsNotificationsOpen(false);
               setIsProfileOpen(false);
-              setIsOptimusPanelOpen(false);
             }}
             className="absolute inset-0 h-full w-full rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-4 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
             aria-label="Open global search"
@@ -582,55 +439,6 @@ export default function TopInformationBar({ actor }) {
             Search...
           </button>
         </div>
-
-        {actor === "manager" && pathname === "/manager/workspace" ? (
-          <div className="relative hidden sm:block">
-            <button
-              type="button"
-              onClick={() => {
-                setIsOptimusPanelOpen((current) => !current);
-                setIsNotificationsOpen(false);
-                setIsProfileOpen(false);
-                closeSearch();
-              }}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/60 bg-white/20 text-[#0D1E4C] shadow-sm backdrop-blur-xl transition hover:bg-white/35 hover:scale-110"
-              aria-label="Open Optimus AI settings"
-              title="Optimus AI"
-            >
-              <AgentsIcon />
-            </button>
-
-            {isOptimusPanelOpen ? (
-              <div className="absolute left-0 top-11 z-[120] w-72 rounded-3xl border border-white/60 bg-slate-200/90 p-3 shadow-[0_20px_70px_rgba(7,24,59,0.18)] backdrop-blur-3xl">
-                <OptimusToggle
-                  checked={optimusSettings.smartTaskCreation}
-                  label="Smart Task Creation"
-                  onChange={() => toggleOptimusSetting("smartTaskCreation")}
-                />
-                <OptimusToggle
-                  checked={optimusSettings.smartTaskAllocation}
-                  label="Smart Task Allocation"
-                  onChange={() => toggleOptimusSetting("smartTaskAllocation")}
-                />
-
-                <div className="mt-1 border-t border-white/40 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleRefreshSmartTasks}
-                    disabled={isRefreshingSmartTasks}
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition hover:bg-white/15 disabled:opacity-60"
-                  >
-                    <span className="text-sm font-black text-[#0D1E4C]">Refresh smart tasks</span>
-                    <RefreshIcon spinning={isRefreshingSmartTasks} />
-                  </button>
-                  {smartTasksRefreshMessage ? (
-                    <p className="px-3 pb-1 text-xs font-semibold text-[#52627a]">{smartTasksRefreshMessage}</p>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
       </div>
 
       <div className="min-w-0 flex-1" />
@@ -642,7 +450,6 @@ export default function TopInformationBar({ actor }) {
           onClick={() => {
             setIsNotificationsOpen((current) => !current);
             setIsProfileOpen(false);
-            setIsOptimusPanelOpen(false);
           }}
           className="relative flex h-11 w-11 items-center justify-center rounded-full text-[#07183b] transition hover:bg-white/70"
           aria-label="Open notifications"
