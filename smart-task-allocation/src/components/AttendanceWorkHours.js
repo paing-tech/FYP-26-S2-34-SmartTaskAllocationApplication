@@ -172,7 +172,7 @@ export default function AttendanceWorkHours({ focusedDate }) {
   return (
     <div>
       <p className="text-lg font-black text-[#0D1E4C]">Work Hours</p>
-      <div className="mt-3 flex items-start justify-around">
+      <div className="mt-4 flex items-start justify-around">
         <HourDonut
           label="This week"
           hours={weekHours}

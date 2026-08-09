@@ -7,6 +7,7 @@ import AttendanceTodayPanel from "@/components/AttendanceTodayPanel";
 import AttendanceClockButton from "@/components/AttendanceClockButton";
 import AttendanceScheduleCalendar from "@/components/AttendanceScheduleCalendar";
 import AttendanceWorkHours from "@/components/AttendanceWorkHours";
+import AttendanceRateChart from "@/components/AttendanceRateChart";
 import AttendanceWeekCalendar from "@/components/AttendanceWeekCalendar";
 import AttendanceWebcamModal from "@/components/AttendanceWebcamModal";
 import LeaveManagementPanel from "@/components/LeaveManagementPanel";
@@ -92,7 +93,7 @@ export default function AttendanceClock() {
         ) : (
           <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[3fr_7fr]">
             <div className="flex min-h-0 flex-col gap-4">
-              <GlassSurface className="min-h-0 basis-[20%] overflow-hidden bg-white/30 p-5 shadow-none">
+              <GlassSurface className="min-h-0 basis-[25%] overflow-hidden bg-white/30 p-5 shadow-none">
                 <AttendanceWorkHours focusedDate={focusedDate} />
               </GlassSurface>
 
@@ -110,7 +111,9 @@ export default function AttendanceClock() {
             </div>
 
             <div className="flex min-h-0 flex-col gap-4">
-              <div className="shrink-0 basis-[20%] rounded-[28px] border border-white/40 bg-transparent" />
+              <GlassSurface className="min-h-0 basis-[25%] overflow-hidden bg-white/30 p-5 shadow-none">
+                <AttendanceRateChart />
+              </GlassSurface>
 
               <GlassSurface className="min-h-0 flex-7 overflow-hidden bg-white/30 shadow-none">
                 <AttendanceWeekCalendar

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import LeaveDatePicker from "@/components/LeaveDatePicker";
+import Portal from "@/components/Portal";
 
 async function authHeaders() {
   const supabase = getSupabaseBrowserClient();
@@ -53,12 +54,15 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editDates, setEditDates] = useState(new Set());
   const [editDescription, setEditDescription] = useState("");
+  const [editCertificateFile, setEditCertificateFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const editFileInputRef = useRef(null);
 
   function startEditing() {
     setEditDates(new Set(record.dates));
     setEditDescription(record.description || "");
+    setEditCertificateFile(null);
     setIsEditing(true);
     setError("");
   }
@@ -72,6 +76,12 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
     });
   }
 
+  function handleEditFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) setEditCertificateFile(file);
+  }
+
   async function handleSave() {
     if (!editDates.size) {
       setError("Select at least one date.");
@@ -80,14 +90,16 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
     setIsSaving(true);
     setError("");
     try {
+      const formData = new FormData();
+      formData.append("leaveRequestId", record.leave_request_id);
+      formData.append("dates", JSON.stringify([...editDates]));
+      formData.append("description", editDescription);
+      if (editCertificateFile) formData.append("certificate", editCertificateFile);
+
       const response = await fetch("/api/leave-requests", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({
-          leaveRequestId: record.leave_request_id,
-          dates: [...editDates],
-          description: editDescription,
-        }),
+        headers: await authHeaders(),
+        body: formData,
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not update your leave request.");
@@ -117,88 +129,114 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
     }
   }
 
-  if (isEditing) {
-    return (
-      <div className="rounded-2xl bg-white/60 p-3">
-        <LeaveDatePicker selectedDates={editDates} onToggleDate={toggleEditDate} />
-        <textarea
-          value={editDescription}
-          onChange={(event) => setEditDescription(event.target.value)}
-          rows={2}
-          className="mt-3 w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#0D1E4C] outline-none focus:border-[#2563EB]"
-        />
-        {error ? <p className="mt-2 text-xs font-bold text-red-600">{error}</p> : null}
-        <div className="mt-3 flex gap-2">
+  return (
+    <>
+      <div className="rounded-3xl bg-white/40 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-bold text-[#0D1E4C]">{formatDateRanges(record.dates)}</p>
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${
+              record.leave_type === "sick" ? "bg-sky-100 text-sky-700" : "bg-indigo-100 text-indigo-700"
+            }`}
+          >
+            {record.leave_type === "sick" ? "SICK" : "ANNUAL"}
+          </span>
+        </div>
+
+        {!isEditing && error ? <p className="mt-2 text-xs font-bold text-red-600">{error}</p> : null}
+
+        <div className="mt-2 flex gap-2">
           <button
             type="button"
-            onClick={() => setIsEditing(false)}
-            disabled={isSaving}
-            className="flex-1 rounded-full border border-slate-200 py-2 text-xs font-bold text-[#52627a] transition hover:bg-slate-50"
+            onClick={startEditing}
+            className="flex-1 rounded-full border border-slate-200 py-1.5 text-xs font-bold text-[#0D1E4C] transition hover:bg-slate-50"
           >
-            Discard
+            Edit
           </button>
           <button
             type="button"
-            onClick={handleSave}
+            onClick={handleCancelRequest}
             disabled={isSaving}
-            className="flex-1 rounded-full bg-[#0D1E4C] py-2 text-xs font-bold text-white transition hover:bg-[#0a1638] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 rounded-full border border-red-200 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSaving ? "Saving…" : "Save"}
+            Cancel request
           </button>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="rounded-2xl bg-white/60 p-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-bold text-[#0D1E4C]">{formatDateRanges(record.dates)}</p>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${
-            record.leave_type === "sick" ? "bg-sky-100 text-sky-700" : "bg-indigo-100 text-indigo-700"
-          }`}
-        >
-          {record.leave_type === "sick" ? "SICK" : "ANNUAL"}
-        </span>
-      </div>
+      {isEditing ? (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[75] flex items-center justify-center p-4"
+            onClick={() => setIsEditing(false)}
+          >
+          <div
+            className="relative w-full max-w-xs rounded-3xl bg-white/40 backdrop-blur-sm p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              disabled={isSaving}
+              aria-label="Close"
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-[#94a3b8] transition hover:scale-110 hover:bg-slate-100 hover:text-[#0D1E4C]"
+            >
+              <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                close
+              </span>
+            </button>
 
-      {record.description ? <p className="mt-1 text-xs font-medium text-[#52627a]">{record.description}</p> : null}
+            <p className="text-center text-sm font-black text-[#0D1E4C]">Request Leave</p>
 
-      {record.certificate_url ? (
-        <a
-          href={record.certificate_url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[#2563EB] hover:underline"
-        >
-          <span className="material-symbols-outlined text-sm" aria-hidden="true">
-            attach_file
-          </span>
-          View certificate
-        </a>
+            <div className="mt-3 space-y-3">
+              <LeaveDatePicker selectedDates={editDates} onToggleDate={toggleEditDate} />
+
+              <textarea
+                value={editDescription}
+                onChange={(event) => setEditDescription(event.target.value)}
+                placeholder="Reason for leave"
+                rows={2}
+                className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#0D1E4C] outline-none focus:border-[#2563EB]"
+              />
+
+              <button
+                type="button"
+                onClick={() => editFileInputRef.current?.click()}
+                className="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white py-2.5 text-sm font-bold text-[#0D1E4C] transition hover:bg-slate-50"
+              >
+                <span className="material-symbols-outlined text-base" aria-hidden="true">
+                  attach_file
+                </span>
+                {editCertificateFile
+                  ? editCertificateFile.name
+                  : record.certificate_url
+                    ? "Replace medical certificate"
+                    : "Medical Certificate"}
+              </button>
+              <input
+                ref={editFileInputRef}
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp,.pdf"
+                className="hidden"
+                onChange={handleEditFileChange}
+              />
+
+              {error ? <p className="text-xs font-bold text-red-600">{error}</p> : null}
+
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="w-full rounded-full bg-[#0D1E4C] py-2.5 text-sm font-bold text-white transition hover:bg-[#0a1638] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSaving ? "Saving…" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
       ) : null}
-
-      {error ? <p className="mt-2 text-xs font-bold text-red-600">{error}</p> : null}
-
-      <div className="mt-2 flex gap-2">
-        <button
-          type="button"
-          onClick={startEditing}
-          className="flex-1 rounded-full border border-slate-200 py-1.5 text-xs font-bold text-[#0D1E4C] transition hover:bg-slate-50"
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={handleCancelRequest}
-          disabled={isSaving}
-          className="flex-1 rounded-full border border-red-200 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Cancel request
-        </button>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -229,7 +267,7 @@ export default function LeaveManagementPanel() {
       <div className="mt-3 flex-1">
         {loadError ? <p className="mt-2 text-xs font-bold text-red-600">{loadError}</p> : null}
 
-        <div className="mt-2 space-y-2">
+        <div className="space-y-2">
           {requests.length ? (
             requests.map((record) => (
               <RequestRecord

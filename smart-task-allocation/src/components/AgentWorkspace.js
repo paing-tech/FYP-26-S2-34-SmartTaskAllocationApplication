@@ -9,25 +9,6 @@ import AgentTaskProposal from "@/components/AgentTaskProposal";
 
 const TELEGRAM_SENTINEL = "telegram";
 
-const FEATURE_BANNERS = [
-  {
-    title: "Prompt to Automation",
-    badge: "New AI feature",
-    description: "Prompt me to analyze, create, allocate or automate tasks effortlessly.",
-  },
-  {
-    title: "Knowledge Base",
-    badge: "New",
-    description: "Upload PDFs and docs so your agent can answer from your own company info.",
-  },
-  {
-    title: "Telegram Bot",
-    badge: "New",
-    description: "Connect a Telegram bot to chat with your agent from your phone, anywhere.",
-  },
-];
-const FEATURE_BANNER_INTERVAL_MS = 5000;
-
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-[#0D1E4C] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20";
 
@@ -178,15 +159,6 @@ export default function AgentWorkspace() {
   const [contextMenu, setContextMenu] = useState(null);
   const [renamingThreadId, setRenamingThreadId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
-
-  const [bannerIndex, setBannerIndex] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setBannerIndex((current) => (current + 1) % FEATURE_BANNERS.length);
-    }, FEATURE_BANNER_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     (async () => {
@@ -807,55 +779,10 @@ export default function AgentWorkspace() {
       </aside>
 
       <section className="flex min-h-0 flex-1 flex-col gap-4">
-        {/* Top: token usage (matches Recents width) + rotating feature banner (matches chat panel width) */}
-        <div className="flex items-stretch gap-4">
-          <div className="flex w-80 shrink-0 flex-col justify-center gap-1.5 rounded-[28px] border border-white/60 bg-white/25 px-5 py-3 backdrop-blur-sm">
-            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-[#0D1E4C]/70">Tokens Usage</h2>
-            <p className="text-center text-xs font-bold text-[#0D1E4C]">
-              {(usage?.today ?? 0).toLocaleString()} / {(usage?.dailyLimit ?? 0).toLocaleString()}
-            </p>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-white/50">
-              <div
-                className={`h-full rounded-full transition-all ${
-                  (usage?.dailyPercent ?? 0) >= 90 ? "bg-red-500" : (usage?.dailyPercent ?? 0) >= 70 ? "bg-amber-500" : "bg-[#2563EB]"
-                }`}
-                style={{ width: `${usage?.dailyPercent ?? 0}%` }}
-              />
-            </div>
-            <p className="text-center text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">
-              Daily limit
-            </p>
-            <div className="mt-1 flex items-center justify-between border-t border-white/40 pt-1.5">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">This week</p>
-                <p className="text-base font-black text-[#0D1E4C]">{(usage?.thisWeek ?? 0).toLocaleString()}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">All time</p>
-                <p className="text-base font-black text-[#0D1E4C]">{(usage?.allTime ?? 0).toLocaleString()}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-1 items-center gap-3 overflow-hidden rounded-[28px] border border-white/60 bg-gradient-to-br from-[#2563EB]/15 to-white/10 px-6 py-3 backdrop-blur-sm">
-            <span className="material-symbols-outlined shrink-0 text-2xl text-[#2563EB]" aria-hidden="true">
-              auto_awesome
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-sm font-black text-[#0D1E4C]">{FEATURE_BANNERS[bannerIndex].title}</p>
-                <span className="shrink-0 rounded-full border border-[#2563EB]/30 bg-[#2563EB]/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-[#2563EB]">
-                  {FEATURE_BANNERS[bannerIndex].badge}
-                </span>
-              </div>
-              <p className="truncate text-xs font-medium text-[#0D1E4C]/70">{FEATURE_BANNERS[bannerIndex].description}</p>
-            </div>
-          </div>
-        </div>
-
         <div className="flex min-h-0 flex-1 gap-4">
-          {/* Middle: chat sessions */}
-          <aside className="hidden w-80 shrink-0 flex-col gap-1 overflow-y-auto rounded-[28px] border border-white/60 bg-white/25 p-4 backdrop-blur-sm md:flex">
+          <div className="hidden w-80 shrink-0 flex-col gap-4 md:flex">
+          {/* Chat sessions now occupy the former token-usage position. */}
+          <aside className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded-[28px] border border-white/60 bg-white/25 p-4 backdrop-blur-sm">
             <button
               type="button"
               onClick={handleNewChat}
@@ -918,8 +845,36 @@ export default function AgentWorkspace() {
               ))}
           </aside>
 
+          {/* Token usage moved below chat history. */}
+          <div className="flex shrink-0 flex-col justify-center gap-1.5 rounded-[28px] border border-white/60 bg-white/25 px-5 py-3 backdrop-blur-sm">
+            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-[#0D1E4C]/70">Tokens Usage</h2>
+            <p className="text-center text-xs font-bold text-[#0D1E4C]">
+              {(usage?.today ?? 0).toLocaleString()} / {(usage?.dailyLimit ?? 0).toLocaleString()}
+            </p>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-white/50">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  (usage?.dailyPercent ?? 0) >= 90 ? "bg-red-500" : (usage?.dailyPercent ?? 0) >= 70 ? "bg-amber-500" : "bg-[#2563EB]"
+                }`}
+                style={{ width: `${usage?.dailyPercent ?? 0}%` }}
+              />
+            </div>
+            <p className="text-center text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">Daily limit</p>
+            <div className="mt-1 flex items-center justify-between border-t border-white/40 pt-1.5">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">This week</p>
+                <p className="text-base font-black text-[#0D1E4C]">{(usage?.thisWeek ?? 0).toLocaleString()}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0D1E4C]/50">All time</p>
+                <p className="text-base font-black text-[#0D1E4C]">{(usage?.allTime ?? 0).toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+          </div>
+
           {/* Right: chat panel — same look as AIAutomationChat.js */}
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-gradient-to-b from-[#2563EB] from-0% to-white/10 to-50% backdrop-blur-xs">
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-gradient-to-b from-[#2563EB] from-0% via-[#93C5FD] via-40% to-white/10 to-80% backdrop-blur-xs">
             <div className="flex items-center gap-2.5 border-b border-white/15 px-5 py-4 text-white">
               <span className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-white/15">
                 <Image src={getAgentAvatarSrc(agent.avatar_key)} alt="" fill className="object-cover" />

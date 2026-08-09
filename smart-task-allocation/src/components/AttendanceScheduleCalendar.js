@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import Portal from "@/components/Portal";
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const TIME_INPUT_CLASS =
   "flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-medium text-[#0D1E4C] outline-none focus:border-[#2563EB]";
@@ -20,6 +21,27 @@ function toDateStr(year, monthIndex, day) {
 function localDateStrFromIso(isoTimestamp) {
   const date = new Date(isoTimestamp);
   return toDateStr(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+// All dates from `startDateStr` through `untilDateStr` (inclusive) whose
+// weekday is in `weekdaySet` — falls back to just the start date when repeat
+// isn't actually configured (no end date, or no weekdays picked).
+function computeRepeatDates(startDateStr, untilDateStr, weekdaySet) {
+  if (!untilDateStr || weekdaySet.size === 0) return [startDateStr];
+
+  const start = new Date(`${startDateStr}T00:00:00`);
+  const until = new Date(`${untilDateStr}T00:00:00`);
+  if (until < start) return [startDateStr];
+
+  const dates = [];
+  const cursor = new Date(start);
+  while (cursor <= until) {
+    if (weekdaySet.has(cursor.getDay())) {
+      dates.push(toDateStr(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates.length ? dates : [startDateStr];
 }
 
 function monthLabel(year, monthIndex) {
@@ -61,6 +83,10 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
   const [selectedDate, setSelectedDate] = useState(null);
   const [dayStartTime, setDayStartTime] = useState("09:00");
   const [dayEndTime, setDayEndTime] = useState("17:00");
+
+  const [isRepeatOpen, setIsRepeatOpen] = useState(false);
+  const [repeatWeekdays, setRepeatWeekdays] = useState(new Set());
+  const [repeatUntil, setRepeatUntil] = useState("");
 
   const [isLeaveFormOpen, setIsLeaveFormOpen] = useState(false);
   const [leaveDescription, setLeaveDescription] = useState("");
@@ -153,6 +179,9 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
     setDayStartTime(existing?.start_time?.slice(0, 5) ?? "09:00");
     setDayEndTime(existing?.end_time?.slice(0, 5) ?? "17:00");
     setSelectedDate(dateStr);
+    setIsRepeatOpen(false);
+    setRepeatWeekdays(new Set([new Date(`${dateStr}T00:00:00`).getDay()]));
+    setRepeatUntil("");
     onDateSelect?.(dateStr);
   }
 
@@ -168,6 +197,15 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file) setLeaveCertificateFile(file);
+  }
+
+  function toggleRepeatWeekday(dayIndex) {
+    setRepeatWeekdays((current) => {
+      const next = new Set(current);
+      if (next.has(dayIndex)) next.delete(dayIndex);
+      else next.add(dayIndex);
+      return next;
+    });
   }
 
   async function submitLeaveRequest() {
@@ -202,10 +240,11 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
     setIsSaving(true);
     try {
       const headers = await authHeaders();
+      const dates = isRepeatOpen ? computeRepeatDates(selectedDate, repeatUntil, repeatWeekdays) : [selectedDate];
       const response = await fetch("/api/attendance/schedule", {
         method: "POST",
         headers,
-        body: JSON.stringify({ dates: [selectedDate], startTime: dayStartTime, endTime: dayEndTime }),
+        body: JSON.stringify({ dates, startTime: dayStartTime, endTime: dayEndTime }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not save that day's schedule.");
@@ -298,9 +337,10 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
       {error ? <p className="mt-3 text-xs font-bold text-red-600">{error}</p> : null}
 
       {selectedDate ? (
+        <Portal>
         <div className="fixed inset-0 z-[75] flex items-center justify-center p-4" onClick={closeDayEditor}>
           <div
-            className="relative w-full max-w-xs rounded-3xl bg-white p-6 shadow-xl"
+            className="relative w-full max-w-xs rounded-3xl bg-white/40 backdrop-blur-sm p-6 shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
             <button
@@ -321,6 +361,51 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
               <span className="text-sm font-bold text-[#94a3b8]">–</span>
               <input type="time" value={dayEndTime} onChange={(event) => setDayEndTime(event.target.value)} className={TIME_INPUT_CLASS} />
             </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setIsRepeatOpen((current) => !current)}
+                className="flex w-full items-center justify-between rounded-full px-1 py-1 text-left"
+              >
+                <span className="text-sm font-black text-[#0D1E4C]">Repeat</span>
+                <span className="material-symbols-outlined text-lg text-[#94a3b8]" aria-hidden="true">
+                  {isRepeatOpen ? "keyboard_arrow_up" : "keyboard_arrow_down"}
+                </span>
+              </button>
+
+              {isRepeatOpen ? (
+                <div className="mt-2 space-y-3 rounded-2xl bg-slate-50 p-3">
+                  <div className="flex justify-between gap-1">
+                    {WEEKDAY_LABELS.map((label, dayIndex) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => toggleRepeatWeekday(dayIndex)}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${
+                          repeatWeekdays.has(dayIndex)
+                            ? "bg-[#0D1E4C] text-white"
+                            : "border border-slate-200 bg-white text-[#0D1E4C] hover:bg-slate-100"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-black uppercase tracking-wide text-[#94a3b8]">Repeat until</span>
+                    <input
+                      type="date"
+                      value={repeatUntil}
+                      min={selectedDate}
+                      onChange={(event) => setRepeatUntil(event.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#0D1E4C] outline-none focus:border-[#2563EB]"
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </div>
+
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
@@ -379,12 +464,6 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
                     className="hidden"
                     onChange={handleLeaveFileChange}
                   />
-                  <p className="text-center text-[11px] font-semibold text-[#94a3b8]">
-                    {leaveCertificateFile
-                      ? "Counts as sick leave"
-                      : "Attach a certificate to count as sick leave — otherwise it's deducted from annual leave"}
-                  </p>
-
                   {leaveError ? <p className="text-xs font-bold text-red-600">{leaveError}</p> : null}
 
                   <button
@@ -400,6 +479,7 @@ export default function AttendanceScheduleCalendar({ onDateSelect, onLeaveReques
             </div>
           </div>
         </div>
+        </Portal>
       ) : null}
     </div>
   );

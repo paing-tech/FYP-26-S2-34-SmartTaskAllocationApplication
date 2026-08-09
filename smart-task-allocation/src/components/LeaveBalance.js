@@ -62,7 +62,7 @@ export default function LeaveBalance() {
 
       {error ? <p className="mt-2 text-xs font-bold text-red-600">{error}</p> : null}
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-1 space-y-4">
         {LEAVE_TYPES.map((type) => {
           const total = totals[type.key];
           const usedDays = Math.min(used[type.key], total);

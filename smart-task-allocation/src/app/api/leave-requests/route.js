@@ -128,6 +128,8 @@ export async function POST(request) {
   }
 }
 
+// Multipart like POST — a re-attached certificate needs to go through the
+// same upload path, and re-counts the request as sick leave.
 export async function PATCH(request) {
   try {
     const supabase = getSupabaseAdminClient();
@@ -141,22 +143,51 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Account not found." }, { status: 404 });
     }
 
-    const body = await request.json();
-    const leaveRequestId = body.leaveRequestId;
+    const formData = await request.formData();
+    const leaveRequestId = formData.get("leaveRequestId");
     if (!leaveRequestId) {
       return NextResponse.json({ error: "Leave request ID is required." }, { status: 400 });
     }
 
     const updates = { updated_at: new Date().toISOString() };
-    if (body.dates !== undefined) {
-      const dates = Array.isArray(body.dates) ? body.dates.filter(isValidDate) : [];
+
+    const datesRaw = formData.get("dates");
+    if (datesRaw !== null) {
+      const dates = parseDates(datesRaw);
       if (!dates.length) {
         return NextResponse.json({ error: "Select at least one date." }, { status: 400 });
       }
-      updates.dates = [...new Set(dates)].sort();
+      updates.dates = dates;
     }
-    if (body.description !== undefined) {
-      updates.description = (body.description || "").trim() || null;
+
+    const descriptionRaw = formData.get("description");
+    if (descriptionRaw !== null) {
+      updates.description = descriptionRaw.toString().trim() || null;
+    }
+
+    const file = formData.get("certificate");
+    if (file && typeof file !== "string") {
+      if (!ALLOWED_TYPES.has(file.type)) {
+        return NextResponse.json({ error: "Only PNG, JPEG, WEBP images or PDF files are allowed." }, { status: 400 });
+      }
+      if (file.size > MAX_BYTES) {
+        return NextResponse.json({ error: "The certificate must be 5MB or smaller." }, { status: 400 });
+      }
+
+      const extension = (file.name?.split(".").pop() || file.type.split("/")[1] || "pdf").toLowerCase();
+      const path = `${userId}/${crypto.randomUUID()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
+        contentType: file.type,
+        upsert: false,
+      });
+      if (uploadError) {
+        return NextResponse.json({ error: uploadError.message }, { status: 400 });
+      }
+
+      const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      updates.certificate_url = publicUrlData.publicUrl;
+      updates.leave_type = "sick";
     }
 
     const { data: updated, error } = await supabase
