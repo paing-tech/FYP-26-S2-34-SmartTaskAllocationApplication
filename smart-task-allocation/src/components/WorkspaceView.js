@@ -1213,18 +1213,22 @@ export default function WorkspaceView() {
                 type="button"
                 onClick={goToPreviousWeek}
                 aria-label="Previous week"
-                className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-bold text-[#0D1E4C] transition hover:bg-white/60"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-white/60"
               >
-                ‹
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                  chevron_left
+                </span>
               </button>
               <span className="min-w-24 text-center text-sm font-bold text-[#0D1E4C]">{monthLabel}</span>
               <button
                 type="button"
                 onClick={goToNextWeek}
                 aria-label="Next week"
-                className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-bold text-[#0D1E4C] transition hover:bg-white/60"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-white/60"
               >
-                ›
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                  chevron_right
+                </span>
               </button>
             </div>
           ) : null}
