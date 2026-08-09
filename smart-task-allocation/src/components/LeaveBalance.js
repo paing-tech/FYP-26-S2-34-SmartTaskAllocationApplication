@@ -66,7 +66,8 @@ export default function LeaveBalance() {
         {LEAVE_TYPES.map((type) => {
           const total = totals[type.key];
           const usedDays = Math.min(used[type.key], total);
-          const pct = total ? Math.min(100, (usedDays / total) * 100) : 0;
+          const remainingDays = Math.max(0, total - usedDays);
+          const pct = total ? Math.min(100, (remainingDays / total) * 100) : 0;
 
           return (
             <div key={type.key}>
@@ -78,7 +79,7 @@ export default function LeaveBalance() {
                   {type.label}
                 </p>
                 <p className="shrink-0 text-xs font-black text-[#94a3b8]">
-                  {usedDays} / {total} days
+                  {remainingDays} / {total} days
                 </p>
               </div>
               <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200">

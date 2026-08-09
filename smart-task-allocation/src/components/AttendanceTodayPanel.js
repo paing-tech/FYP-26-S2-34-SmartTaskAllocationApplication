@@ -83,7 +83,7 @@ function MinutesCell({ minutes, positiveWord, negativeWord, align }) {
   const word = minutes > 0 ? positiveWord : negativeWord;
 
   return (
-    <div className={`flex self-start flex-col gap-1 ${alignClass}`}>
+    <div className={`flex self-start flex-col gap-3 ${alignClass}`}>
       <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-[10px] font-black text-black">{word}</span>
       <span className="text-xs font-semibold text-[#94a3b8]">{formatDurationMinutes(Math.abs(minutes))}</span>
     </div>
