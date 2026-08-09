@@ -6,6 +6,7 @@ import GlassSurface from "@/components/ui/glass-surface";
 import AttendanceTodayPanel from "@/components/AttendanceTodayPanel";
 import AttendanceClockButton from "@/components/AttendanceClockButton";
 import AttendanceScheduleCalendar from "@/components/AttendanceScheduleCalendar";
+import AttendanceWorkHours from "@/components/AttendanceWorkHours";
 import AttendanceWeekCalendar from "@/components/AttendanceWeekCalendar";
 import AttendanceWebcamModal from "@/components/AttendanceWebcamModal";
 import LeaveManagementPanel from "@/components/LeaveManagementPanel";
@@ -89,12 +90,13 @@ export default function AttendanceClock() {
             {loadError}
           </p>
         ) : (
-          <>
-            {/* Insights — reserved for future analytics, intentionally blank for now. */}
-            <div className="shrink-0 basis-[20%] rounded-[28px] border border-white/40 bg-transparent" />
+          <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[3fr_7fr]">
+            <div className="flex min-h-0 flex-col gap-4">
+              <GlassSurface className="min-h-0 basis-[20%] overflow-hidden bg-white/30 p-5 shadow-none">
+                <AttendanceWorkHours focusedDate={focusedDate} />
+              </GlassSurface>
 
-            <div className="grid min-h-0 flex-1 gap-4 pt-4 md:grid-cols-[3fr_7fr]">
-              <GlassSurface className="flex h-full min-h-0 flex-col bg-white/30 p-5 shadow-none">
+              <GlassSurface className="flex min-h-0 flex-1 flex-col gap-4 bg-white/30 p-5 shadow-none">
                 <div className="shrink-0">
                   <AttendanceScheduleCalendar
                     onDateSelect={focusDate}
@@ -105,31 +107,33 @@ export default function AttendanceClock() {
                   <AttendanceTodayPanel record={record} todaySchedule={todaySchedule} />
                 </div>
               </GlassSurface>
+            </div>
 
-              <div className="flex min-h-0 flex-col gap-4">
-                <GlassSurface className="min-h-0 flex-7 overflow-hidden bg-white/30 shadow-none">
-                  <AttendanceWeekCalendar
-                    key={`${focusedDate.toISOString()}-${weekRefreshVersion}`}
-                    initialDate={focusedDate}
-                  />
+            <div className="flex min-h-0 flex-col gap-4">
+              <div className="shrink-0 basis-[20%] rounded-[28px] border border-white/40 bg-transparent" />
+
+              <GlassSurface className="min-h-0 flex-7 overflow-hidden bg-white/30 shadow-none">
+                <AttendanceWeekCalendar
+                  key={`${focusedDate.toISOString()}-${weekRefreshVersion}`}
+                  initialDate={focusedDate}
+                />
+              </GlassSurface>
+
+              <div className="grid min-h-0 flex-3 gap-4 md:grid-cols-[2fr_3fr_3fr]">
+                <GlassSurface className="flex min-h-0 items-center justify-center bg-white/30 p-5 shadow-none">
+                  <AttendanceClockButton record={record} onOpenWebcam={() => setIsWebcamModalOpen(true)} />
                 </GlassSurface>
 
-                <div className="grid min-h-0 flex-3 gap-4 md:grid-cols-[2fr_3fr_3fr]">
-                  <GlassSurface className="flex min-h-0 items-center justify-center bg-white/30 p-5 shadow-none">
-                    <AttendanceClockButton record={record} onOpenWebcam={() => setIsWebcamModalOpen(true)} />
-                  </GlassSurface>
+                <GlassSurface className="min-h-0 overflow-y-auto bg-white/30 shadow-none">
+                  <LeaveManagementPanel key={leaveRefreshVersion} />
+                </GlassSurface>
 
-                  <GlassSurface className="min-h-0 overflow-y-auto bg-white/30 shadow-none">
-                    <LeaveManagementPanel key={leaveRefreshVersion} />
-                  </GlassSurface>
-
-                  <GlassSurface className="min-h-0 overflow-y-auto bg-white/30 shadow-none">
-                    <LeaveBalance />
-                  </GlassSurface>
-                </div>
+                <GlassSurface className="min-h-0 overflow-y-auto bg-white/30 shadow-none">
+                  <LeaveBalance />
+                </GlassSurface>
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
