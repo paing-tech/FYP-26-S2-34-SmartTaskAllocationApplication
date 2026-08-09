@@ -6,14 +6,12 @@ import { useAppearance } from "@/components/appearance/AppearanceContext";
 import GlassSurface from "@/components/ui/glass-surface";
 
 const PRESET_COLORS = [
-  "#C7DDEB",
   "#E2E8F0",
-  "#0D1E4C",
-  "#1E293B",
-  "#0F766E",
-  "#7C3AED",
-  "#B91C1C",
-  "#F59E0B",
+  "#C7DDEB",
+  "#BBE1FA",
+  "#E9D5FF",
+  "#FBCFE8",
+  "#D1FAE5",
 ];
 
 // ~4MB ceiling — data URLs above this tend to blow the localStorage quota.
@@ -24,13 +22,12 @@ export default function AppearancePage() {
   const {
     appearance,
     backgroundStyle,
-    setTheme,
     setBackgroundColor,
     setWallpaper,
     setBackgroundType,
     reset,
   } = useAppearance();
-  const { theme, background } = appearance;
+  const { background } = appearance;
   const fileInputRef = useRef(null);
   const [urlDraft, setUrlDraft] = useState(
     background.type === "wallpaper" ? background.wallpaper : "",
@@ -59,50 +56,12 @@ export default function AppearancePage() {
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-[#07183b]" style={backgroundStyle}>
-      {/* Back to where the user came from */}
-      <button
-        type="button"
-        onClick={() => router.back()}
-        className="absolute left-6 top-6 z-10 flex h-11 items-center gap-2 rounded-full border border-white/60 bg-white/40 px-5 text-sm font-bold text-[#07183b] shadow-sm backdrop-blur-md transition hover:bg-white/70"
-      >
-        <span className="text-lg leading-none">‹</span> Back
-      </button>
-
-      {/* Controls docked top-right on a glass surface */}
-      <GlassSurface className="absolute right-6 top-6 z-10 max-h-[calc(100vh-3rem)] w-[24rem] max-w-[calc(100vw-3rem)] overflow-y-auto bg-white/40 p-6">
-        <h2 className="text-2xl font-black text-[#07183b]">Appearance</h2>
-        <p className="mt-1 text-sm text-[#52627a]">
-          Personalize your background and theme. Saved on this device.
-        </p>
-
-        {/* Theme */}
-        <section className="mt-6">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-[#57708f]">Theme</h3>
-          <div className="mt-3 inline-flex rounded-full border border-white/60 bg-white/50 p-1">
-            {["light", "dark"].map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setTheme(option)}
-                className={`rounded-full px-6 py-2 text-sm font-bold capitalize transition-colors ${
-                  theme === option ? "bg-[#0D1E4C] text-white" : "text-[#0A2540] hover:bg-white"
-                }`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-          {theme === "dark" ? (
-            <p className="mt-2 text-xs font-medium text-[#94739c]">
-              Dark mode styling is coming soon — the preference is saved.
-            </p>
-          ) : null}
-        </section>
+      <GlassSurface className="absolute left-1/2 top-1/2 z-10 max-h-[calc(100vh-3rem)] w-[24rem] max-w-[calc(100vw-3rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto bg-white/40 p-6">
+        <h2 className="text-center text-2xl font-black text-[#07183b]">Appearance</h2>
 
         {/* Background type */}
-        <section className="mt-6">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-[#57708f]">Background</h3>
-          <div className="mt-3 inline-flex rounded-full border border-white/60 bg-white/50 p-1">
+        <section className="mt-6 text-center">
+          <div className="inline-flex rounded-full border border-white/60 bg-white/50 p-1">
             {[
               { value: "solid", label: "Solid color" },
               { value: "wallpaper", label: "Wallpaper" },
@@ -125,8 +84,8 @@ export default function AppearancePage() {
 
         {/* Solid color controls */}
         {background.type === "solid" ? (
-          <section className="mt-5">
-            <div className="flex flex-wrap gap-3">
+          <section className="mt-5 text-center">
+            <div className="flex flex-wrap justify-center gap-3">
               {PRESET_COLORS.map((color) => (
                 <button
                   key={color}
@@ -142,7 +101,7 @@ export default function AppearancePage() {
                 />
               ))}
             </div>
-            <label className="mt-4 flex items-center gap-3 text-sm font-semibold text-[#0A2540]">
+            <label className="mt-4 flex items-center justify-center gap-3 text-sm font-semibold text-[#0A2540]">
               Custom color
               <input
                 type="color"
@@ -219,9 +178,13 @@ export default function AppearancePage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-full bg-[#0D1E4C] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#0B1B32]"
+            aria-label="Back"
+            className="flex h-12 items-center justify-center rounded-full border border-white/60 bg-white/40 pl-2 pr-4 text-sm font-bold text-[#0D1E4C] transition hover:bg-white/80 hover:scale-110"
           >
-            Done
+            <span className="material-symbols-outlined static text-xl" aria-hidden="true">
+              chevron_left
+            </span>
+            Back
           </button>
         </div>
       </GlassSurface>

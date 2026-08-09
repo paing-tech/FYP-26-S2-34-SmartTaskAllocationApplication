@@ -415,8 +415,10 @@ export default function WorkspaceCalendar({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {/* Calendar card */}
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/60 bg-white/40 backdrop-blur-3xl">
+      {/* Calendar card — sized to its own content (one week of rows) rather
+          than stretching to fill the page, so the multi-day tasks strip
+          below sits right after it instead of being pushed to the bottom. */}
+      <div className="relative max-h-full shrink-0 overflow-hidden rounded-3xl border border-white/60 bg-white/40 backdrop-blur-3xl">
         <div className="h-full overflow-auto">
           {/* Hour header row (sticky) */}
           <div className="sticky top-0 z-20 flex bg-gray-100">

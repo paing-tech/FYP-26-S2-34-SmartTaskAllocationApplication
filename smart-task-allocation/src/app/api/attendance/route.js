@@ -17,6 +17,30 @@ async function getMyAccountId(supabase, user) {
   return { userId: byEmail.data?.user_id, error: byEmail.error };
 }
 
+// Minutes between `atTime` and that day's scheduled start/end time — positive
+// means late (clock-in) or overtime (clock-out), negative means early. Uses
+// atTime's own date (rather than a separately-computed "today") so the
+// lookup always matches the exact clock event being recorded.
+async function minutesAgainstSchedule(supabase, userId, atTime, field) {
+  const workDateStr = atTime.toISOString().slice(0, 10);
+
+  const { data: schedule } = await supabase
+    .from("attendance_schedule")
+    .select(field)
+    .eq("user_id", userId)
+    .eq("work_date", workDateStr)
+    .maybeSingle();
+
+  const timeStr = schedule?.[field];
+  if (!timeStr) return null;
+
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  const scheduledAt = new Date(atTime);
+  scheduledAt.setHours(hours, minutes, 0, 0);
+
+  return Math.round((atTime.getTime() - scheduledAt.getTime()) / 60000);
+}
+
 function monthExclusiveEnd(month) {
   const [year, monthNumber] = month.split("-").map(Number);
   const nextMonth = monthNumber === 12 ? 1 : monthNumber + 1;
@@ -97,6 +121,7 @@ export async function POST(request) {
     const action = body.action;
     const verified = body.verified === true;
     const distance = typeof body.distance === "number" ? body.distance : null;
+    const workDate = typeof body.workDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.workDate) ? body.workDate : null;
 
     if (!verified) {
       return NextResponse.json({ error: "Face was not verified. Please try again." }, { status: 400 });
@@ -117,12 +142,18 @@ export async function POST(request) {
         return NextResponse.json({ error: "You are already clocked in." }, { status: 400 });
       }
 
+      const clockInAt = new Date();
+      const lateMinutes = await minutesAgainstSchedule(supabase, userId, clockInAt, "start_time");
+
       const { data: record, error: insertError } = await supabase
         .from("attendance")
         .insert({
           user_id: userId,
+          work_date: workDate ?? clockInAt.toISOString().slice(0, 10),
+          clock_in_at: clockInAt.toISOString(),
           clock_in_verified: verified,
           clock_in_distance: distance,
+          late_minutes: lateMinutes,
         })
         .select("*")
         .single();
@@ -152,6 +183,7 @@ export async function POST(request) {
       const clockOutAt = new Date();
       const clockInAt = new Date(openRecord.clock_in_at);
       const totalHours = Math.round(((clockOutAt.getTime() - clockInAt.getTime()) / 3600000) * 100) / 100;
+      const overtimeMinutes = await minutesAgainstSchedule(supabase, userId, clockOutAt, "end_time");
 
       const { data: record, error: updateError } = await supabase
         .from("attendance")
@@ -160,6 +192,7 @@ export async function POST(request) {
           clock_out_verified: verified,
           clock_out_distance: distance,
           total_hours: totalHours,
+          overtime_minutes: overtimeMinutes,
           updated_at: clockOutAt.toISOString(),
         })
         .eq("attendance_id", openRecord.attendance_id)

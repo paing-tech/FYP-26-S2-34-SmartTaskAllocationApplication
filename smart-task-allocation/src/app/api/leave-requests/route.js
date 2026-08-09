@@ -73,7 +73,6 @@ export async function POST(request) {
     const formData = await request.formData();
     const dates = parseDates(formData.get("dates") || "[]");
     const description = (formData.get("description") || "").toString().trim();
-    const isEmergency = formData.get("isEmergency") === "true";
     const file = formData.get("certificate");
 
     if (!dates.length) {
@@ -105,13 +104,15 @@ export async function POST(request) {
       certificateUrl = publicUrlData.publicUrl;
     }
 
+    // Attaching a medical certificate counts the request as sick leave;
+    // without one it's drawn from annual leave — no manual type picker needed.
     const { data: created, error: insertError } = await supabase
       .from("leave_request")
       .insert({
         user_id: userId,
         dates,
         description: description || null,
-        is_emergency: isEmergency,
+        leave_type: certificateUrl ? "sick" : "annual",
         certificate_url: certificateUrl,
       })
       .select("*")
@@ -156,9 +157,6 @@ export async function PATCH(request) {
     }
     if (body.description !== undefined) {
       updates.description = (body.description || "").trim() || null;
-    }
-    if (body.isEmergency !== undefined) {
-      updates.is_emergency = Boolean(body.isEmergency);
     }
 
     const { data: updated, error } = await supabase

@@ -15,6 +15,30 @@ function greetingForNow() {
   return "Good Evening";
 }
 
+// The DB server's own "today" can disagree with the user's local calendar
+// day near a timezone boundary — send the browser's local date explicitly
+// so clock-ins are always grouped under the day the user actually sees.
+function localDateStr() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+// "2 hrs 10 mins" — computed from the actual timestamps rather than the
+// server's rounded total_hours decimal.
+function formatWorkedDuration(clockInAt, clockOutAt) {
+  if (!clockInAt || !clockOutAt) return "";
+  const totalMinutes = Math.max(
+    0,
+    Math.round((new Date(clockOutAt).getTime() - new Date(clockInAt).getTime()) / 60000),
+  );
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (hours) parts.push(`${hours} hr${hours === 1 ? "" : "s"}`);
+  parts.push(`${minutes} min${minutes === 1 ? "" : "s"}`);
+  return parts.join(" ");
+}
+
 async function authHeaders() {
   const supabase = getSupabaseBrowserClient();
   const { data } = await supabase.auth.getSession();
@@ -121,7 +145,7 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
 
       if (!detection) {
         setStatusTone("error");
-        setStatusMessage("No face detected. Center your face in the frame and try again.");
+        setStatusMessage("No face detected. Center your face in the frame.");
         return;
       }
 
@@ -130,7 +154,7 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
 
       if (!verified) {
         setStatusTone("error");
-        setStatusMessage("Face not verified — this doesn't match your profile picture.");
+        setStatusMessage("Face verification failed.");
         return;
       }
 
@@ -139,7 +163,7 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
       const response = await fetch("/api/attendance", {
         method: "POST",
         headers,
-        body: JSON.stringify({ action, verified, distance }),
+        body: JSON.stringify({ action, verified, distance, workDate: localDateStr() }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -151,7 +175,8 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
         const name = profile?.full_name || profile?.username || "there";
         setStatusMessage(`Verified — ${greetingForNow()}, ${name}!`);
       } else {
-        setStatusMessage(`Verified — clocked out. Total hours: ${result.record.total_hours}`);
+        const worked = formatWorkedDuration(result.record.clock_in_at, result.record.clock_out_at);
+        setStatusMessage(`Verified — clocked out. Total: ${worked}`);
       }
 
       onSuccess?.(result.record);
@@ -168,9 +193,9 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
   const buttonLabel = isClockedIn ? "Clock Out" : "Clock In";
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="relative aspect-square w-full max-w-md overflow-hidden rounded-[32px] bg-black shadow-[0_28px_80px_rgba(0,0,0,0.4)]"
+        className="relative aspect-square w-full max-w-md overflow-hidden rounded-[32px] bg-black"
         onClick={(event) => event.stopPropagation()}
       >
         {loadError ? (
@@ -237,7 +262,7 @@ export default function AttendanceWebcamModal({ profile, isClockedIn, onClose, o
               onClick={handleCapture}
               disabled={isBusy || isProcessing}
               className={`flex w-full items-center justify-center gap-2 rounded-full px-6 py-4 text-lg font-black text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                isClockedIn ? "bg-red-600 hover:bg-red-700" : "bg-[#0D1E4C] hover:bg-[#0a1638]"
+                isClockedIn ? "bg-red-600 hover:bg-red-700" : "bg-emerald-700 hover:bg-emerald-800"
               }`}
             >
               <span className="material-symbols-outlined text-2xl" aria-hidden="true">

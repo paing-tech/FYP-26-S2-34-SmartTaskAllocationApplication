@@ -8,7 +8,7 @@ export const DEFAULT_APPEARANCE = {
   theme: "light", // "light" | "dark" — dark styling implemented later
   background: {
     type: "solid", // "solid" | "wallpaper"
-    color: "#C7DDEB",
+    color: "#E2E8F0",
     wallpaper: "", // image URL or data URL
   },
 };

@@ -4,9 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import GlassSurface from "@/components/ui/glass-surface";
 import AttendanceTodayPanel from "@/components/AttendanceTodayPanel";
+import AttendanceClockButton from "@/components/AttendanceClockButton";
 import AttendanceScheduleCalendar from "@/components/AttendanceScheduleCalendar";
+import AttendanceWeekCalendar from "@/components/AttendanceWeekCalendar";
 import AttendanceWebcamModal from "@/components/AttendanceWebcamModal";
 import LeaveManagementPanel from "@/components/LeaveManagementPanel";
+import LeaveBalance from "@/components/LeaveBalance";
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -34,6 +37,17 @@ export default function AttendanceClock() {
   const [todaySchedule, setTodaySchedule] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [isWebcamModalOpen, setIsWebcamModalOpen] = useState(false);
+  const [focusedDate, setFocusedDate] = useState(() => new Date());
+  const [weekRefreshVersion, setWeekRefreshVersion] = useState(0);
+  const [leaveRefreshVersion, setLeaveRefreshVersion] = useState(0);
+
+  // Selecting (or saving) a day on the month calendar moves the week view
+  // over to that date and forces it to refetch — the version bump matters
+  // even when the date itself doesn't change (e.g. re-saving the same day).
+  function focusDate(dateStr) {
+    setFocusedDate(new Date(`${dateStr}T00:00:00`));
+    setWeekRefreshVersion((current) => current + 1);
+  }
 
   const loadData = useCallback(async () => {
     try {
@@ -69,7 +83,7 @@ export default function AttendanceClock() {
 
   return (
     <section className="h-full min-h-0 overflow-hidden">
-      <div className="flex h-full flex-col gap-4 overflow-y-auto pb-4">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
         {loadError ? (
           <p className="max-w-xl rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
             {loadError}
@@ -77,21 +91,43 @@ export default function AttendanceClock() {
         ) : (
           <>
             {/* Insights — reserved for future analytics, intentionally blank for now. */}
-            <div className="min-h-32 rounded-[28px] border border-white/40 bg-transparent" />
+            <div className="shrink-0 basis-[20%] rounded-[28px] border border-white/40 bg-transparent" />
 
-            <div className="grid flex-1 gap-4 md:grid-cols-[1fr_3fr]">
-              <GlassSurface className="min-h-64 bg-white/30">
-                <LeaveManagementPanel />
+            <div className="grid min-h-0 flex-1 gap-4 pt-4 md:grid-cols-[3fr_7fr]">
+              <GlassSurface className="flex h-full min-h-0 flex-col bg-white/30 p-5 shadow-none">
+                <div className="shrink-0">
+                  <AttendanceScheduleCalendar
+                    onDateSelect={focusDate}
+                    onLeaveRequestCreated={() => setLeaveRefreshVersion((current) => current + 1)}
+                  />
+                </div>
+                <div className="min-h-0 flex-1">
+                  <AttendanceTodayPanel record={record} todaySchedule={todaySchedule} />
+                </div>
               </GlassSurface>
 
-              <GlassSurface className="grid h-full gap-4 bg-white/30 p-5 sm:grid-cols-[1fr_2fr]">
-                <AttendanceTodayPanel
-                  record={record}
-                  todaySchedule={todaySchedule}
-                  onOpenWebcam={() => setIsWebcamModalOpen(true)}
-                />
-                <AttendanceScheduleCalendar />
-              </GlassSurface>
+              <div className="flex min-h-0 flex-col gap-4">
+                <GlassSurface className="min-h-0 flex-7 overflow-hidden bg-white/30 shadow-none">
+                  <AttendanceWeekCalendar
+                    key={`${focusedDate.toISOString()}-${weekRefreshVersion}`}
+                    initialDate={focusedDate}
+                  />
+                </GlassSurface>
+
+                <div className="grid min-h-0 flex-3 gap-4 md:grid-cols-[2fr_3fr_3fr]">
+                  <GlassSurface className="flex min-h-0 items-center justify-center bg-white/30 p-5 shadow-none">
+                    <AttendanceClockButton record={record} onOpenWebcam={() => setIsWebcamModalOpen(true)} />
+                  </GlassSurface>
+
+                  <GlassSurface className="min-h-0 overflow-y-auto bg-white/30 shadow-none">
+                    <LeaveManagementPanel key={leaveRefreshVersion} />
+                  </GlassSurface>
+
+                  <GlassSurface className="min-h-0 overflow-y-auto bg-white/30 shadow-none">
+                    <LeaveBalance />
+                  </GlassSurface>
+                </div>
+              </div>
             </div>
           </>
         )}

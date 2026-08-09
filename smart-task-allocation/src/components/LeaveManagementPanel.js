@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import LeaveDatePicker from "@/components/LeaveDatePicker";
 
@@ -47,126 +47,6 @@ function formatDateRanges(dates) {
   }
 
   return ranges.join(", ");
-}
-
-// Matches the "Full-time" checkbox toggle style used on the Schedule calendar.
-function ToggleSwitch({ checked, onChange, label }) {
-  return (
-    <button type="button" onClick={onChange} aria-pressed={checked} className="flex items-center gap-2">
-      <span className="text-sm font-black text-[#0D1E4C]">{label}</span>
-      <span
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
-          checked ? "border-[#0D1E4C] bg-[#0D1E4C]" : "border-slate-300 bg-white"
-        }`}
-      >
-        {checked ? (
-          <span className="material-symbols-outlined text-[14px] text-white" aria-hidden="true">
-            check_small
-          </span>
-        ) : null}
-      </span>
-    </button>
-  );
-}
-
-function NewRequestForm({ onCreated }) {
-  const [selectedDates, setSelectedDates] = useState(new Set());
-  const [description, setDescription] = useState("");
-  const [isEmergency, setIsEmergency] = useState(false);
-  const [certificateFile, setCertificateFile] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const fileInputRef = useRef(null);
-
-  function toggleDate(dateStr) {
-    setSelectedDates((current) => {
-      const next = new Set(current);
-      if (next.has(dateStr)) next.delete(dateStr);
-      else next.add(dateStr);
-      return next;
-    });
-  }
-
-  function handleFileChange(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) setCertificateFile(file);
-  }
-
-  async function handleSubmit() {
-    if (!selectedDates.size) {
-      setError("Select at least one date.");
-      return;
-    }
-    setIsSubmitting(true);
-    setError("");
-    try {
-      const formData = new FormData();
-      formData.append("dates", JSON.stringify([...selectedDates]));
-      formData.append("description", description);
-      formData.append("isEmergency", String(isEmergency));
-      if (certificateFile) formData.append("certificate", certificateFile);
-
-      const response = await fetch("/api/leave-requests", {
-        method: "POST",
-        headers: await authHeaders(),
-        body: formData,
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Could not submit your leave request.");
-
-      setSelectedDates(new Set());
-      setDescription("");
-      setIsEmergency(false);
-      setCertificateFile(null);
-      onCreated?.(result.request);
-    } catch (submitError) {
-      setError(submitError.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="rounded-3xl bg-white/50 p-4">
-      <LeaveDatePicker selectedDates={selectedDates} onToggleDate={toggleDate} />
-
-      <textarea
-        value={description}
-        onChange={(event) => setDescription(event.target.value)}
-        placeholder="Reason for leave"
-        rows={2}
-        className="mt-3 w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#0D1E4C] outline-none focus:border-[#2563EB]"
-      />
-
-      <div className="mt-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-[#0D1E4C] transition hover:bg-slate-50"
-        >
-          <span className="material-symbols-outlined text-base" aria-hidden="true">
-            attach_file
-          </span>
-          {certificateFile ? certificateFile.name : "Medical Certificate"}
-        </button>
-        <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" className="hidden" onChange={handleFileChange} />
-
-        <ToggleSwitch checked={isEmergency} onChange={() => setIsEmergency((current) => !current)} label="Emergency" />
-      </div>
-
-      {error ? <p className="mt-2 text-xs font-bold text-red-600">{error}</p> : null}
-
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={isSubmitting}
-        className="mt-3 w-full rounded-full bg-[#0D1E4C] py-2.5 text-sm font-bold text-white transition hover:bg-[#0a1638] disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isSubmitting ? "Submitting…" : "Submit Request"}
-      </button>
-    </div>
-  );
 }
 
 function RequestRecord({ record, onUpdated, onCancelled }) {
@@ -274,9 +154,13 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
     <div className="rounded-2xl bg-white/60 p-3">
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-bold text-[#0D1E4C]">{formatDateRanges(record.dates)}</p>
-        {record.is_emergency ? (
-          <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-700">EMERGENCY</span>
-        ) : null}
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${
+            record.leave_type === "sick" ? "bg-sky-100 text-sky-700" : "bg-indigo-100 text-indigo-700"
+          }`}
+        >
+          {record.leave_type === "sick" ? "SICK" : "ANNUAL"}
+        </span>
       </div>
 
       {record.description ? <p className="mt-1 text-xs font-medium text-[#52627a]">{record.description}</p> : null}
@@ -340,15 +224,9 @@ export default function LeaveManagementPanel() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-5">
-      <p className="text-lg font-black text-[#0D1E4C]">Request Leave</p>
+      <p className="text-lg font-black text-[#0D1E4C]">Leave Requests</p>
 
-      <div className="mt-4">
-        <NewRequestForm onCreated={(created) => setRequests((current) => [created, ...current])} />
-      </div>
-
-      <div className="mt-5 flex-1">
-        <p className="text-xs font-black uppercase tracking-[0.1em] text-[#94a3b8]">Your requests</p>
-
+      <div className="mt-3 flex-1">
         {loadError ? <p className="mt-2 text-xs font-bold text-red-600">{loadError}</p> : null}
 
         <div className="mt-2 space-y-2">
