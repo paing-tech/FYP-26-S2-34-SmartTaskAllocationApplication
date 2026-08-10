@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { isPlatformAdminRole, requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
+function pad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function toDateStr(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 async function getManagerOrganizationId(supabase, user) {
   const { data } = await supabase
     .from("user_account")
@@ -149,6 +157,54 @@ export async function GET(request) {
       }
     }
 
+    // Sun-Sat weekly attendance strip: "scheduled" (blue) if a schedule row
+    // exists with no clock-in yet, "clocked_in" (emerald) once they have,
+    // "absent" (red) if a scheduled day has already passed with no clock-in.
+    const weekStartSun = new Date(now);
+    weekStartSun.setHours(0, 0, 0, 0);
+    weekStartSun.setDate(weekStartSun.getDate() - weekStartSun.getDay());
+    const weekDates = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(weekStartSun);
+      date.setDate(weekStartSun.getDate() + index);
+      return toDateStr(date);
+    });
+    const todayDateStr = toDateStr(now);
+
+    const scheduledKeys = new Set();
+    const clockedInKeys = new Set();
+    if (employeeIds.length) {
+      const [{ data: scheduleRows }, { data: attendanceRows }] = await Promise.all([
+        supabase
+          .from("attendance_schedule")
+          .select("user_id, work_date")
+          .in("user_id", employeeIds)
+          .gte("work_date", weekDates[0])
+          .lte("work_date", weekDates[6]),
+        supabase
+          .from("attendance")
+          .select("user_id, work_date, clock_in_at")
+          .in("user_id", employeeIds)
+          .gte("work_date", weekDates[0])
+          .lte("work_date", weekDates[6]),
+      ]);
+
+      for (const row of scheduleRows ?? []) {
+        scheduledKeys.add(`${row.user_id}:${row.work_date}`);
+      }
+      for (const row of attendanceRows ?? []) {
+        if (row.clock_in_at) clockedInKeys.add(`${row.user_id}:${row.work_date}`);
+      }
+    }
+
+    function weekAttendanceFor(userId) {
+      return weekDates.map((dateStr) => {
+        const key = `${userId}:${dateStr}`;
+        if (clockedInKeys.has(key)) return { date: dateStr, status: "clocked_in" };
+        if (scheduledKeys.has(key)) return { date: dateStr, status: dateStr < todayDateStr ? "absent" : "scheduled" };
+        return { date: dateStr, status: null };
+      });
+    }
+
     const skillsByUserId = new Map();
     const skillDetailsByUserId = new Map();
     const availabilityByUserId = new Map();
@@ -206,6 +262,7 @@ export async function GET(request) {
       skills: skillsByUserId.get(employee.user_id) ?? [],
       skill_details: skillDetailsByUserId.get(employee.user_id) ?? [],
       worked_hours_this_week: Math.round((workedHoursByUserId.get(employee.user_id) ?? 0) / 60),
+      week_attendance: weekAttendanceFor(employee.user_id),
     }));
 
     return NextResponse.json({

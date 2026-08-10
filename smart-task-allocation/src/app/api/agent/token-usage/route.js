@@ -28,11 +28,14 @@ export async function GET(request) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { data: agent } = await supabase
+    const { data: agent, error: agentError } = await supabase
       .from("agent")
       .select("agent_id, daily_token_limit")
       .eq("user_id", user.id)
       .maybeSingle();
+    if (agentError) {
+      return NextResponse.json({ error: agentError.message }, { status: 400 });
+    }
     if (!agent) {
       return NextResponse.json({ today: 0, thisWeek: 0, allTime: 0, dailyLimit: 0 });
     }

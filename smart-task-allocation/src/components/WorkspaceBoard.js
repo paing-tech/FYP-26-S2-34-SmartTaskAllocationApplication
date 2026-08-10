@@ -471,6 +471,36 @@ const AVAILABILITY_TONES = {
 };
 const DEFAULT_AVAILABILITY_TONE = "bg-[#f1f5f9] text-[#64748b]";
 
+const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+// blue = scheduled, not clocked in yet · emerald = clocked in · red = absent
+// (scheduled day already passed with no clock-in) — same convention as the
+// Attendance page's month-calendar dots.
+const ATTENDANCE_DOT_TONES = {
+  scheduled: "bg-blue-500",
+  clocked_in: "bg-emerald-700",
+  absent: "bg-red-700",
+};
+
+function WeekAttendanceStrip({ weekAttendance = [] }) {
+  return (
+    <div className="mt-3 flex w-full items-center justify-center gap-1.5">
+      {WEEKDAY_LABELS.map((label, index) => {
+        const status = weekAttendance[index]?.status;
+        return (
+          <span
+            key={label}
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-black ${
+              status ? `${ATTENDANCE_DOT_TONES[status]} text-white` : "bg-[#e2e8f0] text-[#94a3b8]"
+            }`}
+          >
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isAssigned, isSubmitting, onAssign }) {
   const name = getDisplayName(employee);
   const availabilityLabel = getEmployeeAvailabilityLabel(employee, activeTaskCount);
@@ -579,6 +609,8 @@ function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isA
             </span>
           ))}
         </div>
+
+        <WeekAttendanceStrip weekAttendance={employee?.week_attendance} />
 
         <button
           type="button"

@@ -143,13 +143,16 @@ export async function POST(request, { params }) {
       taskGroups: (taskGroups ?? []).map((group) => group.group_name),
     });
 
-    await supabase.from("agent_token_usage").insert({
+    const { error: usageInsertError } = await supabase.from("agent_token_usage").insert({
       agent_id: agent.agent_id,
       organization_id: agent.organization_id,
       prompt_tokens: usage.prompt_tokens,
       completion_tokens: usage.completion_tokens,
       total_tokens: usage.total_tokens,
     });
+    if (usageInsertError) {
+      console.error("Could not record agent token usage:", usageInsertError.message);
+    }
     await supabase
       .from("agent_chat_thread")
       .update({

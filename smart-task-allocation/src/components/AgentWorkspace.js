@@ -58,6 +58,7 @@ function ThreadRow({
   renameDraft,
   onSelect,
   onContextMenu,
+  onTogglePin,
   onRenameChange,
   onRenameCommit,
   onRenameCancel,
@@ -80,17 +81,29 @@ function ThreadRow({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
+    <div
       onContextMenu={onContextMenu}
-      className={`flex h-10 items-center gap-1.5 truncate rounded-xl px-3 text-left text-sm transition ${
+      className={`group flex h-10 items-center gap-1.5 rounded-xl pl-3 pr-1 text-sm transition ${
         isActive ? "bg-white/70 font-semibold text-[#0D1E4C]" : "text-[#0D1E4C]/70 hover:bg-white/40"
       }`}
     >
-      {thread.pinned ? <PinIcon className="h-3.5 w-3.5 shrink-0 text-[#2563EB]" /> : null}
-      <span className="truncate">{thread.title}</span>
-    </button>
+      <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
+        <span className="truncate">{thread.title}</span>
+      </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onTogglePin();
+        }}
+        aria-label={thread.pinned ? "Unpin chat" : "Pin chat"}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition ${
+          thread.pinned ? "text-[#2563EB]" : "text-[#0D1E4C]/30 opacity-0 group-hover:opacity-100 hover:text-[#0D1E4C]"
+        }`}
+      >
+        <PinIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 
@@ -133,6 +146,7 @@ export default function AgentWorkspace() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
 
+  const [instructionsOpen, setInstructionsOpen] = useState(true);
   const [instructionsDraft, setInstructionsDraft] = useState("");
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [instructionsSaved, setInstructionsSaved] = useState(false);
@@ -627,28 +641,39 @@ export default function AgentWorkspace() {
         </div>
 
         <div className="space-y-2">
-          <h2 className="text-sm font-bold text-[#0D1E4C]">Instructions</h2>
-          <textarea
-            value={instructionsDraft}
-            onChange={(event) => {
-              setInstructionsDraft(event.target.value);
-              setInstructionsSaved(false);
-            }}
-            rows={6}
-            className={inputClass}
-          />
-          {instructionsError ? <p className="text-xs font-medium text-red-600">{instructionsError}</p> : null}
-          {instructionsDraft !== agent.instructions ? (
-            <button
-              type="button"
-              onClick={handleSaveInstructions}
-              disabled={savingInstructions}
-              className="h-9 w-full rounded-full bg-[#0D1E4C] text-xs font-black uppercase tracking-[0.2em] text-white transition hover:bg-[#0a1838] disabled:opacity-50"
-            >
-              {savingInstructions ? "Saving…" : "Save instructions"}
-            </button>
-          ) : instructionsSaved ? (
-            <p className="text-xs font-medium text-emerald-600">Saved.</p>
+          <button
+            type="button"
+            onClick={() => setInstructionsOpen((current) => !current)}
+            className="flex w-full items-center justify-between text-sm font-bold text-[#0D1E4C]"
+          >
+            Instructions
+            <ChevronIcon open={instructionsOpen} />
+          </button>
+          {instructionsOpen ? (
+            <>
+              <textarea
+                value={instructionsDraft}
+                onChange={(event) => {
+                  setInstructionsDraft(event.target.value);
+                  setInstructionsSaved(false);
+                }}
+                rows={6}
+                className={inputClass}
+              />
+              {instructionsError ? <p className="text-xs font-medium text-red-600">{instructionsError}</p> : null}
+              {instructionsDraft !== agent.instructions ? (
+                <button
+                  type="button"
+                  onClick={handleSaveInstructions}
+                  disabled={savingInstructions}
+                  className="h-9 w-full rounded-full bg-[#0D1E4C] text-xs font-black uppercase tracking-[0.2em] text-white transition hover:bg-[#0a1838] disabled:opacity-50"
+                >
+                  {savingInstructions ? "Saving…" : "Save instructions"}
+                </button>
+              ) : instructionsSaved ? (
+                <p className="text-xs font-medium text-emerald-600">Saved.</p>
+              ) : null}
+            </>
           ) : null}
         </div>
 
@@ -727,12 +752,9 @@ export default function AgentWorkspace() {
                 <span className="text-xs font-bold text-[#0D1E4C]">Telegram</span>
                 {telegram ? (
                   <>
-                    <p className="text-[11px] text-[#0D1E4C]/60">Connected as @{telegram.bot_username}</p>
-                    {telegram.allowed_username ? (
-                      <p className="text-center text-[10px] text-[#0D1E4C]/50">
-                        @{telegram.allowed_username} can create tasks directly by chat
-                      </p>
-                    ) : null}
+                    <p className="text-center text-[11px] text-[#0D1E4C]/60">
+                      Connected as @{telegram.bot_username}
+                    </p>
                     <button
                       type="button"
                       onClick={handleDisconnectTelegram}
@@ -791,19 +813,6 @@ export default function AgentWorkspace() {
               + New chat
             </button>
 
-            {telegram ? (
-              <button
-                type="button"
-                onClick={() => setActiveThreadId(TELEGRAM_SENTINEL)}
-                className={`flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${
-                  activeThreadId === TELEGRAM_SENTINEL ? "bg-white/70 text-[#0D1E4C]" : "text-[#0D1E4C]/80 hover:bg-white/40"
-                }`}
-              >
-                <TelegramIcon className="h-4 w-4 text-[#26A5E4]" />
-                Telegram bot
-              </button>
-            ) : null}
-
             {threads.some((thread) => thread.pinned) ? (
               <>
                 <p className="mt-3 px-3 text-xs font-bold uppercase tracking-wide text-[#0D1E4C]/50">Pinned</p>
@@ -818,6 +827,7 @@ export default function AgentWorkspace() {
                       renameDraft={renameDraft}
                       onSelect={() => setActiveThreadId(thread.agent_chat_thread_id)}
                       onContextMenu={(event) => openContextMenu(event, thread.agent_chat_thread_id)}
+                      onTogglePin={() => handleTogglePin(thread)}
                       onRenameChange={setRenameDraft}
                       onRenameCommit={() => commitRename(thread.agent_chat_thread_id)}
                       onRenameCancel={cancelRename}
@@ -838,6 +848,7 @@ export default function AgentWorkspace() {
                   renameDraft={renameDraft}
                   onSelect={() => setActiveThreadId(thread.agent_chat_thread_id)}
                   onContextMenu={(event) => openContextMenu(event, thread.agent_chat_thread_id)}
+                  onTogglePin={() => handleTogglePin(thread)}
                   onRenameChange={setRenameDraft}
                   onRenameCommit={() => commitRename(thread.agent_chat_thread_id)}
                   onRenameCancel={cancelRename}
