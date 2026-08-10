@@ -14,6 +14,35 @@ function isEmployeeRole(roleName) {
   return String(roleName ?? "").trim().toLowerCase() === "employee";
 }
 
+function todayDateStr() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+// "Available today" mirrors the manager UI's Available/Away badge: either
+// scheduled to work today, or already clocked in — same source the
+// EmployeeAssignCard uses. The AI picker should never land a task on someone
+// who isn't actually working today.
+async function getAvailableTodayUserIds(supabase, userIds) {
+  if (!userIds.length) return new Set();
+  const today = todayDateStr();
+
+  const [{ data: scheduleRows }, { data: attendanceRows }] = await Promise.all([
+    supabase.from("attendance_schedule").select("user_id").in("user_id", userIds).eq("work_date", today),
+    supabase
+      .from("attendance")
+      .select("user_id")
+      .in("user_id", userIds)
+      .eq("work_date", today)
+      .not("clock_in_at", "is", null),
+  ]);
+
+  const availableIds = new Set();
+  for (const row of scheduleRows ?? []) availableIds.add(row.user_id);
+  for (const row of attendanceRows ?? []) availableIds.add(row.user_id);
+  return availableIds;
+}
+
 // Server-side backstop for every manual-assignment path — the client-side
 // picker in WorkspaceBoard.js already narrows the UI to Employee accounts,
 // but a direct API call could otherwise bypass that and assign a Manager or
@@ -427,10 +456,14 @@ async function pickAiAssigneeForTask(supabase, { organizationId, taskId }) {
   const requiredSkillIds = new Set(requiredSkills.map((skill) => skill.skillId));
   const alreadyAssignedIds = new Set((existingAssigneeRows ?? []).map((row) => row.user_id));
 
-  const employeeIds = (employeeAccounts ?? [])
+  const eligibleEmployeeIds = (employeeAccounts ?? [])
     .filter((employee) => isEmployeeRole(employee.role?.role_name))
     .map((employee) => employee.user_id)
     .filter((id) => !alreadyAssignedIds.has(id));
+  const availableTodayIds = await getAvailableTodayUserIds(supabase, eligibleEmployeeIds);
+  // Only consider employees actually working today — someone away today is
+  // never a candidate, not even as a fallback.
+  const employeeIds = eligibleEmployeeIds.filter((id) => availableTodayIds.has(id));
   const departmentByUserId = new Map(
     (employeeAccounts ?? []).map((employee) => [employee.user_id, employee.department?.department_name ?? null]),
   );
@@ -584,9 +617,13 @@ async function autoAllocateOptimusTasks(supabase, { organizationId }) {
     requiredSkillsByTaskId.set(row.task_id, list);
   }
 
-  const employeeIds = (employeeAccounts ?? [])
+  const eligibleEmployeeIds = (employeeAccounts ?? [])
     .filter((employee) => isEmployeeRole(employee.role?.role_name))
     .map((employee) => employee.user_id);
+  const availableTodayIds = await getAvailableTodayUserIds(supabase, eligibleEmployeeIds);
+  // Only consider employees actually working today — including for the
+  // least-busy fallback tier below, so a task never lands on someone away.
+  const employeeIds = eligibleEmployeeIds.filter((id) => availableTodayIds.has(id));
   const departmentByUserId = new Map(
     (employeeAccounts ?? []).map((employee) => [employee.user_id, employee.department?.department_name ?? null]),
   );

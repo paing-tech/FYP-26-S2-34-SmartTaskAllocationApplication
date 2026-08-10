@@ -59,9 +59,10 @@ export async function GET(request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    // Platform admins are not part of any organization's roster.
+    // Platform admins are not part of any organization's roster, and an
+    // account still awaiting User Admin approval isn't assignable yet.
     const data = (rawData ?? []).filter(
-      (employee) => !isPlatformAdminRole(employee.role?.role_name),
+      (employee) => !isPlatformAdminRole(employee.role?.role_name) && employee.account_status !== "Pending",
     );
 
     const employeeIds = data.map((employee) => employee.user_id);

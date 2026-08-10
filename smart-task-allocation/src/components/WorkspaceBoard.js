@@ -440,36 +440,34 @@ function TimelineRail({ end, start }) {
   );
 }
 
-// "On leave" beats task load — it reflects whether the employee is physically
-// available right now, which task-count-based busyness can't tell you. The
-// default label comes straight from the employee's current availability row
-// rather than being hardcoded, so it stays in sync with that table.
-function getEmployeeAvailabilityLabel(employee, activeTaskCount) {
+function pad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function todayDateStr() {
   const now = new Date();
-  const availabilities = employee?.availabilities ?? [];
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
-  const currentAvailability = availabilities.find((row) => {
-    const start = new Date(row?.availability_start);
-    const end = new Date(row?.availability_end);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+// Suspended beats everything else — an assign card should never look
+// available for a deactivated account. Otherwise "Available" means the
+// employee actually has a work schedule for today (same source as the
+// WeekAttendanceStrip dots); no schedule today just reads as "Away".
+function getEmployeeAvailabilityLabel(employee) {
+  if (employee?.account_status === "Suspended") return "Suspended";
 
-    return now >= start && now <= end;
-  });
+  const today = todayDateStr();
+  const todayEntry = (employee?.week_attendance ?? []).find((entry) => entry.date === today);
+  const isScheduledToday = todayEntry?.status === "scheduled" || todayEntry?.status === "clocked_in";
 
-  const currentStatus = currentAvailability?.status ?? employee?.availability?.status ?? "";
-
-  if (/leave/i.test(currentStatus)) return "On Leave";
-  if (activeTaskCount >= 3) return "Busy";
-
-  return currentStatus || "Available";
+  return isScheduledToday ? "Available" : "Away";
 }
 
 const AVAILABILITY_TONES = {
   Available: "bg-[#ecfdf5] text-[#15803d]",
-  Busy: "bg-[#fff7ed] text-[#b45309]",
-  "On Leave": "bg-[#fef2f2] text-[#b91c1c]",
+  Suspended: "bg-[#fef2f2] text-[#b91c1c]",
 };
-const DEFAULT_AVAILABILITY_TONE = "bg-[#f1f5f9] text-[#64748b]";
+const DEFAULT_AVAILABILITY_TONE = "bg-[#f1f5f9] text-[#64748b]"; // also used for "Away"
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 // blue = scheduled, not clocked in yet · emerald = clocked in · red = absent
@@ -503,7 +501,9 @@ function WeekAttendanceStrip({ weekAttendance = [] }) {
 
 function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isAssigned, isSubmitting, onAssign }) {
   const name = getDisplayName(employee);
-  const availabilityLabel = getEmployeeAvailabilityLabel(employee, activeTaskCount);
+  const availabilityLabel = getEmployeeAvailabilityLabel(employee);
+  const isSuspended = employee?.account_status === "Suspended";
+  const isAway = availabilityLabel === "Away";
   const skills = employee?.skills ?? [];
   const [isAssignedPanelOpen, setIsAssignedPanelOpen] = useState(false);
 
@@ -615,9 +615,9 @@ function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isA
         <button
           type="button"
           onClick={() => onAssign(employee.user_id)}
-          disabled={isAssigned || isSubmitting}
+          disabled={isAssigned || isSubmitting || isSuspended || isAway}
           className={`mt-2 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
-            isAssigned
+            isAssigned || isSuspended || isAway
               ? "cursor-not-allowed bg-[#eef2f8] text-[#94a3b8]"
               : "bg-[#2563EB] text-white hover:bg-[#1d4ed8]"
           } disabled:cursor-not-allowed disabled:opacity-70`}

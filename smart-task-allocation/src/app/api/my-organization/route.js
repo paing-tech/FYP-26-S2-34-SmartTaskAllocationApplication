@@ -42,7 +42,9 @@ function normalizeAccount(account, profilesByUserId) {
 
 export async function getAccountsWithProfiles(supabase, organizationId) {
   // Only ever surface accounts within the requester's organization, and never
-  // platform admins (developer-side, org-agnostic accounts).
+  // platform admins (developer-side, org-agnostic accounts) or accounts
+  // still awaiting User Admin approval — a Pending invite shouldn't show up
+  // in the org chart (or be offered to the AI agent's roster) until approved.
   if (!organizationId) {
     return { accounts: [] };
   }
@@ -60,7 +62,7 @@ export async function getAccountsWithProfiles(supabase, organizationId) {
   }
 
   const accounts = (accountRows ?? []).filter(
-    (account) => !isPlatformAdminRole(account.role?.role_name),
+    (account) => !isPlatformAdminRole(account.role?.role_name) && account.account_status !== "Pending",
   );
 
   const userIds = accounts.map((account) => account.user_id);
