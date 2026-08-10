@@ -3,17 +3,6 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --optima-text: #07183b;
-  --optima-muted: #52627a;
-  --optima-panel: rgba(255, 255, 255, 0.86);
-  --optima-panel-soft: rgba(255, 255, 255, 0.58);
-  --optima-panel-strong: #ffffff;
-  --optima-border: rgba(199, 221, 235, 0.95);
-  --optima-control: #f8fbfe;
-  --optima-control-hover: #ffffff;
-  --optima-primary: #0d1e4c;
-  --optima-primary-hover: #0b1b32;
-  --optima-shadow: rgba(7, 24, 59, 0.12);
 }
 
 @theme inline {
@@ -23,47 +12,44 @@
   --font-mono: var(--font-geist-mono);
 }
 
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --optima-text: #f8fafc;
-  --optima-muted: #9caec8;
-  --optima-panel: rgba(15, 23, 42, 0.86);
-  --optima-panel-soft: rgba(30, 41, 59, 0.72);
-  --optima-panel-strong: #111827;
-  --optima-border: rgba(148, 163, 184, 0.28);
-  --optima-control: rgba(15, 23, 42, 0.78);
-  --optima-control-hover: rgba(30, 41, 59, 0.92);
-  --optima-primary: #3b82f6;
-  --optima-primary-hover: #60a5fa;
-  --optima-shadow: rgba(0, 0, 0, 0.42);
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
-  transition:
-    background-color 180ms ease,
-    color 180ms ease;
 }
 
 /* Stop the browser from painting its white autofill background over dark
    glass inputs. The inset box-shadow overrides the autofill bg, and
    -webkit-text-fill-color keeps the typed text white. */
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
-input:-webkit-autofill:active,
-textarea:-webkit-autofill,
-select:-webkit-autofill {
+input.auth-dark-field:-webkit-autofill,
+input.auth-dark-field:-webkit-autofill:hover,
+input.auth-dark-field:-webkit-autofill:focus,
+input.auth-dark-field:-webkit-autofill:active {
   -webkit-background-clip: text;
   -webkit-text-fill-color: #ffffff;
   caret-color: #ffffff;
   -webkit-box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.4) inset;
   box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.4) inset;
   /* delay the autofill bg swap effectively forever so it never flashes */
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+input.signup-light-field:-webkit-autofill,
+input.signup-light-field:-webkit-autofill:hover,
+input.signup-light-field:-webkit-autofill:focus,
+input.signup-light-field:-webkit-autofill:active {
+  background-color: #ffffff !important;
+  -webkit-text-fill-color: #061a40 !important;
+  caret-color: #061a40 !important;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
   transition: background-color 9999s ease-in-out 0s;
 }
 
@@ -86,294 +72,4 @@ select:-webkit-autofill {
     "wght" 400,
     "GRAD" 0,
     "opsz" 24;
-}
-
-.dashboard-card {
-  border: 1px solid #d8e6f3;
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 10px 28px rgba(7, 24, 59, 0.08);
-}
-
-.dashboard-eyebrow {
-  font-size: 0.75rem;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #64748b;
-}
-
-.dashboard-input,
-.dashboard-textarea {
-  width: 100%;
-  border: 1px solid #c7ddeb;
-  border-radius: 0.9rem;
-  background: #f8fbfe;
-  color: #07183b;
-  font-size: 0.875rem;
-  font-weight: 600;
-  outline: none;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease;
-}
-
-.dashboard-input {
-  min-height: 2.75rem;
-  padding: 0 0.9rem;
-}
-
-.dashboard-textarea {
-  min-height: 8rem;
-  resize: vertical;
-  padding: 0.85rem 0.9rem;
-  line-height: 1.6;
-}
-
-.dashboard-input:focus,
-.dashboard-textarea:focus {
-  border-color: #2563eb;
-  background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
-}
-
-.dashboard-button,
-.dashboard-secondary-button {
-  display: inline-flex;
-  min-height: 2.75rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0.65rem 1.1rem;
-  font-size: 0.875rem;
-  font-weight: 900;
-  text-align: center;
-  transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease;
-}
-
-.dashboard-button {
-  background: #0d1e4c;
-  color: #ffffff;
-  box-shadow: 0 12px 24px rgba(13, 30, 76, 0.18);
-}
-
-.dashboard-secondary-button {
-  border: 1px solid #c7ddeb;
-  background: #eef6fb;
-  color: #0d1e4c;
-}
-
-.dashboard-button:hover,
-.dashboard-secondary-button:hover {
-  transform: translateY(-1px);
-}
-
-.dashboard-alert-error,
-.dashboard-alert-info {
-  border-radius: 1rem;
-  padding: 0.85rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 800;
-}
-
-.dashboard-alert-error {
-  border: 1px solid #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
-}
-
-.dashboard-alert-info {
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.optima-shell {
-  color: var(--optima-text);
-  transition:
-    background-color 180ms ease,
-    color 180ms ease;
-}
-
-:root[data-theme="dark"] .optima-shell {
-  background-color: #0f172a !important;
-}
-
-:root[data-theme="dark"] .optima-topbar {
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(15, 23, 42, 0.74) !important;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
-}
-
-:root[data-theme="dark"] .optima-sidebar,
-:root[data-theme="dark"] .optima-appearance-panel,
-:root[data-theme="dark"] .optima-popover,
-:root[data-theme="dark"] .optima-search-modal {
-  border-color: var(--optima-border) !important;
-  background: var(--optima-panel) !important;
-  color: var(--optima-text) !important;
-  box-shadow: 0 30px 80px var(--optima-shadow) !important;
-}
-
-:root[data-theme="dark"] .optima-sidebar {
-  background: rgba(15, 23, 42, 0.66) !important;
-}
-
-:root[data-theme="dark"] .optima-search-trigger,
-:root[data-theme="dark"] .dashboard-input,
-:root[data-theme="dark"] .dashboard-textarea {
-  border-color: var(--optima-border) !important;
-  background: var(--optima-control) !important;
-  color: var(--optima-text) !important;
-}
-
-:root[data-theme="dark"] .optima-search-trigger:hover,
-:root[data-theme="dark"] .dashboard-input:focus,
-:root[data-theme="dark"] .dashboard-textarea:focus {
-  background: var(--optima-control-hover) !important;
-}
-
-:root[data-theme="dark"] .dashboard-card {
-  border-color: var(--optima-border);
-  background: var(--optima-panel);
-  color: var(--optima-text);
-  box-shadow: 0 18px 44px var(--optima-shadow);
-}
-
-:root[data-theme="dark"] .dashboard-eyebrow,
-:root[data-theme="dark"] .optima-field-label {
-  color: #9caec8;
-}
-
-:root[data-theme="dark"] .dashboard-secondary-button {
-  border-color: var(--optima-border);
-  background: rgba(30, 41, 59, 0.84);
-  color: var(--optima-text);
-}
-
-:root[data-theme="dark"] .dashboard-button {
-  background: #2563eb;
-  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.26);
-}
-
-:root[data-theme="dark"] .dashboard-alert-info {
-  border-color: rgba(96, 165, 250, 0.35);
-  background: rgba(37, 99, 235, 0.14);
-  color: #bfdbfe;
-}
-
-:root[data-theme="dark"] .dashboard-alert-error {
-  border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(127, 29, 29, 0.22);
-  color: #fecaca;
-}
-
-:root[data-theme="dark"] .optima-nav-item {
-  color: #dbeafe !important;
-}
-
-:root[data-theme="dark"] .optima-nav-item[aria-current="page"] {
-  background: #2563eb !important;
-  color: #ffffff !important;
-  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.26) !important;
-}
-
-:root[data-theme="dark"] .optima-nav-item:hover,
-:root[data-theme="dark"] .optima-icon-button:hover {
-  background: rgba(59, 130, 246, 0.18) !important;
-}
-
-:root[data-theme="dark"] .optima-icon-button {
-  background: rgba(15, 23, 42, 0.92) !important;
-  color: #f8fafc !important;
-}
-
-:root[data-theme="dark"] .optima-appearance-overlay {
-  background: rgba(2, 6, 23, 0.68) !important;
-}
-
-:root[data-theme="dark"] .optima-panel-title,
-:root[data-theme="dark"] .optima-shell [class~="text-[#07183b]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#0D1E4C]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#0A2540]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#0B1B32]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#1E293B]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#2f3442]"] {
-  color: var(--optima-text) !important;
-}
-
-:root[data-theme="dark"] .optima-panel-copy,
-:root[data-theme="dark"] .optima-shell [class~="text-[#52627a]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#61708a]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#64748B]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#667085]"],
-:root[data-theme="dark"] .optima-shell [class~="text-[#94a3b8]"] {
-  color: var(--optima-muted) !important;
-}
-
-:root[data-theme="dark"] .optima-shell [class*="text-[#0D1E4C]/"],
-:root[data-theme="dark"] .optima-shell [class*="text-[#07183b]/"] {
-  color: rgba(248, 250, 252, 0.78) !important;
-}
-
-:root[data-theme="dark"] .optima-shell [class~="bg-white"],
-:root[data-theme="dark"] .optima-shell [class~="bg-[#f8faff]"],
-:root[data-theme="dark"] .optima-shell [class~="bg-[#f8fbfe]"],
-:root[data-theme="dark"] .optima-shell [class~="bg-[#fbfcff]"],
-:root[data-theme="dark"] .optima-shell [class~="bg-[#F5FAFF]"],
-:root[data-theme="dark"] .optima-shell [class~="bg-[#eef6fb]"],
-:root[data-theme="dark"] .optima-shell [class~="bg-[#eef6ff]"],
-:root[data-theme="dark"] .optima-shell [class~="bg-[#eef2f8]"],
-:root[data-theme="dark"] .optima-shell [class~="bg-slate-100"] {
-  background-color: var(--optima-panel-strong) !important;
-}
-
-:root[data-theme="dark"] .optima-shell [class*="bg-white/"],
-:root[data-theme="dark"] .optima-shell [class*="bg-[#E0E5E9]/"],
-:root[data-theme="dark"] .optima-shell [class*="bg-[#BBE1FA]/"] {
-  background-color: var(--optima-panel-soft) !important;
-}
-
-:root[data-theme="dark"] .optima-shell [class~="border-white/60"],
-:root[data-theme="dark"] .optima-shell [class~="border-white/70"],
-:root[data-theme="dark"] .optima-shell [class~="border-white/50"],
-:root[data-theme="dark"] .optima-shell [class~="border-[#C7DDEB]"],
-:root[data-theme="dark"] .optima-shell [class~="border-[#d8e6f3]"],
-:root[data-theme="dark"] .optima-shell [class~="border-[#b8c4d8]"],
-:root[data-theme="dark"] .optima-shell [class~="border-[#c4ccdc]"],
-:root[data-theme="dark"] .optima-shell [class~="border-slate-300"] {
-  border-color: var(--optima-border) !important;
-}
-
-:root[data-theme="dark"] .optima-segment {
-  border-color: var(--optima-border) !important;
-  background: rgba(15, 23, 42, 0.72) !important;
-}
-
-:root[data-theme="dark"] .optima-segment-button {
-  color: #dbeafe !important;
-}
-
-:root[data-theme="dark"] .optima-segment-button[aria-pressed="true"] {
-  background: #2563eb !important;
-  color: #ffffff !important;
-}
-
-:root[data-theme="dark"] .optima-color-input {
-  border-color: var(--optima-border) !important;
-  background: #111827 !important;
-}
-
-:root[data-theme="dark"] .optima-shell input,
-:root[data-theme="dark"] .optima-shell select,
-:root[data-theme="dark"] .optima-shell textarea {
-  color-scheme: dark;
-}
-
-:root[data-theme="dark"] .optima-shell ::placeholder {
-  color: rgba(203, 213, 225, 0.62) !important;
 }

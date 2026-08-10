@@ -1,47 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSiteContent } from "@/lib/useSiteContent";
 
-const FEATURES = [
-  {
-    id: "task-allocation",
-    title: "Intelligent Task Allocation",
-    description: "Match the right person to every task by skills, availability, and workload.",
-    icon: "allocation",
-  },
-  {
-    id: "team-management",
-    title: "Team Management",
-    description: "Build teams, departments, and org structure in a few clicks.",
-    icon: "team",
-  },
-  {
-    id: "collaborative-workspace",
-    title: "Collaborative Workspace",
-    description: "Plan work in shared workspaces with flexible task groups.",
-    icon: "workspace",
-  },
-  {
-    id: "schedule-management",
-    title: "Automated Schedule Management",
-    description: "Let agents schedule and rebalance work automatically, around the clock.",
-    icon: "schedule",
-  },
-  {
-    id: "ai-recommendations",
-    title: "AI-Powered Recommendations",
-    description: "Get smart suggestions for who should do what, and when.",
-    icon: "ai",
-  },
-  {
-    id: "insights-analytics",
-    title: "Workforce Insights & Analytics",
-    description: "See capacity, progress, and performance at a glance.",
-    icon: "analytics",
-  },
-];
-
-function FeatureIcon({ name }) {
+export function FeatureIcon({ name }) {
   const p = {
     className: "h-6 w-6",
     viewBox: "0 0 24 24",
@@ -99,10 +61,15 @@ function FeatureIcon({ name }) {
 }
 
 export default function FeatureShowcase() {
-  const [activeIndex, setActiveIndex] = useState(0);
+  const content = useSiteContent("features");
+  const features = content.items ?? [];
+  const [rawActiveIndex, setActiveIndex] = useState(0);
   const [ready, setReady] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const active = FEATURES[activeIndex];
+  // Clamped at read-time (not via effect) so a CMS edit that shrinks the
+  // feature list can never leave activeIndex pointing past the end.
+  const activeIndex = features.length ? Math.min(rawActiveIndex, features.length - 1) : 0;
+  const active = features[activeIndex];
 
   function selectFeature(index) {
     if (index === activeIndex) return;
@@ -112,19 +79,23 @@ export default function FeatureShowcase() {
 
   // Auto-advance through features every 5s; pause while the user is hovering.
   useEffect(() => {
-    if (isPaused) return undefined;
+    if (isPaused || !features.length) return undefined;
     const timer = setInterval(() => {
       setReady(false);
-      setActiveIndex((index) => (index + 1) % FEATURES.length);
+      setActiveIndex((index) => (index + 1) % features.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, [isPaused]);
+  }, [isPaused, features.length]);
+
+  if (content.hidden || !active) {
+    return null;
+  }
 
   return (
     <section className="w-full bg-white py-24 text-[#0D1E4C]">
       <div className="pl-[18%] pr-[6%]">
         <h2 className="max-w-[720px] text-4xl font-bold leading-[1.1] tracking-tight lg:text-5xl">
-          Everything you need for peak productivity
+          {content.heading}
         </h2>
 
         <div className="mt-14 flex flex-col gap-10 lg:flex-row lg:items-stretch">
@@ -134,10 +105,10 @@ export default function FeatureShowcase() {
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
           >
-            {FEATURES.map((feature, index) => {
+            {features.map((feature, index) => {
               const isActive = index === activeIndex;
               return (
-                <li key={feature.id}>
+                <li key={feature.videoId ?? index}>
                   <button
                     type="button"
                     onMouseEnter={() => selectFeature(index)}
@@ -189,9 +160,9 @@ export default function FeatureShowcase() {
               ) : null}
 
               <video
-                key={active.id}
-                src={`/features/${active.id}.mp4`}
-                poster={`/features/${active.id}.jpg`}
+                key={active.videoId}
+                src={`/features/${active.videoId}.mp4`}
+                poster={`/features/${active.videoId}.jpg`}
                 autoPlay
                 muted
                 loop

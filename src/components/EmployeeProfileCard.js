@@ -2,18 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-// Skill proficiency tiers (1–5) drive the chip border styling.
-const SKILL_TIERS = {
-  1: "border-[#cbd5e1] bg-[#f1f5f9] text-[#475569]", // common — light gray
-  2: "border-[#22c55e] bg-[#ecfdf5] text-[#15803d]", // common — green
-  3: "border-[#3b82f6] bg-[#eff6ff] text-[#1d4ed8]", // rare — blue
-  4: "border-[#a855f7] bg-[#faf5ff] text-[#7c3aed]", // epic — purple
-  5: "border-[#e8a23d] bg-[#fffaf0] text-[#b45309]", // legendary — gold
-};
-
-function skillTierClass(level) {
-  return SKILL_TIERS[level] ?? SKILL_TIERS[1];
-}
+const SKILL_CHIP_CLASS = "border-[#cbd5e1] bg-[#f1f5f9] text-[#475569]";
 
 const WEEKDAYS = [
   { key: 0, label: "Mon" },
@@ -61,11 +50,12 @@ export default function EmployeeProfileCard({ employee, defaultExpanded = false 
   const roleName = employee?.role?.role_name || "Employee";
   const skills = employee?.skill_details?.length
     ? employee.skill_details
-    : (employee?.skills ?? []).map((name) => ({ name, level: 1 }));
+    : (employee?.skills ?? []).map((name) => ({ name }));
 
-  // Highlight weekdays the employee has an availability window on, and sum
-  // hours from any availability rows that fall in the current week.
-  const { availableDays, hoursThisWeek } = useMemo(() => {
+  const hoursWorked = employee?.worked_hours_this_week ?? 0;
+
+  // Highlight weekdays the employee has an availability window on.
+  const availableDays = useMemo(() => {
     const rows = employee?.availabilities?.length
       ? employee.availabilities
       : employee?.availability
@@ -73,28 +63,14 @@ export default function EmployeeProfileCard({ employee, defaultExpanded = false 
         : [];
 
     const days = new Set();
-    let minutes = 0;
-
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - toMondayIndex(now.getDay()));
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 7);
-
     for (const row of rows) {
       if (!row?.availability_start) continue;
       const start = new Date(row.availability_start);
       if (Number.isNaN(start.getTime())) continue;
       days.add(toMondayIndex(start.getDay()));
-
-      const end = row.availability_end ? new Date(row.availability_end) : null;
-      if (end && !Number.isNaN(end.getTime()) && start >= weekStart && start < weekEnd) {
-        minutes += Math.max(0, (end.getTime() - start.getTime()) / 60000);
-      }
     }
 
-    return { availableDays: days, hoursThisWeek: Math.round(minutes / 60) };
+    return days;
   }, [employee]);
 
   return (
@@ -166,8 +142,7 @@ export default function EmployeeProfileCard({ employee, defaultExpanded = false 
               skills.map((skill) => (
                 <span
                   key={skill.name}
-                  className={`rounded-full border-2 px-3 py-1 text-xs font-bold ${skillTierClass(skill.level)}`}
-                  title={`Proficiency level ${skill.level}`}
+                  className={`rounded-full border-2 px-3 py-1 text-xs font-bold ${SKILL_CHIP_CLASS}`}
                 >
                   {skill.name}
                 </span>
@@ -195,7 +170,7 @@ export default function EmployeeProfileCard({ employee, defaultExpanded = false 
           </div>
 
           <p className="mt-4 text-center text-xs font-semibold text-[#52627a]">
-            {hoursThisWeek} hours available this week
+            {hoursWorked} hours worked this week
           </p>
         </div>
       ) : null}

@@ -1,12 +1,28 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
-import { getAuthHeaders } from "@/lib/clientAuth";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
+import ProfileDetailCard from "@/components/ProfileDetailCard";
+import EmployeeProfileCard from "@/components/EmployeeProfileCard";
+import { usePlanGate } from "@/components/PlanProvider";
+import {
+  DEMO_ROLES,
+  clearDemoSession,
+  demoAuthHeaders,
+  isDemoSession,
+} from "@/lib/demoClient";
+
+const PLAN_TIER_CHIP_TONES = {
+  pro: "bg-[#7C3AED]",
+  team: "bg-[#CA8A04]",
+};
+
+function capitalize(value) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+}
 
 const roleActions = {
   manager: [
@@ -22,25 +38,16 @@ const roleActions = {
       group: "Workspace",
       actionId: "create-workspace-item",
     },
-    { label: "Review team capacity", href: "/manager/team", group: "Team" },
-    { label: "View organization", href: "/manager/organization", group: "Organization" },
-    { label: "Open inbox", href: "/manager/inbox", group: "Inbox" },
-    { label: "Open my space", href: "/manager/my-space", group: "My Space" },
-    { label: "Review archive", href: "/manager/archive", group: "Archive" },
-    { label: "Get support", href: "/manager/support", group: "Support" },
+    { label: "View team", href: "/manager/team", group: "Team" },
+    { label: "Open attendance", href: "/manager/attendance", group: "Attendance" },
   ],
   useradmin: [
     { label: "Create account", href: "/useradmin/accounts", group: "Accounts" },
     { label: "Invite user", href: "/useradmin/accounts", group: "Accounts" },
     { label: "Update organization profile", href: "/useradmin/organization", group: "Organization" },
-    { label: "Review roles", href: "/useradmin/roles", group: "Roles" },
   ],
   employee: [
     { label: "Open workspace", href: "/employee/workspace", group: "Workspace" },
-    { label: "Review team", href: "/employee/team", group: "Team" },
-    { label: "Open inbox", href: "/employee/inbox", group: "Inbox" },
-    { label: "Open my space", href: "/employee/my-space", group: "My Space" },
-    { label: "Get support", href: "/employee/support", group: "Support" },
   ],
 };
 
@@ -127,15 +134,24 @@ function BellIcon() {
 export default function TopInformationBar({ actor }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { plan, openPlanPicker } = usePlanGate();
   const searchInputRef = useRef(null);
   const [query, setQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isProfileCardOpen, setIsProfileCardOpen] = useState(false);
+  const [searchMember, setSearchMember] = useState(null);
   const [accountSearchItems, setAccountSearchItems] = useState([]);
   const [isLoadingSearchItems, setIsLoadingSearchItems] = useState(false);
-  const [profile, setProfile] = useState({ email: "", name: "" });
-  const [now, setNow] = useState(null);
+  const [profile, setProfile] = useState({ email: "", name: "", profilePictureUrl: "" });
+  const [now, setNow] = useState(() => new Date());
+  const [isDemo, setIsDemo] = useState(false);
+  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
+
+  useEffect(() => {
+    queueMicrotask(() => setIsDemo(isDemoSession()));
+  }, []);
 
   const baseSearchItems = useMemo(() => {
     const navigationItems =
@@ -186,13 +202,9 @@ export default function TopInformationBar({ actor }) {
   }, [query, searchItems]);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => setNow(new Date()), 0);
     const intervalId = window.setInterval(() => setNow(new Date()), 1000);
 
-    return () => {
-      window.clearTimeout(timeoutId);
-      window.clearInterval(intervalId);
-    };
+    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -204,7 +216,12 @@ export default function TopInformationBar({ actor }) {
   }, [isSearchOpen]);
 
   async function authHeaders() {
-    return getAuthHeaders();
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+
+    return {
+      Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+    };
   }
 
   async function fetchJson(path) {
@@ -223,49 +240,38 @@ export default function TopInformationBar({ actor }) {
 
     try {
       if (actor === "manager") {
-        const [workspaceResult, taskResult, teamResult, employeeResult] = await Promise.allSettled([
+        const [workspaceResult, taskResult, employeeResult] = await Promise.allSettled([
           fetchJson("/api/workspaces"),
           fetchJson("/api/tasks"),
-          fetchJson("/api/teams"),
           fetchJson("/api/employees"),
         ]);
 
         setAccountSearchItems([
           ...itemsFromWorkspaces(settledValue(workspaceResult), "/manager/workspace"),
           ...itemsFromTasks(settledValue(taskResult), "/manager/workspace"),
-          ...itemsFromTeams(settledValue(teamResult), "/manager/team"),
           ...itemsFromMembers(settledValue(employeeResult), "/manager/team"),
         ]);
         return;
       }
 
       if (actor === "employee") {
-        const [workspaceResult, teamResult, invitationResult] = await Promise.allSettled([
-          fetchJson("/api/employee-workspaces"),
-          fetchJson("/api/teams"),
-          fetchJson("/api/team-invitations"),
-        ]);
+        const [workspaceResult] = await Promise.allSettled([fetchJson("/api/employee-workspaces")]);
 
         setAccountSearchItems([
           ...itemsFromWorkspaces(settledValue(workspaceResult), "/employee/workspace"),
           ...itemsFromTasks(settledValue(workspaceResult), "/employee/workspace"),
-          ...itemsFromTeams(settledValue(teamResult), "/employee/team"),
-          ...itemsFromMembers(settledValue(teamResult), "/employee/team"),
-          ...itemsFromInvitations(settledValue(invitationResult), "/employee/team"),
         ]);
         return;
       }
 
       if (actor === "useradmin") {
-        const [accountResult, roleResult, organizationResult] = await Promise.allSettled([
+        const [accountResult, organizationResult] = await Promise.allSettled([
           fetchJson("/api/accounts"),
-          fetchJson("/api/roles"),
           fetchJson("/api/my-organization"),
         ]);
 
         setAccountSearchItems([
           ...itemsFromAccounts(settledValue(accountResult), "/useradmin/accounts"),
-          ...itemsFromRoles(settledValue(roleResult), "/useradmin/roles"),
           ...itemsFromOrganization(settledValue(organizationResult), "/useradmin/organization"),
         ]);
       }
@@ -288,26 +294,40 @@ export default function TopInformationBar({ actor }) {
   }, [actor, isSearchOpen]);
 
   async function loadProfile() {
-    if (!isSupabaseConfigured()) {
-      const email = window.localStorage.getItem("workflowDemoEmail") ?? "demo-manager@optima.test";
-      const name = email.split("@")[0].replace(/^demo-/, "").replaceAll("-", " ");
-
-      setProfile({
-        email,
-        name: name.replace(/\b\w/g, (letter) => letter.toUpperCase()),
-      });
-      return;
-    }
-
     const supabase = getSupabaseBrowserClient();
     const { data } = await supabase.auth.getSession();
     const user = data.session?.user;
 
-    setProfile({
+    const fallbackProfile = {
       email: user?.email ?? "Signed in user",
       name: user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "Profile",
-    });
+      profilePictureUrl: user?.user_metadata?.avatar_url ?? "",
+    };
+
+    try {
+      const response = await fetch("/api/my-profile", {
+        headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not load profile.");
+      }
+
+      setProfile({
+        email: result.profile.email || fallbackProfile.email,
+        name: result.profile.full_name || result.profile.username || fallbackProfile.name,
+        profilePictureUrl: result.profile.profile_picture_url || fallbackProfile.profilePictureUrl,
+      });
+    } catch {
+      setProfile(fallbackProfile);
+    }
   }
+
+  useEffect(() => {
+    const timeout = window.setTimeout(loadProfile, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   async function openProfileMenu() {
     if (!isProfileOpen) {
@@ -319,29 +339,46 @@ export default function TopInformationBar({ actor }) {
   }
 
   async function signOut() {
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseBrowserClient();
-      await supabase.auth.signOut();
-    } else {
-      window.localStorage.removeItem("workflowDemoToken");
-      window.localStorage.removeItem("workflowDemoEmail");
-      window.localStorage.removeItem("workflowDemoUserId");
-    }
-
+    const supabase = getSupabaseBrowserClient();
+    await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
   }
 
-  function profileHref() {
-    if (actor === "manager") {
-      return "/manager/my-space";
+  async function switchDemoRole(roleKey) {
+    if (isSwitchingRole) return;
+    setIsSwitchingRole(true);
+    try {
+      const response = await fetch("/api/demo/role", {
+        method: "POST",
+        headers: await demoAuthHeaders(),
+        body: JSON.stringify({ role: roleKey }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Could not switch role.");
+      }
+      setIsProfileOpen(false);
+      router.push(result.home);
+      router.refresh();
+    } catch {
+      /* swallow — demo only */
+    } finally {
+      setIsSwitchingRole(false);
     }
+  }
 
-    if (actor === "employee") {
-      return "/employee/my-space";
+  async function exitDemo() {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await fetch("/api/demo/end", { method: "POST", headers: await demoAuthHeaders() });
+    } catch {
+      /* best-effort teardown */
     }
-
-    return "/useradmin/accounts";
+    clearDemoSession();
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
   }
 
   function logoHref() {
@@ -355,6 +392,11 @@ export default function TopInformationBar({ actor }) {
 
   function runSearchResult(item) {
     closeSearch();
+
+    if (item.type === "Member" && item.member) {
+      setSearchMember(item.member);
+      return;
+    }
 
     if (item.actionId) {
       const detail = {
@@ -377,7 +419,8 @@ export default function TopInformationBar({ actor }) {
   }
 
   return (
-    <div className="optima-topbar relative z-100 flex min-h-14 w-full items-center gap-4 bg-white/20 backdrop-blur-md px-2 py-1 sm:px-6 lg:px-6">
+    <>
+    <div className="relative z-100 flex min-h-14 w-full items-center gap-4 bg-white/20 backdrop-blur-md px-2 py-1 sm:px-6 lg:px-6">
 
         <Image
           src="/optimalogowhite.png"
@@ -393,22 +436,24 @@ export default function TopInformationBar({ actor }) {
           </span>
         ) : null}
 
-      <div className="absolute left-1/2 top-1/2 h-10 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2">
-        <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#61708a]">
-          <SearchIcon />
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            setIsSearchOpen(true);
-            setIsNotificationsOpen(false);
-            setIsProfileOpen(false);
-          }}
-          className="optima-search-trigger absolute inset-0 h-full w-full rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-4 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
-          aria-label="Open global search"
-        >
-          Search...
-        </button>
+      <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+        <div className="relative h-10 w-[min(30rem,calc(100vw-14rem))]">
+          <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#61708a]">
+            <SearchIcon />
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearchOpen(true);
+              setIsNotificationsOpen(false);
+              setIsProfileOpen(false);
+            }}
+            className="absolute inset-0 h-full w-full rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-4 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
+            aria-label="Open global search"
+          >
+            Search...
+          </button>
+        </div>
       </div>
 
       <div className="min-w-0 flex-1" />
@@ -430,7 +475,7 @@ export default function TopInformationBar({ actor }) {
         </button>
 
         {isNotificationsOpen ? (
-          <div className="optima-popover absolute right-0 top-12 w-80 rounded-xl border border-white/60 bg-white/20 p-3 shadow-[0_18px_60px_rgba(7,24,59,0.16)] backdrop-blur-sm">
+          <div className="absolute right-0 top-12 w-80 rounded-xl border border-white/60 bg-white/20 p-3 shadow-[0_18px_60px_rgba(7,24,59,0.16)] backdrop-blur-sm">
             <div className="flex items-center justify-between px-1">
               <p className="font-bold text-[#07183b]">Notifications</p>
               <span className="rounded-full bg-[#eef6ff] px-2 py-1 text-xs font-bold text-[#0a2a66]">
@@ -455,42 +500,144 @@ export default function TopInformationBar({ actor }) {
           <button
             type="button"
             onClick={openProfileMenu}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#0a2a66] text-white shadow-sm transition hover:bg-[#07183b]"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0a2a66] text-white shadow-sm transition hover:bg-[#07183b]"
             aria-label="Profile"
             title="Profile"
           >
-            <UserIcon />
+            {profile.profilePictureUrl ? (
+              <Image
+                src={profile.profilePictureUrl}
+                alt={profile.name || "Profile"}
+                width={44}
+                height={44}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : (
+              <UserIcon />
+            )}
           </button>
 
+          {plan && plan !== "starter" ? (
+            <span
+              className={`pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[7px] font-black text-white shadow-sm ${
+                PLAN_TIER_CHIP_TONES[plan] ?? "bg-[#0a2a66]"
+              }`}
+            >
+              {capitalize(plan)}
+            </span>
+          ) : null}
+
           {isProfileOpen ? (
-            <div className="optima-popover absolute right-0 top-14 w-72 rounded-xl border border-white/60 bg-white/20 p-3 shadow-[0_18px_60px_rgba(7,24,59,0.16)] backdrop-blur-lg">
-              <div className="rounded-lg bg-[#f8faff] p-3">
-                <p className="text-sm font-bold text-[#07183b]">{profile.name}</p>
-                <p className="mt-1 truncate text-xs text-[#61708a]">{profile.email}</p>
+            <div className="absolute right-0 top-14 w-52 rounded-[28px] border border-white/60 bg-slate-200 px-4 py-4 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
+              <div className="flex items-center gap-3 px-3 py-2">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a2a66] text-white">
+                  {profile.profilePictureUrl ? (
+                    <Image
+                      src={profile.profilePictureUrl}
+                      alt=""
+                      width={44}
+                      height={44}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <UserIcon />
+                  )}
+                </span>
+                <p className="min-w-0 truncate text-sm font-bold text-[#07183b]">{profile.name}</p>
+                {isDemo ? (
+                  <span className="ml-auto shrink-0 rounded-full bg-[#eef6ff] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#0a2a66]">
+                    Demo mode
+                  </span>
+                ) : null}
               </div>
-              <div className="mt-3 grid gap-2">
-                <Link
-                  href={profileHref()}
-                  className="rounded-md px-3 py-2 text-sm font-bold text-[#07183b] hover:bg-[#eef6ff]"
-                >
-                  View profile
-                </Link>
+
+              {isDemo ? (
+                <div className="mt-3 rounded-lg border border-white/60 bg-white/40 p-2">
+                  <p className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-[#61708a]">
+                    Try a role
+                  </p>
+                  <div className="grid gap-1">
+                    {DEMO_ROLES.map((role) => {
+                      const isCurrent = role.home.startsWith(`/${actor}`);
+                      return (
+                        <button
+                          key={role.key}
+                          type="button"
+                          disabled={isSwitchingRole}
+                          onClick={() => switchDemoRole(role.key)}
+                          className={`flex items-center justify-between rounded-md px-3 py-2 text-left text-sm font-bold transition disabled:opacity-60 ${
+                            isCurrent
+                              ? "bg-[#0a2a66] text-white"
+                              : "text-[#07183b] hover:bg-[#eef6ff]"
+                          }`}
+                        >
+                          {role.label}
+                          {isCurrent ? <span className="text-xs">Current</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-1 grid gap-1">
+                {isDemo ? null : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileCardOpen(true);
+                      setIsProfileOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
+                  >
+                    <span className="material-symbols-outlined text-lg text-[#94a3b8]" aria-hidden="true">
+                      id_card
+                    </span>
+                    View Profile
+                  </button>
+                )}
+                {!isDemo && plan ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      openPlanPicker();
+                    }}
+                    className="flex items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
+                  >
+                    <span className="material-symbols-outlined text-lg text-[#94a3b8]" aria-hidden="true">
+                      diamond
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">Your Plan</span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black text-white ${
+                        PLAN_TIER_CHIP_TONES[plan] ?? "bg-[#94a3b8]"
+                      }`}
+                    >
+                      {capitalize(plan)}
+                    </span>
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  onClick={signOut}
-                  className="rounded-md px-3 py-2 text-left text-sm font-bold text-red-700 hover:bg-red-50"
+                  onClick={isDemo ? exitDemo : signOut}
+                  className="flex items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-bold text-red-700 transition hover:bg-red-50/80"
                 >
-                  Log out
+                  <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                    logout
+                  </span>
+                  {isDemo ? "Exit demo" : "Log Out"}
                 </button>
               </div>
             </div>
           ) : null}
         </div>
       </div>
+    </div>
 
       {isSearchOpen ? (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
-          <div className="optima-search-modal pointer-events-auto mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-white/60 bg-white/20 text-[#07183b] shadow-[0_28px_90px_rgba(7,24,59,0.28)] backdrop-blur-md">
+        <div className="pointer-events-none fixed inset-0 z-[200] flex items-center justify-center px-4 py-10">
+          <div className="pointer-events-auto mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-white/60 bg-white/20 text-[#07183b] shadow-[0_28px_90px_rgba(7,24,59,0.28)] backdrop-blur-md">
             <div className="flex items-center gap-4 border-b border-white/60 px-6 py-5">
               <span className="text-[#61708a]">
                 <SearchIcon />
@@ -559,7 +706,24 @@ export default function TopInformationBar({ actor }) {
           </div>
         </div>
       ) : null}
-    </div>
+
+      {isProfileCardOpen ? <ProfileDetailCard onClose={() => setIsProfileCardOpen(false)} /> : null}
+      {searchMember ? (
+        <div className="fixed inset-0 z-110 flex items-center justify-center bg-black/30 p-4" onClick={() => setSearchMember(null)}>
+          <div className="relative" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setSearchMember(null)}
+              aria-label="Close employee details"
+              className="absolute -right-3 -top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-[#0D1E4C] text-lg font-bold text-white shadow-lg"
+            >
+              ×
+            </button>
+            <EmployeeProfileCard employee={searchMember} defaultExpanded />
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -604,17 +768,6 @@ function itemsFromTasks(payload, href) {
   }));
 }
 
-function itemsFromTeams(payload, href) {
-  return (payload?.teams ?? []).map((team) => ({
-    id: team.team_id,
-    label: team.team_name,
-    description: "Team",
-    href,
-    group: "Team",
-    type: "Team",
-  }));
-}
-
 function itemsFromMembers(payload, href) {
   const members = payload?.members ?? payload?.employees ?? payload?.user_accounts ?? [];
 
@@ -625,23 +778,15 @@ function itemsFromMembers(payload, href) {
       member.role?.role_name,
       member.department?.department_name,
       member.email,
+      ...(member.skills ?? []),
+      ...(member.skill_details ?? []).map((skill) => skill.name),
     ]
       .filter(Boolean)
       .join(" · "),
     href,
     group: "Team",
     type: "Member",
-  }));
-}
-
-function itemsFromInvitations(payload, href) {
-  return (payload?.invitations ?? []).map((invitation) => ({
-    id: invitation.invitation_id,
-    label: `Invitation: ${invitation.team?.team_name ?? "Team"}`,
-    description: "Accept or reject team invitation",
-    href,
-    group: "Team",
-    type: "Action",
+    member,
   }));
 }
 
@@ -655,17 +800,6 @@ function itemsFromAccounts(payload, href) {
     href,
     group: "Accounts",
     type: "Member",
-  }));
-}
-
-function itemsFromRoles(payload, href) {
-  return (payload?.roles ?? []).map((role) => ({
-    id: role.role_id,
-    label: role.role_name,
-    description: "Role access",
-    href,
-    group: "Roles",
-    type: "Role",
   }));
 }
 

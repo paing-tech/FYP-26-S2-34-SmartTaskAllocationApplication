@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getAuthHeaders } from "@/lib/clientAuth";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 export default function OrganizationProfileForm() {
   const [form, setForm] = useState({
@@ -18,7 +18,11 @@ export default function OrganizationProfileForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function authHeaders() {
-    return getAuthHeaders();
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+    return {
+      Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+    };
   }
 
   useEffect(() => {

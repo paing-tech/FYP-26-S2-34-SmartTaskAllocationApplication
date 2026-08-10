@@ -1,10 +1,7 @@
 import SideMenuLayout from "@/components/SideMenuLayout";
-import { RoleSupportPage } from "@/components/RoleUtilityPages";
+import GlassSurface from "@/components/ui/glass-surface";
+import SupportCenter from "@/components/SupportCenter";
 
 export default function EmployeeSupportPage() {
-  return (
-    <SideMenuLayout actor="employee">
-      <RoleSupportPage actor="employee" />
-    </SideMenuLayout>
-  );
+  return <SideMenuLayout actor="employee"><GlassSurface className="h-full overflow-y-auto p-6"><SupportCenter /></GlassSurface></SideMenuLayout>;
 }

@@ -11,6 +11,21 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const ALLOWED_ACTIVITY_ACTIONS = ["approve", "suspend", "activate", "promote", "demote", "delete", "update"];
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function logAccountActivity(supabase, { organizationId, actorUserId, targetUserId, targetLabel, action }) {
+  if (!ALLOWED_ACTIVITY_ACTIONS.includes(action)) return;
+
+  await supabase.from("account_activity_log").insert({
+    organization_id: organizationId,
+    actor_user_id: actorUserId,
+    target_user_id: targetUserId,
+    target_label: cleanString(targetLabel) || null,
+    action,
+  });
+}
+
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
@@ -52,7 +67,7 @@ export async function GET(request) {
     if (userIds.length) {
       const { data: profiles, error: profileError } = await supabase
         .from("profile")
-        .select("user_id, full_name, profile_picture_url")
+        .select("user_id, full_name, job_title, phone_number, profile_picture_url")
         .in("user_id", userIds);
 
       if (profileError) {
@@ -65,6 +80,8 @@ export async function GET(request) {
     const accountsWithProfile = accounts.map((account) => ({
       ...account,
       full_name: profilesByUserId.get(account.user_id)?.full_name ?? null,
+      job_title: profilesByUserId.get(account.user_id)?.job_title ?? null,
+      phone_number: profilesByUserId.get(account.user_id)?.phone_number ?? null,
       profile_picture_url: profilesByUserId.get(account.user_id)?.profile_picture_url ?? null,
     }));
 
@@ -83,7 +100,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { userId, username, email, roleId, organizationId, accountStatus } =
+    const { userId, username, email, roleId, organizationId, accountStatus, action, targetLabel } =
       await request.json();
 
     // The admin may only modify accounts inside their own organization, and
@@ -91,7 +108,7 @@ export async function PATCH(request) {
     const requesterOrgId = await getRequesterOrganizationId(supabase, user);
     const { data: target } = await supabase
       .from("user_account")
-      .select("user_id, role:role_id(role_name)")
+      .select("user_id, email, role:role_id(role_name)")
       .eq("user_id", userId)
       .eq("organization_id", requesterOrgId ?? "")
       .maybeSingle();
@@ -115,10 +132,30 @@ export async function PATCH(request) {
 
     if (username !== undefined) {
       updates.username = cleanString(username);
+      if (!updates.username) {
+        return NextResponse.json({ error: "Username is required." }, { status: 400 });
+      }
     }
 
     if (email !== undefined) {
       updates.email = cleanString(email).toLowerCase();
+      if (!updates.email) {
+        return NextResponse.json({ error: "Email is required." }, { status: 400 });
+      }
+      if (!EMAIL_PATTERN.test(updates.email)) {
+        return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+      }
+
+      const { data: duplicate } = await supabase
+        .from("user_account")
+        .select("user_id")
+        .ilike("email", updates.email)
+        .neq("user_id", userId)
+        .maybeSingle();
+
+      if (duplicate) {
+        return NextResponse.json({ error: "That email address is already registered or in use." }, { status: 400 });
+      }
     }
 
     if (roleId !== undefined) {
@@ -135,13 +172,33 @@ export async function PATCH(request) {
 
     updates.updated_at = new Date().toISOString();
 
+    if (updates.email && updates.email !== String(target.email || "").toLowerCase()) {
+      const { error: authEmailError } = await supabase.auth.admin.updateUserById(userId, { email: updates.email });
+      if (authEmailError) {
+        return NextResponse.json({ error: authEmailError.message }, { status: 400 });
+      }
+    }
+
     const { error } = await supabase
       .from("user_account")
       .update(updates)
       .eq("user_id", userId);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const message = /duplicate|unique/i.test(error.message)
+        ? "That username or email is already registered or in use."
+        : error.message;
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    if (action) {
+      await logAccountActivity(supabase, {
+        organizationId: requesterOrgId,
+        actorUserId: user.id,
+        targetUserId: userId,
+        targetLabel,
+        action,
+      });
     }
 
     return NextResponse.json({ success: true });
@@ -161,6 +218,8 @@ export async function DELETE(request) {
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    const action = searchParams.get("action");
+    const targetLabel = searchParams.get("targetLabel");
 
     if (!userId) {
       return NextResponse.json({ error: "User ID is required." }, { status: 400 });
@@ -181,6 +240,18 @@ export async function DELETE(request) {
         { error: "Account not found in your organization." },
         { status: 404 },
       );
+    }
+
+    // Log before deleting — account_activity_log.target_user_id has a real FK
+    // to user_account.user_id, so it must reference a still-existing row.
+    if (action) {
+      await logAccountActivity(supabase, {
+        organizationId: requesterOrgId,
+        actorUserId: user.id,
+        targetUserId: userId,
+        targetLabel,
+        action,
+      });
     }
 
     const { error: accountError } = await supabase

@@ -213,21 +213,26 @@ function Band({
   // centered on a solid strip (matching the default band's strip dimensions) so
   // it tiles cleanly along the lanyard; otherwise use the raw band texture.
   const bandMap = useMemo(() => {
+    // Clone rather than configure `texture` in place — it's drei's shared,
+    // cached useTexture() result, not a value this component owns.
     if (!lanyardLogo || !lanyardLogoTex.image) {
-      const tiledTexture = texture.clone();
-      tiledTexture.wrapS = THREE.RepeatWrapping;
-      tiledTexture.wrapT = THREE.RepeatWrapping;
-      tiledTexture.needsUpdate = true;
-      return tiledTexture;
+      const cloned = texture.clone();
+      cloned.wrapS = cloned.wrapT = THREE.RepeatWrapping;
+      cloned.needsUpdate = true;
+      return cloned;
     }
-
     const W = texture.image?.width || 1025;
     const H = texture.image?.height || 250;
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return texture;
+    if (!ctx) {
+      const cloned = texture.clone();
+      cloned.wrapS = cloned.wrapT = THREE.RepeatWrapping;
+      cloned.needsUpdate = true;
+      return cloned;
+    }
     ctx.fillStyle = lanyardColor;
     ctx.fillRect(0, 0, W, H);
     const img = lanyardLogoTex.image;
@@ -238,24 +243,16 @@ function Band({
     const composite = new THREE.CanvasTexture(canvas);
     composite.colorSpace = THREE.SRGBColorSpace;
     composite.anisotropy = 16;
-    composite.wrapS = THREE.RepeatWrapping;
-    composite.wrapT = THREE.RepeatWrapping;
     composite.needsUpdate = true;
+    composite.wrapS = composite.wrapT = THREE.RepeatWrapping;
     return composite;
   }, [lanyardLogo, lanyardColor, lanyardLogoTex, texture]);
 
-  const [curve] = useState(
-    () => {
-      const nextCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(),
-        new THREE.Vector3(),
-        new THREE.Vector3(),
-        new THREE.Vector3()
-      ]);
-      nextCurve.curveType = 'chordal';
-      return nextCurve;
-    }
-  );
+  const [curve] = useState(() => {
+    const c = new THREE.CatmullRomCurve3([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
+    c.curveType = 'chordal';
+    return c;
+  });
   const [dragged, drag] = useState(false);
   const [hovered, hover] = useState(false);
 

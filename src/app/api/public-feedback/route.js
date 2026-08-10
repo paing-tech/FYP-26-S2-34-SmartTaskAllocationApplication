@@ -1,14 +1,45 @@
 import { NextResponse } from "next/server";
-import { loadPublishedFeedback } from "@/lib/publicFeedback";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
-export const dynamic = "force-dynamic";
-
-export async function GET(request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const limitValue = Number(searchParams.get("limit"));
-    const limit = Number.isInteger(limitValue) && limitValue > 0 ? limitValue : undefined;
-    const feedback = await loadPublishedFeedback(limit);
+    const supabase = getSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from("feedback")
+      .select("feedback_id, user_id, rating, category, subject, feedback_message, created_at")
+      .eq("status", "Approved")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    const userIds = [...new Set((data ?? []).map((row) => row.user_id).filter(Boolean))];
+    let nameByUserId = new Map();
+    if (userIds.length) {
+      const [{ data: profiles }, { data: accounts }] = await Promise.all([
+        supabase.from("profile").select("user_id, full_name").in("user_id", userIds),
+        supabase.from("user_account").select("user_id, username").in("user_id", userIds),
+      ]);
+      const accountNames = new Map((accounts ?? []).map((row) => [row.user_id, row.username]));
+      nameByUserId = new Map(
+        userIds.map((id) => [
+          id,
+          (profiles ?? []).find((row) => row.user_id === id)?.full_name || accountNames.get(id) || "Optima user",
+        ]),
+      );
+    }
+
+    const feedback = (data ?? []).map((row) => ({
+      id: row.feedback_id,
+      name: nameByUserId.get(row.user_id) || "Optima user",
+      rating: row.rating,
+      category: row.category,
+      subject: row.subject,
+      message: row.feedback_message,
+      createdAt: row.created_at,
+    }));
 
     return NextResponse.json({ feedback });
   } catch (error) {

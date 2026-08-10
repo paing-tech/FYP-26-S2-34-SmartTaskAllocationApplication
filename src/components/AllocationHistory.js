@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getAuthHeaders } from "@/lib/clientAuth";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { TaskCard, TaskViewPanel, enrichTaskWithPeople } from "@/components/WorkspaceBoard";
 import EmployeeProfileCard from "@/components/EmployeeProfileCard";
-
-const VIEWS = [{ value: "history", label: "Task Allocation History" }];
+import HoverPill from "@/components/HoverPill";
 
 function formatDateHeader(iso) {
   const date = new Date(iso);
@@ -18,91 +18,59 @@ function formatDateTime(iso) {
   return `${day} at ${time}`;
 }
 
-function HoverPill({ label, detail, tone = "slate", maxWidthClass = "max-w-[200px]", variant = "panel" }) {
-  const tones = {
-    slate: "border-[#0D1E4C]/15 bg-white/70 text-[#0D1E4C]",
-    blue: "border-[#2563EB]/25 bg-[#2563EB]/10 text-[#1E40AF]",
-    purple: "border-[#7C3AED]/25 bg-[#7C3AED]/10 text-[#5B21B6]",
-  };
-  return (
-    <span className="group/pill relative inline-flex align-middle">
-      <span
-        className={`inline-block ${maxWidthClass} truncate rounded-full border px-3 py-1 text-sm font-bold leading-5 ${tones[tone]}`}
-      >
-        {label}
-      </span>
-      {detail ? (
-        variant === "card" ? (
-          <span className="absolute left-0 top-full z-40 hidden pt-2 text-left group-hover/pill:block">
-            {detail}
-          </span>
-        ) : (
-          <span className="pointer-events-none absolute left-0 top-full z-40 mt-2 hidden w-72 max-w-[80vw] rounded-2xl border border-white/60 bg-white/95 p-4 text-left shadow-[0_18px_50px_rgba(7,24,59,0.2)] backdrop-blur-md group-hover/pill:block">
-            {detail}
-          </span>
-        )
-      ) : null}
-    </span>
-  );
+function formatCardDate(iso) {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return `${day}, ${time}`;
 }
 
-export default function AllocationHistory() {
-  const [view, setView] = useState("history");
-  const [isViewOpen, setIsViewOpen] = useState(false);
+export default function AllocationHistory({ onClose } = {}) {
   const [allocations, setAllocations] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [workspaces, setWorkspaces] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [error, setError] = useState("");
-
-  // Reassign modal: targets = array of allocations; phase = "edit" | "confirm".
-  const [reassign, setReassign] = useState(null);
-  const [reassignWorkspaceId, setReassignWorkspaceId] = useState("");
-  const [reassignAssigneeId, setReassignAssigneeId] = useState("");
-  const [reassignPhase, setReassignPhase] = useState("edit");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isReassigning, setIsReassigning] = useState(false);
+  const [viewingTaskId, setViewingTaskId] = useState(null);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatus, setHistoryStatus] = useState("All");
 
   async function authHeaders() {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
     return {
       "Content-Type": "application/json",
-      ...(await getAuthHeaders()),
+      Authorization: `Bearer ${data.session?.access_token ?? ""}`,
     };
   }
 
   async function loadAll() {
     try {
       const headers = await authHeaders();
-      const [allocRes, empRes, wsRes] = await Promise.all([
+      const [allocRes, tasksRes, empRes] = await Promise.all([
         fetch("/api/allocations", { headers }),
+        fetch("/api/tasks?includeArchived=true", { headers }),
         fetch("/api/employees", { headers }),
-        fetch("/api/workspaces", { headers }),
       ]);
       const allocData = await allocRes.json();
+      const tasksData = await tasksRes.json();
       const empData = await empRes.json();
-      const wsData = await wsRes.json();
       if (!allocRes.ok) throw new Error(allocData.error || "Could not load allocations.");
+      if (!tasksRes.ok) throw new Error(tasksData.error || "Could not load tasks.");
       setAllocations(allocData.allocations ?? []);
+      setTasks(tasksData.tasks ?? []);
       setEmployees(empData.employees ?? []);
-      setWorkspaces(wsData.workspaces ?? []);
     } catch (loadError) {
       setError(loadError.message);
     }
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      loadAll();
-    }, 0);
-    return () => window.clearTimeout(timer);
+    (async () => {
+      await loadAll();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    function close() {
-      setIsViewOpen(false);
-    }
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
   }, []);
 
   const employeeById = useMemo(
@@ -110,11 +78,33 @@ export default function AllocationHistory() {
     [employees],
   );
 
-  // Group allocations by calendar date (already sorted desc by API).
+  const completedTasks = useMemo(
+    () =>
+      tasks
+        .filter((task) => ["completed", "archived"].includes(String(task.status || "").toLowerCase()))
+        .map((task) => enrichTaskWithPeople(task, employeeById)),
+    [tasks, employeeById],
+  );
+
+  const viewingTask = viewingTaskId
+    ? completedTasks.find((task) => task.task_id === viewingTaskId) ?? null
+    : null;
+
+  const filteredAllocations = useMemo(() => {
+    const search = historySearch.trim().toLowerCase();
+    return allocations.filter((allocation) => {
+      if (historyStatus !== "All" && allocation.status !== historyStatus) return false;
+      return `${allocation.taskTitle} ${allocation.assigneeName} ${allocation.assignedBy} ${allocation.status}`
+        .toLowerCase()
+        .includes(search);
+    });
+  }, [allocations, historySearch, historyStatus]);
+
+  // Group filtered allocations by calendar date (already sorted desc by API).
   const grouped = useMemo(() => {
     const groups = [];
     const indexByDate = new Map();
-    for (const allocation of allocations) {
+    for (const allocation of filteredAllocations) {
       const dateKey = formatDateHeader(allocation.assignedAt);
       if (!indexByDate.has(dateKey)) {
         indexByDate.set(dateKey, groups.length);
@@ -123,7 +113,7 @@ export default function AllocationHistory() {
       groups[indexByDate.get(dateKey)].items.push(allocation);
     }
     return groups;
-  }, [allocations]);
+  }, [filteredAllocations]);
 
   function toggleSelect(id) {
     setSelectedIds((current) => {
@@ -134,102 +124,96 @@ export default function AllocationHistory() {
     });
   }
 
-  function openReassign(targets) {
-    if (!targets.length) return;
-    setReassign(targets);
-    setReassignPhase("edit");
-    setReassignWorkspaceId(targets[0].workspaceId ?? workspaces[0]?.workspace_id ?? "");
-    setReassignAssigneeId(targets.length === 1 ? targets[0].assigneeUserId ?? "" : "");
-    setError("");
-  }
-
-  function closeReassign() {
-    setReassign(null);
-    setReassignPhase("edit");
-    setIsSubmitting(false);
-  }
-
-  async function confirmReassign() {
-    if (!reassignWorkspaceId) {
-      setError("Choose a workspace.");
-      return;
-    }
-    setIsSubmitting(true);
+  // Reassign immediately hands the task(s) over to the current manager —
+  // no picker, no confirmation step.
+  async function handleReassign(taskIds) {
+    if (!taskIds.length || isReassigning) return;
+    setIsReassigning(true);
     setError("");
     try {
       const headers = await authHeaders();
-      for (const target of reassign) {
-        // For bulk, keep each task's own assignee; for single, use the chosen one.
-        const assignedTo =
-          reassign.length === 1 ? reassignAssigneeId : target.assigneeUserId;
-        await fetch("/api/tasks", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            workspaceId: reassignWorkspaceId,
-            title: target.taskTitle,
-            assignedTo,
-          }),
-        });
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ action: "reassign-task", taskIds }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reassign task.");
       }
-      closeReassign();
       setSelectedIds(new Set());
       await loadAll();
-    } catch (submitError) {
-      setError(submitError.message);
-      setIsSubmitting(false);
+    } catch (reassignError) {
+      setError(reassignError.message);
+    } finally {
+      setIsReassigning(false);
+    }
+  }
+
+  // The generic PATCH branch replaces the full task record, not just the
+  // changed field (see /api/tasks's title-wiping gotcha), so every other
+  // field has to be resent as-is alongside the new status.
+  async function reopenTask(task) {
+    if (!task?.task_id) return;
+    setError("");
+    try {
+      const headers = await authHeaders();
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          taskId: task.task_id,
+          title: task.title,
+          description: task.description,
+          groupId: task.group_id,
+          status: "Open",
+          priority: task.priority,
+          startDatetime: task.start_datetime,
+          endDatetime: task.end_datetime,
+          requiredSkillIds: (task.requiredSkills ?? []).map((skill) => skill.skill_id),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Could not reopen task.");
+      }
+      await loadAll();
+    } catch (reopenError) {
+      setError(reopenError.message);
+      throw reopenError;
     }
   }
 
   const selectedAllocations = allocations.filter((a) => selectedIds.has(a.id));
-  const workspaceName = (id) =>
-    workspaces.find((w) => w.workspace_id === id)?.workspace_name ?? "—";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header: dropdown title + Bulk Reassign */}
+      {/* Header: title + Bulk Reassign */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
-        <div className="relative">
+        <h2 className="text-lg font-black text-[#0D1E4C]">Allocation History</h2>
+
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsViewOpen((current) => !current);
-            }}
-            className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-5 py-2 text-lg font-bold text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/60"
+            onClick={() => handleReassign(selectedAllocations.map((allocation) => allocation.taskId))}
+            disabled={!selectedIds.size || isReassigning}
+            className="rounded-full bg-[#0a72e8] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#075fc2] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {VIEWS.find((v) => v.value === view)?.label}
+            Bulk Reassign{selectedIds.size ? ` (${selectedIds.size})` : ""}
           </button>
-          {isViewOpen ? (
-            <div
-              className="absolute left-0 top-12 z-30 w-64 overflow-hidden rounded-2xl border border-white/60 bg-white/95 shadow-[0_18px_50px_rgba(7,24,59,0.18)] backdrop-blur-md"
-              onClick={(event) => event.stopPropagation()}
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close allocation history"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:bg-white/70 hover:scale-110"
             >
-              {VIEWS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    setView(option.value);
-                    setIsViewOpen(false);
-                  }}
-                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-[#eef6ff]"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
+            </button>
           ) : null}
         </div>
-
-        <button
-          type="button"
-          onClick={() => openReassign(selectedAllocations)}
-          disabled={!selectedIds.size}
-          className="rounded-full bg-[#0a72e8] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#075fc2] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Bulk Reassign{selectedIds.size ? ` (${selectedIds.size})` : ""}
-        </button>
       </div>
 
       {error ? (
@@ -238,7 +222,63 @@ export default function AllocationHistory() {
         </p>
       ) : null}
 
-      <div className="min-h-0 flex-1 space-y-8 overflow-y-auto pr-1">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <input
+          value={historySearch}
+          onChange={(event) => setHistorySearch(event.target.value)}
+          placeholder="Filter by task, employee, or assigner"
+          className="h-10 min-w-64 flex-1 rounded-full border border-white/60 bg-white/60 px-4 text-sm outline-none focus:border-[#2563EB]"
+        />
+        <select
+          value={historyStatus}
+          onChange={(event) => setHistoryStatus(event.target.value)}
+          className="h-10 rounded-full border border-white/60 bg-white/60 px-4 text-sm font-bold outline-none"
+        >
+          <option>All</option>
+          {[...new Set(allocations.map((allocation) => allocation.status).filter(Boolean))].map((status) => (
+            <option key={status}>{status}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => { setHistorySearch(""); setHistoryStatus("All"); }}
+          className="h-10 rounded-full border border-white/60 bg-white/40 px-4 text-sm font-bold"
+        >
+          Clear filters
+        </button>
+      </div>
+
+      <div className="shrink-0">
+        {completedTasks.length ? (
+          <div className="flex gap-6 overflow-x-auto pb-2">
+            {completedTasks.map((task) => (
+              <div key={task.task_id} className="w-80 shrink-0">
+                <TaskCard
+                  employees={employees}
+                  onOpen={(openedTask) => setViewingTaskId(openedTask.task_id)}
+                  task={task}
+                  tasks={completedTasks}
+                  viewOnly
+                />
+                <p className="mt-1.5 px-1 text-center text-xs font-semibold text-[#94a3b8]">
+                  {formatCardDate(task.updated_at)}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-2xl border border-dashed border-white/60 px-6 py-8 text-center text-sm font-medium text-[#0D1E4C]/60">
+            No completed or archived tasks yet.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-6 min-h-0 flex-1 space-y-8 overflow-y-auto pr-1">
+        {grouped.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-white/60 px-6 py-8 text-center text-sm font-medium text-[#0D1E4C]/60">
+            No allocation history matches the selected filters.
+          </p>
+        ) : null}
         {grouped.map((group) => (
           <div key={group.dateKey}>
             <h3 className="mb-3 text-sm font-black uppercase tracking-[0.15em] text-[#0D1E4C]/60">
@@ -277,9 +317,6 @@ export default function AllocationHistory() {
                       detail={
                         <span className="block text-sm text-[#0D1E4C]">
                           <span className="block font-bold break-words">{allocation.taskTitle}</span>
-                          <span className="mt-1 block text-xs text-[#667085]">
-                            Workspace: {workspaceName(allocation.workspaceId)}
-                          </span>
                           <span className="block text-xs text-[#667085]">
                             Status: {allocation.status ?? "Assigned"}
                           </span>
@@ -293,8 +330,9 @@ export default function AllocationHistory() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => openReassign([allocation])}
-                      className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white"
+                      onClick={() => handleReassign([allocation.taskId])}
+                      disabled={isReassigning}
+                      className="ml-auto rounded-full border border-[#0a72e8] px-4 py-1.5 text-sm font-bold text-[#0a72e8] transition hover:bg-[#0a72e8] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Reassign
                     </button>
@@ -312,122 +350,13 @@ export default function AllocationHistory() {
         ) : null}
       </div>
 
-      {reassign ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
-          onClick={closeReassign}
-        >
-          <div
-            className="w-full max-w-lg rounded-[28px] bg-white p-8 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2 className="text-2xl font-black text-[#0D1E4C]">
-              {reassign.length > 1 ? `Reassign ${reassign.length} tasks` : "Reassign task"}
-            </h2>
-
-            {reassignPhase === "edit" ? (
-              <div className="mt-6 space-y-5">
-                {reassign.length === 1 ? (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-bold text-[#0D1E4C]">Assignee</label>
-                    <select
-                      value={reassignAssigneeId}
-                      onChange={(event) => setReassignAssigneeId(event.target.value)}
-                      className="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-[#0D1E4C] outline-none focus:border-[#2563EB]"
-                    >
-                      <option value="">Unassigned</option>
-                      {employees.map((employee) => (
-                        <option key={employee.user_id} value={employee.user_id}>
-                          {employee.full_name || employee.username || employee.email}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-bold text-[#0D1E4C]">Workspace</label>
-                  <select
-                    value={reassignWorkspaceId}
-                    onChange={(event) => setReassignWorkspaceId(event.target.value)}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-[#0D1E4C] outline-none focus:border-[#2563EB]"
-                  >
-                    <option value="">Choose a workspace…</option>
-                    {workspaces.map((workspace) => (
-                      <option key={workspace.workspace_id} value={workspace.workspace_id}>
-                        {workspace.workspace_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={closeReassign}
-                    className="rounded-full px-5 py-2.5 text-sm font-bold text-[#667085] hover:bg-slate-100"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!reassignWorkspaceId) {
-                        setError("Choose a workspace.");
-                        return;
-                      }
-                      setError("");
-                      setReassignPhase("confirm");
-                    }}
-                    className="rounded-full bg-[#0D1E4C] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#0a1838]"
-                  >
-                    Review
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6 space-y-4">
-                <p className="text-sm text-[#52627a]">
-                  This will create {reassign.length > 1 ? "these tasks" : "this task"} in{" "}
-                  <strong>{workspaceName(reassignWorkspaceId)}</strong> and log the assignment:
-                </p>
-                <ul className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  {reassign.map((target) => {
-                    const assigneeId =
-                      reassign.length === 1 ? reassignAssigneeId : target.assigneeUserId;
-                    const assignee = employeeById.get(assigneeId);
-                    return (
-                      <li key={target.id} className="text-sm text-[#0D1E4C]">
-                        <strong>{target.taskTitle}</strong> →{" "}
-                        {assignee
-                          ? assignee.full_name || assignee.username || assignee.email
-                          : "Unassigned"}
-                      </li>
-                    );
-                  })}
-                </ul>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setReassignPhase("edit")}
-                    className="rounded-full px-5 py-2.5 text-sm font-bold text-[#667085] hover:bg-slate-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={confirmReassign}
-                    disabled={isSubmitting}
-                    className="rounded-full bg-[#0a72e8] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#075fc2] disabled:opacity-60"
-                  >
-                    {isSubmitting ? "Reassigning…" : "Confirm reassign"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+      {viewingTask ? (
+        <TaskViewPanel
+          employees={employees}
+          onClose={() => setViewingTaskId(null)}
+          onReopen={reopenTask}
+          task={viewingTask}
+        />
       ) : null}
     </div>
   );

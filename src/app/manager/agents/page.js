@@ -1,10 +1,13 @@
+import { Suspense } from "react";
 import SideMenuLayout from "@/components/SideMenuLayout";
-import AgentSelection from "@/components/AgentSelection";
+import AgentWorkspace from "@/components/AgentWorkspace";
 
 export default function ManagerAgentsPage() {
   return (
     <SideMenuLayout actor="manager">
-      <AgentSelection />
+      <Suspense fallback={null}>
+        <AgentWorkspace />
+      </Suspense>
     </SideMenuLayout>
   );
 }

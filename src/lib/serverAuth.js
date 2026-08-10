@@ -72,7 +72,7 @@ export async function getRequesterOrganizationId(supabase, user) {
 export async function getUserHomeRoute(user, supabase) {
   const { data: accountByUserId, error: accountByUserIdError } = await supabase
     .from("user_account")
-    .select("role_id")
+    .select("role_id, account_status")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -85,7 +85,7 @@ export async function getUserHomeRoute(user, supabase) {
   if (!account && user.email) {
     const { data: accountByEmail, error: accountByEmailError } = await supabase
       .from("user_account")
-      .select("role_id")
+      .select("role_id, account_status")
       .eq("email", user.email)
       .maybeSingle();
 
@@ -98,6 +98,10 @@ export async function getUserHomeRoute(user, supabase) {
 
   if (account?.role_id == null) {
     return { error: "No role is assigned to this user." };
+  }
+
+  if (String(account.account_status || "").toLowerCase() !== "active") {
+    return { error: "This account is suspended or inactive." };
   }
 
   const { data: role, error: roleError } = await supabase
@@ -151,12 +155,14 @@ export async function requireManager(request, supabase) {
   );
 }
 
-export async function requirePlatformAdmin(request, supabase) {
+// Read-only org chart access for Manager's view-only Team page — editing
+// (POST/PATCH/DELETE) stays on requireUserAdmin alone everywhere else.
+export async function requireUserAdminOrManager(request, supabase) {
   return requireHomeRoute(
     request,
     supabase,
-    ["/platformadmin"],
-    "Only Platform Admin accounts can manage platform operations.",
+    ["/useradmin/accounts", "/manager"],
+    "Only User Admin or Manager accounts can view the organization chart.",
   );
 }
 
@@ -169,11 +175,20 @@ export async function requireEmployee(request, supabase) {
   );
 }
 
+export async function requirePlatformAdmin(request, supabase) {
+  return requireHomeRoute(
+    request,
+    supabase,
+    ["/platformadmin/content"],
+    "Only Platform Admin accounts can manage marketing site content.",
+  );
+}
+
 export async function requireManagerOrEmployee(request, supabase) {
   return requireHomeRoute(
     request,
     supabase,
-    ["/manager", "/employee", "/employee/workspace"],
-    "Only Manager or Employee accounts can access this task workflow.",
+    ["/manager", "/employee/workspace"],
+    "Only Manager or Employee accounts can access task-request workflows.",
   );
 }

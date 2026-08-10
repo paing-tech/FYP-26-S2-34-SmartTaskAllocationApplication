@@ -259,11 +259,32 @@ export async function DELETE(request) {
     }
 
     const accountUserId = await getAccountUserId(supabase, user);
+
+    // Confirm ownership before removing anything.
+    const { data: ownedWorkspace } = await supabase
+      .from("workspace")
+      .select("workspace_id")
+      .eq("workspace_id", workspaceId)
+      .eq("created_by", accountUserId)
+      .maybeSingle();
+
+    if (!ownedWorkspace) {
+      return NextResponse.json(
+        { error: "Workspace not found or you do not own it." },
+        { status: 404 },
+      );
+    }
+
+    // Remove dependents first — task → task_group → workspace_member — because
+    // those foreign keys don't cascade (e.g. task.group_id → task_group).
+    await supabase.from("task").delete().eq("workspace_id", workspaceId);
+    await supabase.from("task_group").delete().eq("workspace_id", workspaceId);
+    await supabase.from("workspace_member").delete().eq("workspace_id", workspaceId);
+
     const { error } = await supabase
       .from("workspace")
       .delete()
-      .eq("workspace_id", workspaceId)
-      .eq("created_by", accountUserId);
+      .eq("workspace_id", workspaceId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });

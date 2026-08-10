@@ -3,60 +3,59 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const STORAGE_KEY = "optima-appearance";
-const LIGHT_BACKGROUND = "#C7DDEB";
-const DARK_BACKGROUND = "#0F172A";
 
 export const DEFAULT_APPEARANCE = {
-  theme: "light",
+  theme: "light", // "light" | "dark" — dark styling implemented later
   background: {
     type: "solid", // "solid" | "wallpaper"
-    color: LIGHT_BACKGROUND,
+    color: "#E2E8F0",
     wallpaper: "", // image URL or data URL
   },
 };
 
 const AppearanceContext = createContext(null);
 
-function mergeAppearance(base, override) {
-  return {
-    ...base,
-    ...override,
-    background: { ...base.background, ...(override?.background ?? {}) },
-  };
-}
-
-function loadInitialAppearance() {
-  if (typeof window === "undefined") {
-    return DEFAULT_APPEARANCE;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? mergeAppearance(DEFAULT_APPEARANCE, JSON.parse(raw)) : DEFAULT_APPEARANCE;
-  } catch {
-    return DEFAULT_APPEARANCE;
-  }
-}
-
 export function AppearanceProvider({ children }) {
-  const [appearance, setAppearance] = useState(loadInitialAppearance);
-  const hydrated = true;
+  const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
+  const [hydrated, setHydrated] = useState(false);
 
-  // Persist client-side settings after state changes.
+  // Load any persisted settings once on the client.
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        queueMicrotask(() =>
+          setAppearance((prev) => ({
+            ...prev,
+            ...parsed,
+            background: { ...prev.background, ...(parsed.background ?? {}) },
+          })),
+        );
+      }
+    } catch {
+      // ignore corrupt/unavailable storage
+    }
+    queueMicrotask(() => setHydrated(true));
+  }, []);
+
+  // Persist after the first load so we don't clobber storage with defaults.
+  useEffect(() => {
+    if (!hydrated) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(appearance));
     } catch {
       // storage full (e.g. very large wallpaper) or unavailable — ignore
     }
-  }, [appearance]);
+  }, [appearance, hydrated]);
 
   // Reflect the theme on <html> so dark-mode styles can hook in later.
   useEffect(() => {
+    if (!hydrated) return;
     const root = document.documentElement;
     root.dataset.theme = appearance.theme;
     root.classList.toggle("dark", appearance.theme === "dark");
-  }, [appearance.theme]);
+  }, [appearance.theme, hydrated]);
 
   const value = useMemo(() => {
     const { background } = appearance;
@@ -74,20 +73,7 @@ export function AppearanceProvider({ children }) {
       appearance,
       hydrated,
       backgroundStyle,
-      setTheme: (theme) =>
-        setAppearance((p) => {
-          const next = { ...p, theme };
-          const isSolid = p.background.type === "solid";
-          const currentColor = p.background.color?.toLowerCase();
-
-          if (theme === "dark" && isSolid && currentColor === LIGHT_BACKGROUND.toLowerCase()) {
-            next.background = { ...p.background, color: DARK_BACKGROUND };
-          } else if (theme === "light" && isSolid && currentColor === DARK_BACKGROUND.toLowerCase()) {
-            next.background = { ...p.background, color: LIGHT_BACKGROUND };
-          }
-
-          return next;
-        }),
+      setTheme: (theme) => setAppearance((p) => ({ ...p, theme })),
       setBackgroundColor: (color) =>
         setAppearance((p) => ({ ...p, background: { ...p.background, type: "solid", color } })),
       setWallpaper: (wallpaper) =>

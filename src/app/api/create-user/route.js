@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isPlatformAdminRoleId, requireUserAdmin } from "@/lib/serverAuth";
+import { getRequesterOrganizationId, isPlatformAdminRoleId, requireUserAdmin } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 function cleanString(value) {
@@ -9,18 +9,22 @@ function cleanString(value) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireUserAdmin(request, supabase);
+    const { user, error: authError } = await requireUserAdmin(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { email, username, password, roleId, organizationId } = await request.json();
+    const { email, username, password, roleId } = await request.json();
     const cleanEmail = cleanString(email).toLowerCase();
     const cleanUsername = cleanString(username);
     const cleanPassword = cleanString(password);
     const numericRoleId = Number(roleId);
-    const cleanOrganizationId = cleanString(organizationId);
+    const organizationId = await getRequesterOrganizationId(supabase, user);
+
+    if (!organizationId) {
+      return NextResponse.json({ error: "Your account is not assigned to an organization." }, { status: 400 });
+    }
 
     if (
       !cleanEmail ||
@@ -68,7 +72,7 @@ export async function POST(request) {
       {
         user_id: createdUserId,
         role_id: numericRoleId,
-        organization_id: cleanOrganizationId || null,
+        organization_id: organizationId,
         username: cleanUsername,
         email: cleanEmail,
         account_status: "Active",

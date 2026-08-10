@@ -1,18 +1,5 @@
-import EmployeeTaskCenter from "@/components/EmployeeTaskCenter";
-import TimeClockPanel from "@/components/TimeClockPanel";
 import SideMenuLayout from "@/components/SideMenuLayout";
+import GlassSurface from "@/components/ui/glass-surface";
+import EmployeeTaskRequests from "@/components/EmployeeTaskRequests";
 
-export default function EmployeeTasksPage() {
-  return (
-    <SideMenuLayout
-      actor="employee"
-      title="My Tasks"
-      subtitle="Track your assigned and requested work."
-    >
-      <div className="space-y-6">
-        <TimeClockPanel />
-        <EmployeeTaskCenter />
-      </div>
-    </SideMenuLayout>
-  );
-}
+export default function EmployeeTasksPage(){return <SideMenuLayout actor="employee"><GlassSurface className="h-full overflow-y-auto p-6"><EmployeeTaskRequests /></GlassSurface></SideMenuLayout>;}

@@ -83,7 +83,7 @@ export async function GET(request) {
     }
 
     if (!account?.organization_id) {
-      return NextResponse.json({ workspaces: [], tasks: [], groups: [], members: [] });
+      return NextResponse.json({ workspaces: [], tasks: [] });
     }
 
     const { searchParams } = new URL(request.url);
@@ -102,7 +102,7 @@ export async function GET(request) {
         : workspaces[0]?.workspace_id ?? "";
 
     if (!selectedWorkspaceId) {
-      return NextResponse.json({ workspaces, tasks: [], groups: [], members: [], selectedWorkspaceId: "" });
+      return NextResponse.json({ workspaces, tasks: [], selectedWorkspaceId: "" });
     }
 
     const { data: tasks, error: tasksError } = await supabase
@@ -118,6 +118,7 @@ export async function GET(request) {
       return NextResponse.json({ error: tasksError.message }, { status: 400 });
     }
 
+    // Groups for the selected workspace (read-only column structure).
     const { data: groups } = await supabase
       .from("task_group")
       .select("group_id, group_name, workspace_id, sort_order")
@@ -125,6 +126,7 @@ export async function GET(request) {
       .order("sort_order", { ascending: true })
       .order("group_id", { ascending: true });
 
+    // Member display names so Owner / Assigned to can render full names.
     const memberIds = [
       ...new Set(
         (tasks ?? [])
@@ -139,8 +141,8 @@ export async function GET(request) {
         supabase.from("profile").select("user_id, full_name").in("user_id", memberIds),
         supabase.from("user_account").select("user_id, username, email").in("user_id", memberIds),
       ]);
-      const profileMap = new Map((profiles ?? []).map((profile) => [profile.user_id, profile.full_name]));
-      const accountMap = new Map((accounts ?? []).map((entry) => [entry.user_id, entry]));
+      const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.full_name]));
+      const accountMap = new Map((accounts ?? []).map((a) => [a.user_id, a]));
       members = memberIds.map((id) => ({
         user_id: id,
         full_name: profileMap.get(id) ?? null,

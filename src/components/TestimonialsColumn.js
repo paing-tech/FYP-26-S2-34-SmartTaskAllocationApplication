@@ -13,11 +13,6 @@ function initials(name) {
     .toUpperCase();
 }
 
-function ratingStars(rating) {
-  const value = Math.max(0, Math.min(5, Number(rating) || 0));
-  return "★".repeat(value) + "☆".repeat(5 - value);
-}
-
 export function TestimonialsColumn({ className, testimonials, duration = 10 }) {
   return (
     <div className={className}>
@@ -33,27 +28,12 @@ export function TestimonialsColumn({ className, testimonials, duration = 10 }) {
       >
         {[...new Array(2)].map((_, index) => (
           <React.Fragment key={index}>
-            {testimonials.map(({ id, text, quote, image, name, role, rating, category }, i) => (
+            {testimonials.map(({ text, image, name, role }, i) => (
               <div
                 className="w-full max-w-xs rounded-3xl border border-[#0D1E4C]/10 bg-white p-8 shadow-[0_18px_50px_rgba(13,30,76,0.08)]"
-                key={`${id ?? name}-${index}-${i}`}
+                key={i}
               >
-                <div className="mb-5 flex items-center justify-between gap-3">
-                  <span className="text-[11px] font-black uppercase tracking-[0.22em] text-[#2563EB]">
-                    {category || "Feedback"}
-                  </span>
-                  {rating ? (
-                    <span className="rounded-full bg-[#DFF0FF] px-3 py-1 text-xs font-black tracking-tight text-[#0D1E4C]">
-                      {ratingStars(rating)}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="text-xl leading-8 text-[#0D1E4C]/80">
-                  &quot;{quote || text}&quot;
-                </div>
-                {quote && text && quote !== text ? (
-                  <p className="mt-4 text-sm leading-6 text-[#0D1E4C]/55">{text}</p>
-                ) : null}
+                <div className="text-[#0D1E4C]/80">{text}</div>
                 <div className="mt-5 flex items-center gap-3">
                   {image ? (
                     // eslint-disable-next-line @next/next/no-img-element

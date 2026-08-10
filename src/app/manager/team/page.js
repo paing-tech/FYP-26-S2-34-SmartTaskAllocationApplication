@@ -1,10 +1,13 @@
 import SideMenuLayout from "@/components/SideMenuLayout";
-import TeamManagement from "@/components/TeamManagement";
+import ManagerOrganizationView from "@/components/ManagerOrganizationView";
+import GlassSurface from "@/components/ui/glass-surface";
 
 export default function ManagerTeamPage() {
   return (
     <SideMenuLayout actor="manager">
-      <TeamManagement />
+      <GlassSurface className="h-full overflow-y-auto p-2">
+        <ManagerOrganizationView />
+      </GlassSurface>
     </SideMenuLayout>
   );
 }

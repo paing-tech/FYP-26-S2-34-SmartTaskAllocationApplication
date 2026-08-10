@@ -1,7 +1,7 @@
 "use client";
 
 import { Renderer, Program, Mesh, Color, Triangle, RenderTarget } from 'ogl';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 const MAX_STRANDS = 12;
 const MAX_COLORS = 8;
@@ -204,8 +204,13 @@ export default function Strands({
   className = '',
   style
 }) {
-  const currentProps = useMemo(
-    () => ({
+  const propsRef = useRef({});
+  // Written on every render (no deps array) so the imperative WebGL loop
+  // below always reads the latest props via the ref, without needing to
+  // re-run its setup effect — refs can't be written during render itself,
+  // so this commits right after, before the next paint.
+  useLayoutEffect(() => {
+    propsRef.current = {
       colors,
       count,
       speed,
@@ -224,33 +229,8 @@ export default function Strands({
       refraction,
       dispersion,
       glassSize
-    }),
-    [
-      colors,
-      count,
-      speed,
-      amplitude,
-      waviness,
-      thickness,
-      glow,
-      taper,
-      spread,
-      hueShift,
-      intensity,
-      saturation,
-      opacity,
-      scale,
-      glass,
-      refraction,
-      dispersion,
-      glassSize
-    ]
-  );
-  const propsRef = useRef(currentProps);
-
-  useEffect(() => {
-    propsRef.current = currentProps;
-  }, [currentProps]);
+    };
+  });
 
   const ctnDom = useRef(null);
 

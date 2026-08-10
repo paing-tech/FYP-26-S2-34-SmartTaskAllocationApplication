@@ -1,71 +1,83 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { cleanString } from "@/lib/allocation";
 
-async function loadFeedbackAccount(supabase, user) {
-  if (!user) return null;
+const MAX_FEEDBACK_LENGTH = 1000;
 
-  const selectFields =
-    "user_id, username, email, role:role_id(role_name), organization:organization_id(organization_name)";
-  const { data: accountById } = await supabase
+function cleanString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function getAccount(supabase, user) {
+  const byId = await supabase
     .from("user_account")
-    .select(selectFields)
+    .select("user_id")
     .eq("user_id", user.id)
     .maybeSingle();
-
-  if (accountById || !user.email) {
-    return accountById;
-  }
-
-  const { data: accountByEmail } = await supabase
-    .from("user_account")
-    .select(selectFields)
-    .eq("email", user.email)
-    .maybeSingle();
-
-  return accountByEmail;
+  if (byId.data || !user.email) return byId;
+  return supabase.from("user_account").select("user_id").eq("email", user.email).maybeSingle();
 }
 
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user } = await getAuthenticatedUser(request, supabase);
-    const { rating, category, message } = await request.json();
-    const numericRating = Number(rating);
-
-    if (!Number.isInteger(numericRating) || numericRating < 1 || numericRating > 5 || !cleanString(message)) {
-      return NextResponse.json({ error: "Rating from 1 to 5 and feedback message are required." }, { status: 400 });
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
+    if (authError) {
+      return NextResponse.json({ error: authError }, { status: 401 });
     }
 
-    const account = await loadFeedbackAccount(supabase, user);
-    const displayName =
-      cleanString(account?.username) ||
-      cleanString(user?.user_metadata?.username) ||
-      cleanString(user?.email?.split("@")[0]) ||
-      "Optima user";
+    const { data: account, error: accountError } = await getAccount(supabase, user);
+    if (accountError || !account) {
+      return NextResponse.json({ error: accountError?.message || "Account not found." }, { status: 404 });
+    }
 
-    const { error } = await supabase.from("activity_log").insert({
-      user_id: user?.id ?? null,
-      action: "User Feedback Submitted",
-      details: JSON.stringify({
-        name: displayName,
-        role: cleanString(account?.role?.role_name) || "Optima user",
-        company: cleanString(account?.organization?.organization_name) || "Optima workspace",
-        rating: numericRating,
-        category: cleanString(category) || "General",
-        message: cleanString(message),
+    const body = await request.json();
+    const rating = Number(body.rating);
+    const category = cleanString(body.category) || "General";
+    const subject = cleanString(body.subject) || category;
+    const message = cleanString(body.message);
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !message) {
+      return NextResponse.json(
+        { error: "A rating from 1 to 5 and feedback comment are required." },
+        { status: 400 },
+      );
+    }
+    if (message.length > MAX_FEEDBACK_LENGTH) {
+      return NextResponse.json(
+        { error: `Feedback comments must be ${MAX_FEEDBACK_LENGTH} characters or fewer.` },
+        { status: 400 },
+      );
+    }
+
+    const createdAt = new Date().toISOString();
+    const { data: feedback, error } = await supabase
+      .from("feedback")
+      .insert({
+        user_id: account.user_id,
+        rating,
+        category,
+        subject,
+        feedback_message: message,
         status: "Pending",
-        submittedBy: user?.id ?? null,
-      }),
-      created_at: new Date().toISOString(),
-    });
+        created_at: createdAt,
+        updated_at: createdAt,
+      })
+      .select("feedback_id")
+      .single();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true });
+    await supabase.from("activity_log").insert({
+      user_id: account.user_id,
+      action: "User Feedback Submitted",
+      details: JSON.stringify({ feedbackId: feedback.feedback_id, rating, category, status: "Pending" }),
+      created_at: createdAt,
+    });
+
+    return NextResponse.json({ success: true, feedbackId: feedback.feedback_id, createdAt });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

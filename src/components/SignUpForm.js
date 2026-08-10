@@ -1,22 +1,35 @@
 "use client";
 
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export default function SignUpForm({ onSuccess }) {
+const inputClass =
+  "signup-light-field h-10 w-full rounded-md border border-[#b8c4d8] bg-white px-5 text-sm text-[#061a40] outline-none transition-colors placeholder:text-[#061a40]/40 focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100 disabled:text-slate-500";
+
+export default function SignUpForm({ onClose, onSuccess }) {
   const [mode, setMode] = useState("create");
   const [roles, setRoles] = useState([]);
-  const [organizations, setOrganizations] = useState([]);
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [roleId, setRoleId] = useState("");
-  const [organizationId, setOrganizationId] = useState("");
+  const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isLoadingRoles, setIsLoadingRoles] = useState(true);
-  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const roleMenuRef = useRef(null);
+
+  useEffect(() => {
+    function closeRoleMenu(event) {
+      if (!roleMenuRef.current?.contains(event.target)) {
+        setIsRoleMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeRoleMenu);
+    return () => document.removeEventListener("pointerdown", closeRoleMenu);
+  }, []);
 
   function changeMode(nextMode) {
     setMode(nextMode);
@@ -37,30 +50,19 @@ export default function SignUpForm({ onSuccess }) {
         const headers = {
           Authorization: `Bearer ${data.session?.access_token ?? ""}`,
         };
-        const [rolesResponse, organizationsResponse] = await Promise.all([
-          fetch("/api/roles", { headers }),
-          fetch("/api/organizations", { headers }),
-        ]);
+        const rolesResponse = await fetch("/api/roles", { headers });
         const rolesResult = await rolesResponse.json();
-        const organizationsResult = await organizationsResponse.json();
 
         if (!rolesResponse.ok) {
           throw new Error(rolesResult.error || "Could not load roles.");
         }
 
-        if (!organizationsResponse.ok) {
-          throw new Error(organizationsResult.error || "Could not load organizations.");
-        }
-
         setRoles(rolesResult.roles);
         setRoleId(rolesResult.roles[0]?.role_id?.toString() ?? "");
-        setOrganizations(organizationsResult.organizations);
-        setOrganizationId(organizationsResult.organizations[0]?.organization_id ?? "");
       } catch (loadError) {
         setError(loadError.message);
       } finally {
         setIsLoadingRoles(false);
-        setIsLoadingOrganizations(false);
       }
     }
 
@@ -71,7 +73,6 @@ export default function SignUpForm({ onSuccess }) {
     setEmail("");
     setUsername("");
     setPassword("");
-    setOrganizationId(organizations[0]?.organization_id ?? "");
   }
 
   async function handleSubmit(event) {
@@ -94,7 +95,6 @@ export default function SignUpForm({ onSuccess }) {
           username,
           password,
           roleId,
-          organizationId,
         }),
       });
       const result = await response.json();
@@ -114,14 +114,24 @@ export default function SignUpForm({ onSuccess }) {
   }
 
   return (
-    <section className="w-full max-w-md rounded-lg border border-[#d8e0ee] bg-white p-6 shadow-sm">
+    <section className="relative w-full max-w-md rounded-[28px] border border-[#d8e0ee] bg-slate-100 px-10 pt-8 pb-10 shadow-[0_28px_80px_rgba(0,0,0,0.25)]">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-white/60 bg-slate-100/80 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-slate-200"
+        aria-label="Close sign up form"
+      >
+        <span className="material-symbols-outlined text-xl" aria-hidden="true">
+          close
+        </span>
+      </button>
       <div className="text-center">
         <h2 className="text-2xl font-bold text-[#061a40]">Sign Up</h2>
-        <div className="mt-5 inline-flex rounded-md border border-[#b8c4d8] bg-[#f4f7fb] p-1">
+        <div className="mt-4 inline-flex rounded-full border border-[#b8c4d8] bg-[#f4f7fb] p-1">
           <button
             type="button"
             onClick={() => changeMode("create")}
-            className={`h-9 rounded px-3 text-sm font-bold transition-colors ${
+            className={`h-8 rounded-full px-4 text-xs font-bold transition-colors ${
               mode === "create" ? "bg-[#0a2a66] text-white" : "text-[#061a40]"
             }`}
           >
@@ -130,7 +140,7 @@ export default function SignUpForm({ onSuccess }) {
           <button
             type="button"
             onClick={() => changeMode("invite")}
-            className={`h-9 rounded px-3 text-sm font-bold transition-colors ${
+            className={`h-8 rounded-full px-4 text-xs font-bold transition-colors ${
               mode === "invite" ? "bg-[#0a2a66] text-white" : "text-[#061a40]"
             }`}
           >
@@ -139,7 +149,7 @@ export default function SignUpForm({ onSuccess }) {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <div className="space-y-2">
           <label htmlFor="email" className="block text-sm font-medium text-[#061a40]">
             Email
@@ -149,8 +159,9 @@ export default function SignUpForm({ onSuccess }) {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            placeholder="name@company.com"
             required
-            className="h-11 w-full rounded-md border border-[#b8c4d8] px-3 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20"
+            className={inputClass}
           />
         </div>
 
@@ -166,8 +177,8 @@ export default function SignUpForm({ onSuccess }) {
             minLength={6}
             required={mode === "create"}
             disabled={mode === "invite"}
-            placeholder={mode === "invite" ? "Set by user" : ""}
-            className="h-11 w-full rounded-md border border-[#b8c4d8] px-3 text-sm outline-none placeholder:text-slate-400 focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100 disabled:text-slate-500"
+            placeholder={mode === "invite" ? "Set by user" : "Create a password"}
+            className={inputClass}
           />
         </div>
 
@@ -181,70 +192,89 @@ export default function SignUpForm({ onSuccess }) {
             onChange={(event) => setUsername(event.target.value)}
             required={mode === "create"}
             disabled={mode === "invite"}
-            placeholder={mode === "invite" ? "Set by user" : ""}
-            className="h-11 w-full rounded-md border border-[#b8c4d8] px-3 text-sm outline-none placeholder:text-slate-400 focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100 disabled:text-slate-500"
+            placeholder={mode === "invite" ? "Set by user" : "Choose a username"}
+            className={inputClass}
           />
         </div>
 
-        <div className="space-y-2">
+        <div ref={roleMenuRef} className="relative space-y-2">
           <label htmlFor="role" className="block text-sm font-medium text-[#061a40]">
             Role
           </label>
-          <select
+          <button
+            type="button"
             id="role"
-            value={roleId}
-            onChange={(event) => setRoleId(event.target.value)}
+            onClick={() => setIsRoleMenuOpen((open) => !open)}
             disabled={isLoadingRoles}
-            required
-            className="h-11 w-full rounded-md border border-[#b8c4d8] bg-white px-3 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100"
+            className={`${inputClass} flex items-center justify-between text-left`}
+            aria-haspopup="listbox"
+            aria-expanded={isRoleMenuOpen}
           >
-            {roles.map((role) => (
-              <option key={role.role_id} value={role.role_id}>
-                {role.role_name}
-              </option>
-            ))}
-          </select>
-        </div>
+            <span>{roles.find((role) => role.role_id.toString() === roleId)?.role_name ?? "Select a role"}</span>
+            <svg
+              className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isRoleMenuOpen ? "rotate-180" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
 
-        <div className="space-y-2">
-          <label htmlFor="organizationId" className="block text-sm font-medium text-[#061a40]">
-            Organization Name
-          </label>
-          <select
-            id="organizationId"
-            value={organizationId}
-            onChange={(event) => setOrganizationId(event.target.value)}
-            disabled={isLoadingOrganizations}
-            className="h-11 w-full rounded-md border border-[#b8c4d8] bg-white px-3 text-sm outline-none focus:border-[#0a2a66] focus:ring-2 focus:ring-[#0a2a66]/20 disabled:bg-slate-100"
-          >
-            <option value="">No organization</option>
-            {organizations.map((organization) => (
-              <option
-                key={organization.organization_id}
-                value={organization.organization_id}
-              >
-                {organization.organization_name}
-              </option>
-            ))}
-          </select>
+          {isRoleMenuOpen ? (
+            <div
+              role="listbox"
+              aria-label="Role"
+              className="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-white/70 bg-white/60 p-1.5 shadow-[0_18px_45px_rgba(13,30,76,0.22)] backdrop-blur-xl"
+            >
+              {roles.map((role) => {
+                const value = role.role_id.toString();
+                const isSelected = value === roleId;
+
+                return (
+                  <button
+                    key={role.role_id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => {
+                      setRoleId(value);
+                      setIsRoleMenuOpen(false);
+                    }}
+                    className={`flex w-full items-center rounded-xl px-4 py-2 text-left text-xs font-medium transition ${
+                      isSelected
+                        ? "bg-[#0a2a66] text-white"
+                        : "text-[#061a40] hover:bg-white/70"
+                    }`}
+                  >
+                    {role.role_name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         {error ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          <p className="rounded-md border border-red-200 bg-red-50 px-5 py-2 text-xs font-medium text-red-700">
             {error}
           </p>
         ) : null}
 
         {message ? (
-          <p className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-[#0a2a66]">
+          <p className="rounded-md border border-blue-200 bg-blue-50 px-5 py-2 text-xs font-medium text-[#0a2a66]">
             {message}
           </p>
         ) : null}
 
         <button
           type="submit"
-          disabled={isLoadingRoles || isLoadingOrganizations || isSubmitting}
-          className="h-11 w-full rounded-md bg-[#0a2a66] px-5 text-sm font-bold text-white transition-colors hover:bg-[#061a40] disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={isLoadingRoles || !roleId || isSubmitting}
+          className="h-10 w-full rounded-full bg-[#0a2a66] px-5 text-sm font-bold uppercase text-white transition-colors hover:bg-[#061a40] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving..." : mode === "create" ? "Create Account" : "Send Invite"}
         </button>

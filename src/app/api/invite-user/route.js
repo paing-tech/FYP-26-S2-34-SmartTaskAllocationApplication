@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isPlatformAdminRoleId, requireUserAdmin } from "@/lib/serverAuth";
+import { getRequesterOrganizationId, isPlatformAdminRoleId, requireUserAdmin } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 function cleanString(value) {
@@ -9,17 +9,21 @@ function cleanString(value) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requireUserAdmin(request, supabase);
+    const { user, error: authError } = await requireUserAdmin(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
 
-    const { email, roleId, organizationId } = await request.json();
+    const { email, roleId } = await request.json();
     const cleanEmail = cleanString(email).toLowerCase();
     const temporaryUsername = `pending_${crypto.randomUUID()}`;
     const numericRoleId = Number(roleId);
-    const cleanOrganizationId = cleanString(organizationId);
+    const organizationId = await getRequesterOrganizationId(supabase, user);
+
+    if (!organizationId) {
+      return NextResponse.json({ error: "Your account is not assigned to an organization." }, { status: 400 });
+    }
 
     if (!cleanEmail || !Number.isInteger(numericRoleId)) {
       return NextResponse.json(
@@ -61,10 +65,11 @@ export async function POST(request) {
       {
         user_id: invitedUserId,
         role_id: numericRoleId,
-        organization_id: cleanOrganizationId || null,
+        organization_id: organizationId,
         username: temporaryUsername,
         email: cleanEmail,
         account_status: "Pending",
+        invited_by: user.id,
       },
       { onConflict: "user_id" },
     );

@@ -3,39 +3,34 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
+import { useEffect, useState } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import CornerNav from "@/components/CornerNav";
 
 const inputClass =
-  "h-14 w-full rounded-md border border-white/40 bg-black/40 px-4 text-base text-white outline-none transition-colors placeholder:text-white/40 focus:border-white/60 focus:ring-2 focus:ring-white/20";
+  "auth-dark-field h-14 w-full rounded-md border border-white/40 bg-black/40 px-4 text-base text-white outline-none transition-colors placeholder:text-white/40 focus:border-white/60 focus:ring-2 focus:ring-white/20";
 
-const demoAccounts = [
-  {
-    label: "Platform Admin",
-    email: "demo-platform@optima.test",
-    password: "Test@123456",
-    description: "Manage homepage, plans, feedback, and support.",
-  },
-  {
-    label: "User Admin",
-    email: "demo-useradmin@optima.test",
-    password: "Test@123456",
-    description: "Manage accounts, roles, profiles, and paid status.",
-  },
-  {
-    label: "Manager",
-    email: "demo-manager@optima.test",
-    password: "Test@123456",
-    description: "Review inbox, assign tasks, and track employees.",
-  },
-  {
-    label: "Employee",
-    email: "demo-employee@optima.test",
-    password: "Test@123456",
-    description: "Clock in, request tasks, and update work status.",
-  },
-];
+function GoogleIcon() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.48a5.55 5.55 0 0 1-2.4 3.64v3.02h3.88c2.27-2.09 3.56-5.17 3.56-8.85Z" />
+      <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.9l-3.88-3a7.2 7.2 0 0 1-10.7-3.79H1.4v3.11A12 12 0 0 0 12 24Z" />
+      <path fill="#FBBC05" d="M5.37 14.31A7.2 7.2 0 0 1 5 12c0-.8.14-1.58.37-2.31V6.58H1.4A12 12 0 0 0 0 12c0 1.94.47 3.77 1.4 5.42l3.97-3.11Z" />
+      <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.79l3.44-3.44A11.94 11.94 0 0 0 12 0 12 12 0 0 0 1.4 6.58l3.97 3.11A7.18 7.18 0 0 1 12 4.77Z" />
+    </svg>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+      <rect x="13" y="1" width="10" height="10" fill="#7FBA00" />
+      <rect x="1" y="13" width="10" height="10" fill="#00A4EF" />
+      <rect x="13" y="13" width="10" height="10" fill="#FFB900" />
+    </svg>
+  );
+}
 
 export default function AuthForm() {
   const router = useRouter();
@@ -53,29 +48,58 @@ export default function AuthForm() {
     setResetMessage("");
   }
 
+  // Shared by the password flow and the OAuth return trip — an OAuth
+  // provider redirects the whole page back to /login with a session
+  // already established (the Supabase client parses it from the URL on
+  // load), so there's no separate callback route to build.
+  async function redirectIfSignedIn(supabase) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) return false;
+
+    const routeResponse = await fetch("/api/home-route", {
+      headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+    });
+    const routeResult = await routeResponse.json();
+
+    if (!routeResponse.ok) {
+      await supabase.auth.signOut();
+      setError(routeResult.error || "This account cannot access protected pages.");
+      return true;
+    }
+
+    router.push(routeResult.homeRoute);
+    router.refresh();
+    return true;
+  }
+
+  useEffect(() => {
+    (async () => {
+      const supabase = getSupabaseBrowserClient();
+      try {
+        await redirectIfSignedIn(supabase);
+      } catch (sessionError) {
+        setError(sessionError.message);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleOAuthSignIn(provider) {
+    setError("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}/login` },
+      });
+      if (oauthError) setError(oauthError.message);
+    } catch (oauthError) {
+      setError(oauthError.message);
+    }
+  }
+
   async function signIn() {
     try {
-      if (!isSupabaseConfigured()) {
-        const response = await fetch("/api/demo-login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-        const result = await response.json();
-
-        if (!response.ok) {
-          setError(result.error || "Invalid demo credentials.");
-          return;
-        }
-
-        window.localStorage.setItem("workflowDemoToken", result.accessToken);
-        window.localStorage.setItem("workflowDemoEmail", result.email);
-        window.localStorage.setItem("workflowDemoUserId", result.userId);
-        router.push(result.homeRoute);
-        router.refresh();
-        return;
-      }
-
       const supabase = getSupabaseBrowserClient();
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -84,54 +108,9 @@ export default function AuthForm() {
         return;
       }
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const routeResponse = await fetch("/api/home-route", {
-        headers: { Authorization: `Bearer ${sessionData.session?.access_token ?? ""}` },
-      });
-      const routeResult = await routeResponse.json();
-
-      if (!routeResponse.ok) {
-        setError(`Login succeeded, but ${routeResult.error}`);
-        return;
-      }
-
-      router.push(routeResult.homeRoute);
-      router.refresh();
+      await redirectIfSignedIn(supabase);
     } catch (authError) {
       setError(authError.message);
-    }
-  }
-
-  async function signInWithDemoAccount(account) {
-    setError("");
-    setResetMessage("");
-    setEmail(account.email);
-    setPassword(account.password);
-    setStep("password");
-    setIsSubmitting(true);
-
-    try {
-      const response = await fetch("/api/demo-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: account.email, password: account.password }),
-      });
-      const result = await response.json();
-
-      if (!response.ok) {
-        setError(result.error || "Invalid demo credentials.");
-        return;
-      }
-
-      window.localStorage.setItem("workflowDemoToken", result.accessToken);
-      window.localStorage.setItem("workflowDemoEmail", result.email);
-      window.localStorage.setItem("workflowDemoUserId", result.userId);
-      router.push(result.homeRoute);
-      router.refresh();
-    } catch (demoError) {
-      setError(demoError.message);
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -176,11 +155,6 @@ export default function AuthForm() {
     setResetMessage("");
 
     try {
-      if (!isSupabaseConfigured()) {
-        router.push(`/password-recovery?email=${encodeURIComponent(email)}`);
-        return;
-      }
-
       const supabase = getSupabaseBrowserClient();
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/login`,
@@ -282,7 +256,7 @@ export default function AuthForm() {
           ) : null}
 
           {resetMessage ? (
-            <p className="pl-2 -mt-4 text-xs font-medium text-emerald-200">
+            <p className="pl-2 -mt-4 text-xs font-medium text-esmerald-700">
               {resetMessage}
             </p>
           ) : null}
@@ -294,33 +268,36 @@ export default function AuthForm() {
           >
             {isSubmitting ? "Authenticating…" : step === "email" ? "Continue" : "Sign in"}
           </button>
-        </form>
 
-        <div className="mt-8 border-t border-white/15 pt-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.28em] text-white/50">Demo access</p>
-              <h2 className="mt-2 text-lg font-semibold text-white">One-click test login</h2>
-            </div>
-            <span className="hidden rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/60 sm:inline-flex">
-              No password needed
-            </span>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {demoAccounts.map((account) => (
-              <button
-                key={account.email}
-                type="button"
-                onClick={() => signInWithDemoAccount(account)}
-                disabled={isSubmitting}
-                className="rounded-2xl border border-white/15 bg-white/10 p-4 text-left transition duration-200 hover:border-white/35 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="block text-sm font-bold text-white">{account.label}</span>
-                <span className="mt-1 block text-xs leading-5 text-white/60">{account.description}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+          {step === "email" ? (
+            <>
+              <div className="flex items-center gap-3">
+                <span className="h-px flex-1 bg-white/20" aria-hidden="true" />
+                <span className="text-sm font-medium text-white/60">or</span>
+                <span className="h-px flex-1 bg-white/20" aria-hidden="true" />
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => handleOAuthSignIn("azure")}
+                  className="flex h-14 w-full items-center justify-center gap-3 rounded-full bg-white text-base font-semibold text-[#1f1f1f] shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition hover:brightness-95"
+                >
+                  <MicrosoftIcon />
+                  Sign in with Microsoft
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOAuthSignIn("google")}
+                  className="flex h-14 w-full items-center justify-center gap-3 rounded-full bg-white text-base font-semibold text-[#1f1f1f] shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition hover:brightness-95"
+                >
+                  <GoogleIcon />
+                  Sign in with Google
+                </button>
+              </div>
+            </>
+          ) : null}
+        </form>
       </section>
 
       <p className="mt-6 text-center text-base text-white/80">
