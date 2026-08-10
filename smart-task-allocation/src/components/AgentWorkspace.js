@@ -173,6 +173,7 @@ export default function AgentWorkspace() {
   const [contextMenu, setContextMenu] = useState(null);
   const [renamingThreadId, setRenamingThreadId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [threadActionError, setThreadActionError] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -392,6 +393,7 @@ export default function AgentWorkspace() {
 
   async function handleTogglePin(thread) {
     closeContextMenu();
+    setThreadActionError("");
     const headers = await authHeaders();
     const res = await fetch(`/api/agent/threads/${thread.agent_chat_thread_id}`, {
       method: "PATCH",
@@ -403,6 +405,8 @@ export default function AgentWorkspace() {
       setThreads((current) =>
         current.map((t) => (t.agent_chat_thread_id === thread.agent_chat_thread_id ? data.thread : t)),
       );
+    } else {
+      setThreadActionError(data.error || "Could not pin this chat.");
     }
   }
 
@@ -813,9 +817,13 @@ export default function AgentWorkspace() {
               + New chat
             </button>
 
+            {threadActionError ? (
+              <p className="px-3 text-[11px] font-semibold text-red-600">{threadActionError}</p>
+            ) : null}
+
             {threads.some((thread) => thread.pinned) ? (
               <>
-                <p className="mt-3 px-3 text-xs font-bold uppercase tracking-wide text-[#0D1E4C]/50">Pinned</p>
+                <p className="mt-3 px-3 text-xs font-bold text-[#0D1E4C]/50">Pinned</p>
                 {threads
                   .filter((thread) => thread.pinned)
                   .map((thread) => (
@@ -836,7 +844,7 @@ export default function AgentWorkspace() {
               </>
             ) : null}
 
-            <p className="mt-3 px-3 text-xs font-bold uppercase tracking-wide text-[#0D1E4C]/50">Recents</p>
+            <p className="mt-3 px-3 text-xs font-bold text-[#0D1E4C]/50">Recents</p>
             {threads
               .filter((thread) => !thread.pinned)
               .map((thread) => (
@@ -971,14 +979,14 @@ export default function AgentWorkspace() {
           }}
         >
           <div
-            className="absolute w-40 overflow-hidden rounded-2xl border border-white/60 bg-white py-1 shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
+            className="absolute w-36 overflow-hidden rounded-3xl border border-white/60 bg-white/40 backdrop-blur-sm px-2 py-2 shadow-[0_20px_50px_rgba(0,0,0,0.25)]"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
             <button
               type="button"
               onClick={() => handleTogglePin(activeMenuThread)}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-slate-100"
+              className="flex w-full items-center gap-2 rounded-full px-6 py-2 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-slate-100"
             >
               <PinIcon className="h-3.5 w-3.5" />
               {activeMenuThread.pinned ? "Unpin" : "Pin"}
@@ -986,14 +994,14 @@ export default function AgentWorkspace() {
             <button
               type="button"
               onClick={() => startRename(activeMenuThread)}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-slate-100"
+              className="flex w-full items-center gap-2 rounded-full px-6 py-2 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-slate-100"
             >
               Rename
             </button>
             <button
               type="button"
               onClick={() => handleDeleteThread(activeMenuThread)}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+              className="flex w-full items-center gap-2 rounded-full px-6 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
             >
               Delete
             </button>

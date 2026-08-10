@@ -161,8 +161,8 @@ export function PlanProvider({ children }) {
 
       {isChoosingPlan ? (
         <Portal>
-          <div className="fixed inset-0 z-[110] overflow-y-auto bg-black/70 p-6 backdrop-blur-md">
-            <div className="relative mx-auto flex max-w-6xl items-center justify-center pb-6 pt-2">
+          <div className="fixed inset-0 z-[110] flex min-h-screen flex-col justify-center overflow-y-auto bg-black/70 p-6 backdrop-blur-md">
+            <div className="relative mx-auto flex w-full max-w-6xl items-center justify-center pb-6 pt-2">
               <h2 className="text-2xl font-black text-white">Choose your plan</h2>
               <button
                 type="button"
