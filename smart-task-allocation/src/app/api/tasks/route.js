@@ -8,6 +8,27 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+// Only accounts with the Employee role are eligible for task assignment —
+// managers and user admins are excluded, whether assigned by AI or manually.
+function isEmployeeRole(roleName) {
+  return String(roleName ?? "").trim().toLowerCase() === "employee";
+}
+
+// Server-side backstop for every manual-assignment path — the client-side
+// picker in WorkspaceBoard.js already narrows the UI to Employee accounts,
+// but a direct API call could otherwise bypass that and assign a Manager or
+// User Admin.
+async function assertEmployeeAssignee(supabase, organizationId, userId) {
+  if (!organizationId || !userId) return false;
+  const { data: account } = await supabase
+    .from("user_account")
+    .select("role:role_id(role_name)")
+    .eq("user_id", userId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  return isEmployeeRole(account?.role?.role_name);
+}
+
 // Lets the Telegram webhook (which has no logged-in manager session) create
 // tasks on an agent's behalf. Scoped narrowly to POST/PATCH here — never
 // touches the shared requireManager/getAuthenticatedUser helpers, so every
@@ -393,7 +414,7 @@ async function pickAiAssigneeForTask(supabase, { organizationId, taskId }) {
     supabase.from("task_skill").select("skill_id, skill:skill_id(skill_name)").eq("task_id", taskId),
     supabase
       .from("user_account")
-      .select("user_id, department:department_id(department_name)")
+      .select("user_id, department:department_id(department_name), role:role_id(role_name)")
       .eq("organization_id", organizationId),
     supabase.from("task").select("task_id, title").eq("organization_id", organizationId),
     supabase.from("task_assignee").select("user_id").eq("task_id", taskId),
@@ -407,6 +428,7 @@ async function pickAiAssigneeForTask(supabase, { organizationId, taskId }) {
   const alreadyAssignedIds = new Set((existingAssigneeRows ?? []).map((row) => row.user_id));
 
   const employeeIds = (employeeAccounts ?? [])
+    .filter((employee) => isEmployeeRole(employee.role?.role_name))
     .map((employee) => employee.user_id)
     .filter((id) => !alreadyAssignedIds.has(id));
   const departmentByUserId = new Map(
@@ -538,7 +560,7 @@ async function autoAllocateOptimusTasks(supabase, { organizationId }) {
       .in("task_id", candidateTaskIds),
     supabase
       .from("user_account")
-      .select("user_id, department:department_id(department_name)")
+      .select("user_id, department:department_id(department_name), role:role_id(role_name)")
       .eq("organization_id", organizationId),
     supabase.from("task").select("task_id, title, assigned_to, status").eq("organization_id", organizationId),
   ]);
@@ -562,7 +584,9 @@ async function autoAllocateOptimusTasks(supabase, { organizationId }) {
     requiredSkillsByTaskId.set(row.task_id, list);
   }
 
-  const employeeIds = (employeeAccounts ?? []).map((employee) => employee.user_id);
+  const employeeIds = (employeeAccounts ?? [])
+    .filter((employee) => isEmployeeRole(employee.role?.role_name))
+    .map((employee) => employee.user_id);
   const departmentByUserId = new Map(
     (employeeAccounts ?? []).map((employee) => [employee.user_id, employee.department?.department_name ?? null]),
   );
@@ -1151,6 +1175,10 @@ export async function POST(request) {
     }
 
     if (assignedTo) {
+      if (!(await assertEmployeeAssignee(supabase, organizationId, assignedTo))) {
+        return NextResponse.json({ error: "Tasks can only be assigned to Employee accounts." }, { status: 400 });
+      }
+
       const actor = assignedBy || (await getActorName(supabase, user));
       const { error: assigneeError } = await supabase.from("task_assignee").insert({
         task_id: createdTask.task_id,
@@ -1312,6 +1340,11 @@ export async function PATCH(request) {
     if (action === "assign-employee") {
       if (!taskId || !userId) {
         return NextResponse.json({ error: "Task ID and user ID are required." }, { status: 400 });
+      }
+
+      const organizationId = await getManagerOrganizationId(supabase, user);
+      if (!(await assertEmployeeAssignee(supabase, organizationId, userId))) {
+        return NextResponse.json({ error: "Tasks can only be assigned to Employee accounts." }, { status: 400 });
       }
 
       const { data: existingAssignee } = await supabase
@@ -1585,6 +1618,12 @@ export async function PATCH(request) {
     // leave the existing assignee untouched (assignment happens via reassign
     // or auto-allocation instead).
     if (assignedTo !== undefined) {
+      if (assignedTo) {
+        const organizationId = await getManagerOrganizationId(supabase, user);
+        if (!(await assertEmployeeAssignee(supabase, organizationId, assignedTo))) {
+          return NextResponse.json({ error: "Tasks can only be assigned to Employee accounts." }, { status: 400 });
+        }
+      }
       taskUpdates.assigned_to = assignedTo || null;
     }
     // Only change the group when explicitly provided (move between groups).

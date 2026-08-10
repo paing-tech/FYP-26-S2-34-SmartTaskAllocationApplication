@@ -616,7 +616,7 @@ function EmployeeAssignCard({ activeTaskCount, assignedTasks = [], employee, isA
           type="button"
           onClick={() => onAssign(employee.user_id)}
           disabled={isAssigned || isSubmitting}
-          className={`mt-1 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
+          className={`mt-2 w-full rounded-2xl px-3 py-2.5 text-xs font-black transition ${
             isAssigned
               ? "cursor-not-allowed bg-[#eef2f8] text-[#94a3b8]"
               : "bg-[#2563EB] text-white hover:bg-[#1d4ed8]"
@@ -698,8 +698,8 @@ export function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign
 
     try {
       await onAiAssign?.();
-    } catch (aiAssignError) {
-      setError(aiAssignError.message || "Could not find an AI match for this task.");
+    } catch {
+      setError("No AI match found. Assign manually.");
     } finally {
       setIsAiAssigning(false);
     }
@@ -708,11 +708,11 @@ export function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-[999] flex items-center justify-center p-4"
         onClick={onClose}
       >
         <div
-          className="flex max-h-[calc(100vh-4rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] bg-white p-6 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
+          className="flex max-h-[calc(100vh-4rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-white/40 backdrop-blur-sm p-6 shadow-[0_28px_80px_rgba(0,0,0,0.3)]"
           onClick={(event) => event.stopPropagation()}
         >
           <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
@@ -792,7 +792,7 @@ export function AssignEmployeeModal({ employees, groupName, onAiAssign, onAssign
           />
 
           {error ? (
-            <p className="mt-3 shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+            <p className="mx-auto mt-3 w-fit shrink-0 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 shadow-sm">
               {error}
             </p>
           ) : null}
@@ -832,7 +832,14 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
   const [isDeciding, setIsDeciding] = useState(false);
   const isAiCreated = task.source === "optimus_ai";
   const isPendingApproval = isAiCreated && task.ai_state !== "accepted";
-  const approvedBy = task.reasons?.approvedBy;
+  // Auto-approved tasks (no human in the loop) stamp reasons.approvedBy with
+  // the agent's own name, same as reasons.agentName — only a genuine manager
+  // approval (via the board's Approve button) sets it to a different, real
+  // human name, so that's the only case worth showing "Approved by ...".
+  const approvedBy =
+    task.reasons?.approvedBy && task.reasons.approvedBy !== task.reasons?.agentName
+      ? task.reasons.approvedBy
+      : null;
   const isCompleted = getStatusKey(task.status) === "completed";
   const isArchived = getStatusKey(task.status) === "archived";
 
@@ -895,7 +902,7 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
         }}
         className={`relative z-10 cursor-pointer rounded-3xl border bg-white/40 shadow-sm backdrop-blur-2xl transition duration-200 group-hover:shadow-lg ${
           isAiCreated
-            ? "border-[#2563EB]/70 shadow-[0_0_0_1px_rgba(37,99,235,0.35),0_0_22px_rgba(37,99,235,0.45)]"
+            ? "border-[#2563EB]/70 shadow-[0_0_0_1px_rgba(37,99,235,0.35),0_0_32px_8px_rgba(37,99,235,0.45)]"
             : "border-[#e6ebf2]"
         } ${compact ? "p-3" : "p-4"}`}
       >

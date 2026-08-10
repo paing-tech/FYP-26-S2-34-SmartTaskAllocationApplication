@@ -319,6 +319,8 @@ export default function WorkspaceView() {
   const [dueTodayOnly, setDueTodayOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [unassignedOnly, setUnassignedOnly] = useState(false);
+  // "all" | "manual" | "ai" — mutually exclusive, so picking one clears the other.
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [isOptimusOn, setIsOptimusOn] = useState(false);
   const [isTogglingOptimus, setIsTogglingOptimus] = useState(false);
@@ -351,6 +353,8 @@ export default function WorkspaceView() {
       if (dueTodayOnly && !isSameLocalDay(task.end_datetime, today)) return false;
       if (overdueOnly && !isTaskOverdue(task, today)) return false;
       if (unassignedOnly && !isTaskUnassigned(task)) return false;
+      if (sourceFilter === "manual" && task.source === "optimus_ai") return false;
+      if (sourceFilter === "ai" && task.source !== "optimus_ai") return false;
       return true;
     });
   }, [
@@ -362,13 +366,15 @@ export default function WorkspaceView() {
     dueTodayOnly,
     overdueOnly,
     unassignedOnly,
+    sourceFilter,
   ]);
   const activeFilterCount =
     selectedGroupIds.length +
     selectedPriorities.length +
     Number(dueTodayOnly) +
     Number(overdueOnly) +
-    Number(unassignedOnly);
+    Number(unassignedOnly) +
+    Number(sourceFilter !== "all");
 
   useEffect(() => {
     function closeFilterMenu(event) {
@@ -970,7 +976,6 @@ export default function WorkspaceView() {
 
       return result.employeeId;
     } catch (aiAssignError) {
-      setError(aiAssignError.message);
       throw aiAssignError;
     }
   }
@@ -1345,6 +1350,33 @@ export default function WorkspaceView() {
                       </button>
                     </div>
 
+                    <div className="mt-3 space-y-0.5 border-t border-white/60 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => setSourceFilter((current) => (current === "manual" ? "all" : "manual"))}
+                        className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                      >
+                        {sourceFilter === "manual" ? (
+                          <span className="material-symbols-outlined text-[18px] text-[#2563EB]" aria-hidden="true">check_circle</span>
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border border-[#94A3B8] bg-white/40" />
+                        )}
+                        Manually created
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSourceFilter((current) => (current === "ai" ? "all" : "ai"))}
+                        className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-[#0D1E4C] hover:bg-white/70"
+                      >
+                        {sourceFilter === "ai" ? (
+                          <span className="material-symbols-outlined text-[18px] text-[#2563EB]" aria-hidden="true">check_circle</span>
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border border-[#94A3B8] bg-white/40" />
+                        )}
+                        AI-generated
+                      </button>
+                    </div>
+
                     {activeFilterCount ? (
                       <button
                         type="button"
@@ -1354,6 +1386,7 @@ export default function WorkspaceView() {
                           setDueTodayOnly(false);
                           setOverdueOnly(false);
                           setUnassignedOnly(false);
+                          setSourceFilter("all");
                         }}
                         className="mt-3 w-full rounded-full px-3 py-2 text-xs font-bold text-[#64748B] transition hover:bg-white/70 hover:text-[#0D1E4C]"
                       >
