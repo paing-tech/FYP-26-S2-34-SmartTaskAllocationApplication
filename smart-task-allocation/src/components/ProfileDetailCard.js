@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 const GENDER_OPTIONS = ["Male", "Female", "Prefer not to say"];
-
 function initialFromName(name) {
   return (name || "User").trim().charAt(0).toUpperCase() || "U";
 }
@@ -31,8 +31,22 @@ function formatDate(value) {
 }
 
 function InfoRow({ icon, placeholder, value, isEditMode, onChange, type = "text", options, displayValue }) {
+  const [isSelectOpen, setIsSelectOpen] = useState(false);
+  const rowRef = useRef(null);
+
+  useEffect(() => {
+    if (!isSelectOpen) return undefined;
+
+    function handleOutsideClick(event) {
+      if (!rowRef.current?.contains(event.target)) setIsSelectOpen(false);
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isSelectOpen]);
+
   return (
-    <div className="flex items-center gap-3">
+    <div ref={rowRef} className="relative flex items-center gap-3">
       <span
         className="material-symbols-outlined shrink-0 text-[#0D1E4C]"
         style={{ fontSize: "22px" }}
@@ -42,25 +56,50 @@ function InfoRow({ icon, placeholder, value, isEditMode, onChange, type = "text"
       </span>
       {isEditMode ? (
         type === "select" ? (
-          <select
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className="min-w-0 flex-1 rounded-full border border-black/10 bg-white px-3 py-2 text-base font-bold text-[#061a40] outline-none"
-          >
-            <option value="">{placeholder}</option>
-            {options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          <div className="relative min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => setIsSelectOpen((current) => !current)}
+              aria-expanded={isSelectOpen}
+              className="flex w-full items-center justify-between bg-transparent p-0 text-left text-base font-medium text-[#061a40] outline-none"
+            >
+              <span className={value ? "" : "text-[#94a3b8]"}>{value || placeholder}</span>
+              <span className="material-symbols-outlined text-xl text-[#0D1E4C] mr-2" aria-hidden="true">
+                {isSelectOpen ? "keyboard_arrow_up" : "keyboard_arrow_down"}
+              </span>
+            </button>
+
+            {isSelectOpen ? (
+              <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-white/60 bg-white/40 p-1.5 shadow-[0_16px_40px_rgba(13,30,76,0.18)] backdrop-blur-xl">
+                {options.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => {
+                      onChange(option);
+                      setIsSelectOpen(false);
+                    }}
+                    className={`w-full rounded-full px-4 py-2 text-left text-sm font-semibold transition hover:bg-white/80 ${
+                      value === option ? "bg-white/80 text-[#2563EB]" : "text-[#061a40]"
+                    }`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ) : (
           <input
             type={type}
             value={value}
             onChange={(event) => onChange(event.target.value)}
             placeholder={placeholder}
-            className="min-w-0 flex-1 rounded-full border border-black/10 bg-white px-3 py-2 text-base font-bold text-[#061a40] outline-none"
+            className={`min-w-0 flex-1 border-0 bg-transparent p-0 text-base font-medium text-[#061a40] outline-none ${
+              type === "date"
+                ? "[&::-webkit-calendar-picker-indicator]:ml-0 [&::-webkit-calendar-picker-indicator]:mr-1 [&::-webkit-calendar-picker-indicator]:h-5 [&::-webkit-calendar-picker-indicator]:w-5 [&::-webkit-calendar-picker-indicator]:mr-2"
+                : ""
+            }`}
           />
         )
       ) : (
@@ -100,9 +139,28 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
   const [skillDraft, setSkillDraft] = useState([]);
   const [skillInput, setSkillInput] = useState("");
   const [skillCatalog, setSkillCatalog] = useState([]);
+  const [isSkillPickerOpen, setIsSkillPickerOpen] = useState(false);
   const [qualificationDraft, setQualificationDraft] = useState([]);
   const [qualificationInput, setQualificationInput] = useState("");
   const fileInputRef = useRef(null);
+  const skillPickerRef = useRef(null);
+  const skillPickerPanelRef = useRef(null);
+
+  useEffect(() => {
+    if (!isSkillPickerOpen) return undefined;
+
+    function handleOutsideClick(event) {
+      if (
+        !skillPickerRef.current?.contains(event.target) &&
+        !skillPickerPanelRef.current?.contains(event.target)
+      ) {
+        setIsSkillPickerOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isSkillPickerOpen]);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -263,7 +321,10 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center 0 bg-white/60 px-4">
-      <div className="relative w-full max-w-sm max-h-[90vh] overflow-hidden rounded-[40px] shadow-2xl">
+      <div className={`relative w-full max-w-sm max-h-[90vh] overflow-hidden rounded-[40px] shadow-2xl ${
+        isEditMode ? "translate-y-7" : ""
+      }`}
+        >
         {loadError ? (
           <div className="bg-white p-6">
             <div className="py-6 text-center">
@@ -354,14 +415,14 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
                     value={draft.full_name}
                     onChange={(event) => updateDraftField("full_name", event.target.value)}
                     placeholder="Full name"
-                    className="mt-4 w-full rounded-full border border-black/10 bg-white px-3 py-1.5 text-center text-lg font-bold text-[#061a40] outline-none"
+                    className="mt-4 w-full border-0 bg-transparent p-0 text-center text-2xl font-bold text-[#061a40] outline-none"
                   />
                 ) : (
                   <h2 className="mt-4 truncate text-center text-2xl font-bold text-[#061a40]">{name}</h2>
                 )}
 
                 {isEditMode ? (
-                  <div className="mt-2 flex w-full items-center gap-3 px-2">
+                  <div className="flex w-full items-center justify-center gap-1.5 translate-x-4.5">
                     <span
                       className="material-symbols-outlined shrink-0 text-[#0D1E4C]"
                       style={{ fontSize: "22px" }}
@@ -373,7 +434,7 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
                       value={draft.job_title}
                       onChange={(event) => updateDraftField("job_title", event.target.value)}
                       placeholder="Job title"
-                      className="min-w-0 flex-1 rounded-full border border-black/10 bg-white px-3 py-1.5 text-base font-bold text-[#061a40] outline-none"
+                      className="w-auto min-w-0 max-w-[75%] border-0 bg-transparent p-0 text-base font-medium text-[#667085] outline-none"
                     />
                   </div>
                 ) : (
@@ -461,10 +522,16 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
                         <button
                           type="button"
                           onClick={() => removeQualification(index)}
-                          className="shrink-0 text-[#94a3b8] hover:text-[#475569]"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#94a3b8] transition hover:bg-red-50 hover:text-red-600"
                           aria-label={`Remove ${entry}`}
                         >
-                          x
+                          <span
+                            className="material-symbols-outlined leading-none"
+                            style={{ fontSize: "14px" }}
+                            aria-hidden="true"
+                          >
+                            close
+                          </span>
                         </button>
                       ) : null}
                     </li>
@@ -491,7 +558,7 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
                     <button
                       type="button"
                       onClick={() => addQualification(qualificationInput)}
-                      className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-xl font-bold text-black/80 transition hover:scale-110 hover:bg-white"
+                      className="absolute right-7 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-slate-200 text-xl font-bold text-black/80 transition hover:scale-110"
                       aria-label="Add qualification"
                     >
                       +
@@ -518,10 +585,16 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
                         <button
                           type="button"
                           onClick={() => removeSkill(skillName)}
-                          className="text-[#94a3b8] hover:text-[#475569]"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#94a3b8] transition hover:bg-red-50 hover:text-red-600"
                           aria-label={`Remove ${skillName}`}
                         >
-                          x
+                          <span
+                            className="material-symbols-outlined leading-none"
+                            style={{ fontSize: "14px" }}
+                            aria-hidden="true"
+                          >
+                            close
+                          </span>
                         </button>
                       ) : null}
                     </span>
@@ -532,9 +605,48 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
                 </div>
 
                 {isEditMode ? (
-                  <div className="relative mt-3 px-6">
+                  <div ref={skillPickerRef} className="relative mt-3 px-6">
+                    {isSkillPickerOpen
+                      ? createPortal(
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/10 p-6 -translate-y-4">
+                          <div
+                            ref={skillPickerPanelRef}
+                            className="max-h-[80vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-white/70 bg-white/95 p-10 shadow-[0_20px_60px_rgba(13,30,76,0.24)]"
+                          >
+                        <div className="mb-3 flex items-center justify-center gap-2 text-base font-bold text-[#0D1E4C]">
+                          <span className="material-symbols-outlined" style={{ fontSize: "22px" }} aria-hidden="true">
+                            interests
+                          </span>
+                          Skills
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-3">
+                          {skillCatalog.map((skill) => skill.skill_name).map((skillName) => {
+                            const isSelected = skillDraft.some(
+                              (existing) => existing.toLowerCase() === skillName.toLowerCase(),
+                            );
+                            return (
+                              <button
+                                key={skillName}
+                                type="button"
+                                onClick={() => (isSelected ? removeSkill(skillName) : addSkill(skillName))}
+                                title={skillName}
+                                className={`flex min-h-10 w-fit items-center justify-center whitespace-normal rounded-full border px-4 py-2 text-center text-sm font-semibold leading-tight transition ${
+                                  isSelected
+                                    ? "border-[#2563EB] bg-white/60 text-[#2563EB]"
+                                    : "border-[#cbd5e1] bg-white/60 text-[#0D1E4C] hover:bg-white"
+                                }`}
+                              >
+                                {skillName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                          </div>
+                        </div>,
+                        document.body,
+                      )
+                      : null}
                     <input
-                      list="profile-skill-catalog"
                       value={skillInput}
                       onChange={(event) => setSkillInput(event.target.value)}
                       onKeyDown={(event) => {
@@ -544,17 +656,24 @@ export default function ProfileDetailCard({ onClose, userId, viewOnly = false })
                         }
                       }}
                       placeholder="Add a skill"
-                      className="w-full rounded-full border border-white/65 bg-white/40 py-2 pl-4 pr-12 text-base font-medium text-[#061a40] outline-none"
+                      className="w-full rounded-full border border-white/65 bg-white/40 py-2 pl-4 pr-20 text-base font-medium text-[#061a40] outline-none"
                     />
-                    <datalist id="profile-skill-catalog">
-                      {skillCatalog.map((skill) => (
-                        <option key={skill.skill_id} value={skill.skill_name} />
-                      ))}
-                    </datalist>
+                    <button
+                      type="button"
+                      onClick={() => setIsSkillPickerOpen((current) => !current)}
+                      className="absolute right-16 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-white/70"
+                      aria-label="Choose skills"
+                      aria-expanded={isSkillPickerOpen}
+                    >
+                      <span
+                        className="h-0 w-0 border-x-[6px] border-b-[8px] border-x-transparent border-b-[#0D1E4C]"
+                        aria-hidden="true"
+                      />
+                    </button>
                     <button
                       type="button"
                       onClick={() => addSkill(skillInput)}
-                      className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-xl font-bold text-black/80 transition hover:scale-110 hover:bg-white"
+                      className="absolute right-7 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-slate-200 text-xl font-bold text-black/80 transition hover:scale-110"
                       aria-label="Add skill"
                     >
                       +
