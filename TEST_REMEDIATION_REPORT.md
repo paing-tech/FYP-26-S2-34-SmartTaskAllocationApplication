@@ -12,6 +12,8 @@
 
 The old demo-branch application was replaced with the latest application from `main`, then remediated only on `JY's-test-demo-code`. The implementation targets 90 of the 92 previously failed cases. This is implementation coverage, not a claim that all 90 cases have passed against a deployed Supabase environment.
 
+The application is stored under `smart-task-allocation`, matching the Vercel root-directory configuration used by `main`.
+
 Two cases remain outside this remediation:
 
 - `UA-TC-033` — configurable role-permission administration and enforcement.

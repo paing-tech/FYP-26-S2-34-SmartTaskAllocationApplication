@@ -1,5 +1,5 @@
 -- Additional audit fields used by the attendance acceptance tests.
--- Safe to run repeatedly in Supabase SQL Editor before deploying this branch.
+-- Safe to run repeatedly before deploying the remediation branch.
 alter table if exists public.attendance
   add column if not exists task_id integer references public.task(task_id) on delete set null,
   add column if not exists scheduled_start_at timestamptz,
