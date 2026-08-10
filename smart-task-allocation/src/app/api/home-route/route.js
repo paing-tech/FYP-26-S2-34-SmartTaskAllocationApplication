@@ -5,10 +5,13 @@ import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
+    const { user, error: authError, suspended } = await getAuthenticatedUser(request, supabase);
 
     if (authError) {
-      return NextResponse.json({ error: authError }, { status: 403 });
+      return NextResponse.json(
+        { error: authError, suspended: Boolean(suspended) },
+        { status: suspended ? 423 : 403 },
+      );
     }
 
     const { homeRoute, error: routeError } = await getUserHomeRoute(user, supabase);

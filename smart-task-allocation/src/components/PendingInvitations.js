@@ -23,11 +23,9 @@ function InvitationRow({ invitation, busyAction, onApprove, onResend, onCancel }
     <li className="space-y-2 rounded-2xl bg-white/40 px-4 py-3 backdrop-blur-md">
       <div className="flex items-center justify-between gap-3">
         <p className="min-w-0 truncate text-sm font-bold text-[#0B1B32]">{invitation.email}</p>
-        <span className="shrink-0 pr-2 text-xs font-semibold text-[#64748B]">{invitation.roleName ?? "No role"}</span>
+        <span className="shrink-0 pr-2 text-xs font-semibold text-[#64748B]">{formatTimestamp(invitation.createdAt)}</span>
       </div>
-      <p className="truncate text-xs font-medium text-[#64748B]">
-        Invited by {invitation.invitedByName ?? "Unknown"} on {formatTimestamp(invitation.createdAt)}
-      </p>
+      <p className="truncate text-xs font-medium text-[#64748B]">{invitation.roleName ?? "No role"}</p>
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -152,7 +150,7 @@ export default function PendingInvitations({ onAccountsChanged }) {
 
   return (
     <section className="flex h-full min-h-0 flex-col rounded-3xl border border-white/60 bg-white/30 backdrop-blur-md">
-      <h2 className="shrink-0 border-b border-white/60 px-5 py-3 text-sm font-black text-[#0D1E4C]">
+      <h2 className="shrink-0 px-5 py-3 text-lg font-black text-[#0D1E4C]">
         Pending Invitations
       </h2>
 

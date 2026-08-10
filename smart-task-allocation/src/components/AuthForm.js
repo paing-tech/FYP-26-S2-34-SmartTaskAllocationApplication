@@ -40,6 +40,12 @@ export default function AuthForm() {
   const [error, setError] = useState("");
   const [resetMessage, setResetMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [appealSubmitted, setAppealSubmitted] = useState(false);
+  const [isAppealFormOpen, setIsAppealFormOpen] = useState(false);
+  const [appealReason, setAppealReason] = useState("");
+  const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
+  const [appealError, setAppealError] = useState("");
 
   function resetToEmailStep() {
     setStep("email");
@@ -60,6 +66,11 @@ export default function AuthForm() {
       headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
     });
     const routeResult = await routeResponse.json();
+
+    if (routeResult.suspended) {
+      setIsSuspended(true);
+      return true;
+    }
 
     if (!routeResponse.ok) {
       setError(`Login succeeded, but ${routeResult.error}`);
@@ -168,6 +179,117 @@ export default function AuthForm() {
     } catch (resetError) {
       setError(resetError.message);
     }
+  }
+
+  async function handleSuspendedLogout() {
+    const supabase = getSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    setIsSuspended(false);
+    setAppealSubmitted(false);
+    setIsAppealFormOpen(false);
+    setAppealReason("");
+    setAppealError("");
+    resetToEmailStep();
+    router.refresh();
+  }
+
+  async function submitAppeal() {
+    const reason = appealReason.trim();
+    if (!reason || isSubmittingAppeal) return;
+
+    setIsSubmittingAppeal(true);
+    setAppealError("");
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch("/api/account-appeal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ reason }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setAppealError(result.error || "Could not submit your appeal.");
+        return;
+      }
+
+      setAppealSubmitted(true);
+      setIsAppealFormOpen(false);
+    } catch (submitError) {
+      setAppealError(submitError.message);
+    } finally {
+      setIsSubmittingAppeal(false);
+    }
+  }
+
+  if (isSuspended) {
+    return (
+      <div className="w-full max-w-xl">
+        <section className="rounded-[32px] border border-white/30 bg-white/20 backdrop-blur-xs px-10 py-12 text-center shadow-[0_28px_80px_rgba(0,0,0,0.42)]">
+          <span
+            className="material-symbols-outlined text-red-600"
+            style={{ fontSize: "72px" }}
+            aria-hidden="true"
+          >
+            account_circle_off
+          </span>
+          <p className="mt-5 text-xl font-bold text-[#0D1E4C]">
+            Your organization has suspended your account.
+          </p>
+
+          {appealSubmitted ? (
+            <p className="mx-auto mt-6 max-w-sm text-sm font-semibold text-emerald-700">
+              Your appeal has been submitted.
+            </p>
+          ) : isAppealFormOpen ? (
+            <div className="mx-auto mt-6 max-w-sm text-left">
+              <textarea
+                value={appealReason}
+                onChange={(event) => setAppealReason(event.target.value)}
+                placeholder="Explain why your account should be reactivated…"
+                rows={4}
+                autoFocus
+                className="w-full resize-none rounded-2xl border border-white/40 bg-white/70 px-4 py-3 text-sm font-medium text-[#0D1E4C] outline-none placeholder:text-[#94a3b8] focus:border-[#2563EB]"
+              />
+              {appealError ? <p className="mt-2 text-xs font-bold text-red-600">{appealError}</p> : null}
+            </div>
+          ) : null}
+
+          <div className="mx-auto mt-8 flex max-w-sm flex-col gap-3">
+            {appealSubmitted ? null : isAppealFormOpen ? (
+              <button
+                type="button"
+                onClick={submitAppeal}
+                disabled={!appealReason.trim() || isSubmittingAppeal}
+                className="h-13 rounded-full bg-[#0D1E4C] px-6 font-bold text-white transition hover:brightness-120 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmittingAppeal ? "Submitting…" : "Submit Appeal"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAppealFormOpen(true)}
+                className="h-13 rounded-full bg-[#0D1E4C] px-6 font-bold text-white transition hover:brightness-120"
+              >
+                Appeal
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSuspendedLogout}
+              className="h-13 rounded-full border border-[#cbd5e1] bg-white px-6 font-bold text-[#0D1E4C] transition hover:bg-slate-100"
+            >
+              Log Out
+            </button>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   return (

@@ -67,7 +67,7 @@ export default function AccountActivityLog() {
 
   return (
     <section className="flex h-full min-h-0 flex-col rounded-3xl border border-white/60 bg-white/30 backdrop-blur-md">
-      <h2 className="shrink-0 border-b border-white/60 px-5 py-3 text-sm font-black text-[#0D1E4C]">
+      <h2 className="shrink-0 px-5 py-3 text-lg font-black text-[#0D1E4C]">
         Activity Logs
       </h2>
 

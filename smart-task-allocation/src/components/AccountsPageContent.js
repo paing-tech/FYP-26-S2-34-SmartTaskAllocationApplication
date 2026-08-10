@@ -6,6 +6,7 @@ import ProfileDetailCard from "@/components/ProfileDetailCard";
 import Portal from "@/components/Portal";
 import AccountActivityLog from "@/components/AccountActivityLog";
 import PendingInvitations from "@/components/PendingInvitations";
+import AccountAppeals from "@/components/AccountAppeals";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 // Lighter than the font's default weight (400) so the action icons read as
@@ -942,11 +943,14 @@ export default function AccountsPageContent() {
       </div>
 
       <div className="flex min-h-0 flex-3 gap-4 pb-1">
-        <div className="min-h-0 flex-7 overflow-y-auto">
+        <div className="min-h-0 flex-5 overflow-y-auto">
           <AccountActivityLog key={refreshKey} />
         </div>
         <div className="min-h-0 flex-3 overflow-y-auto">
           <PendingInvitations key={refreshKey} onAccountsChanged={loadAccounts} />
+        </div>
+        <div className="min-h-0 flex-3 overflow-y-auto">
+          <AccountAppeals key={refreshKey} onAccountsChanged={loadAccounts} />
         </div>
       </div>
 

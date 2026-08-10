@@ -14,6 +14,31 @@ export async function getAuthenticatedUser(request, supabase) {
     return { error: error?.message || "Authenticated user could not be loaded." };
   }
 
+  const byUserId = await supabase
+    .from("user_account")
+    .select("account_status")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+
+  let account = byUserId.data;
+
+  if (!account && data.user.email) {
+    const byEmail = await supabase
+      .from("user_account")
+      .select("account_status")
+      .eq("email", data.user.email)
+      .maybeSingle();
+    account = byEmail.data;
+  }
+
+  if (String(account?.account_status || "").toLowerCase() === "suspended") {
+    return {
+      user: data.user,
+      error: "Your organization has suspended your account.",
+      suspended: true,
+    };
+  }
+
   return { user: data.user };
 }
 

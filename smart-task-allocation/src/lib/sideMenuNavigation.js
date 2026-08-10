@@ -7,6 +7,7 @@ export const sideMenuNavigation = {
       { label: "Organization", href: "/useradmin/organization", icon: "organization" },
       { label: "Insights", href: "/useradmin/insights", icon: "insights" },
       { label: "Agents", href: "/useradmin/agents", icon: "agents" },
+      { label: "Settings", href: "/useradmin/settings", icon: "settings" },
     ],
   },
   manager: {
