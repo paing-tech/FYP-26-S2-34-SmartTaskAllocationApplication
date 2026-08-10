@@ -49,16 +49,30 @@ function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-// A bare "00:00" (no explicit time picked) is stored verbatim as UTC — same
-// detection WorkspaceCalendar uses, so an all-day task reads as all-day
-// regardless of the viewer's timezone.
+// Task dates are selected as wall-clock values. Postgres may return them with
+// a UTC suffix, but applying the browser's timezone again would turn 9 AM into
+// 5 PM in Singapore. Rebuild the displayed date from its written components.
+function parseTaskDateTime(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return new Date(value);
+  return new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    Number(match[6] ?? 0),
+  );
+}
+
 function hasTimeComponent(date) {
-  return !(date.getUTCHours() === 0 && date.getUTCMinutes() === 0);
+  return !(date.getHours() === 0 && date.getMinutes() === 0);
 }
 
 function getTaskRange(task) {
-  const rawStart = task.start_datetime ? new Date(task.start_datetime) : null;
-  const rawEnd = task.end_datetime ? new Date(task.end_datetime) : null;
+  const rawStart = parseTaskDateTime(task.start_datetime);
+  const rawEnd = parseTaskDateTime(task.end_datetime);
   const validStart = rawStart && !Number.isNaN(rawStart.getTime()) ? rawStart : null;
   const validEnd = rawEnd && !Number.isNaN(rawEnd.getTime()) ? rawEnd : null;
 
@@ -158,7 +172,7 @@ function MultiDayTaskPill({ onOpen, range, task }) {
 // `repeat(24, 1fr)`, so all 24 hours always fit without horizontal scroll),
 // but only renders a row for a date that actually has a task, so a board
 // with a few tasks spread over weeks doesn't render dozens of empty days.
-export default function TaskTimeline({ employees = [], onOpen, tasks = [] }) {
+export default function TaskTimeline({ employees = [], onOpen, tasks = [], titleAlign = "center" }) {
   const today = useMemo(() => new Date(), []);
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
@@ -231,7 +245,9 @@ export default function TaskTimeline({ employees = [], onOpen, tasks = [] }) {
 
   return (
     <section className="mt-6 shrink-0">
-      <h2 className="mb-3 text-center text-lg font-black text-[#0D1E4C]">Timeline</h2>
+      <h2 className={`mb-3 text-lg font-black text-[#0D1E4C] ${titleAlign === "left" ? "text-left" : "text-center"}`}>
+        Timeline
+      </h2>
 
       {rows.length ? (
         <div className="overflow-hidden rounded-3xl border border-white/60 bg-white/40 backdrop-blur-3xl">

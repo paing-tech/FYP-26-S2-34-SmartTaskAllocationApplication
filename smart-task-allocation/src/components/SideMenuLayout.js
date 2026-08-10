@@ -141,6 +141,17 @@ function NavIcon({ name }) {
     );
   }
 
+  if (name === "insights") {
+    return (
+      <svg {...commonProps}>
+        <path d="M3 3v18h18" />
+        <path d="M7 16v-4" />
+        <path d="M12 16V8" />
+        <path d="M17 16v-7" />
+      </svg>
+    );
+  }
+
   if (name === "appearance") {
     return (
       <svg {...commonProps}>

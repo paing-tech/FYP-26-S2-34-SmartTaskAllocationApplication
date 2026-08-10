@@ -906,23 +906,52 @@ export function TaskCard({ compact = false, employees, groupName, onAiAssign, on
             : "border-[#e6ebf2]"
         } ${compact ? "p-3" : "p-4"}`}
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 font-black tracking-wide ${statusTone.chip} ${
-              compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
-            }`}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 font-black tracking-wide ${statusTone.chip} ${
+                compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
+              {formatPillLabel(task.status, "Open")}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 font-black tracking-wide ${priorityTone.chip} ${
+                compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
+              {formatPillLabel(task.priority, "Medium")}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen?.(task, "comments");
+            }}
+            className="flex shrink-0 items-center gap-1 text-[#667085] transition hover:text-[#0D1E4C]"
+            aria-label="Open comments"
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${statusTone.dot}`} />
-            {formatPillLabel(task.status, "Open")}
-          </span>
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 font-black tracking-wide ${priorityTone.chip} ${
-              compact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"
-            }`}
-          >
-            <span className={`h-1.5 w-1.5 rounded-full ${priorityTone.dot}`} />
-            {formatPillLabel(task.priority, "Medium")}
-          </span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z"
+              />
+            </svg>
+            <span className="text-[10px] font-black">{task.comment_count ?? 0}</span>
+          </button>
         </div>
 
         <h4 className={`font-black text-[#0D1E4C] ${compact ? "mt-2 text-sm" : "mt-3 text-base"}`}>
@@ -1445,6 +1474,7 @@ function GroupPicker({ groups, onChange, value, locked = false }) {
 
 export function TaskEditPanel({
   groups = [],
+  initialPanel = "",
   onArchive,
   onClose,
   onDelete,
@@ -1477,11 +1507,24 @@ export function TaskEditPanel({
   const [isArchiving, setIsArchiving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
-  const [openPanel, setOpenPanel] = useState("");
+  const [openPanel, setOpenPanel] = useState(initialPanel);
   const [skillQuery, setSkillQuery] = useState("");
   const [isSuggestingSkills, setIsSuggestingSkills] = useState(false);
   const [isWritingDescription, setIsWritingDescription] = useState(false);
   const [isCreatingSkill, setIsCreatingSkill] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [attachments, setAttachments] = useState([]);
+  const [isLoadingExtras, setIsLoadingExtras] = useState(false);
+  const [extrasError, setExtrasError] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDeletingAttachmentId, setIsDeletingAttachmentId] = useState(null);
+  const [isDeletingCommentId, setIsDeletingCommentId] = useState(null);
+  const [commentContextMenu, setCommentContextMenu] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const fileInputRef = useRef(null);
+  const taskId = task?.task_id ?? null;
 
   // Keyed by task_id at the call site, so switching tasks remounts this panel
   // with fresh state from the useState initializers above instead of needing
@@ -1509,6 +1552,171 @@ export function TaskEditPanel({
       "Content-Type": "application/json",
       Authorization: `Bearer ${data.session?.access_token ?? ""}`,
     };
+  }
+
+  // No Content-Type here — the file-upload call below needs the browser to
+  // set its own multipart boundary, which an explicit "application/json"
+  // (from authHeaders above) would break.
+  async function rawAuthHeaders() {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+    return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
+  }
+
+  useEffect(() => {
+    (async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      setCurrentUserId(data.session?.user?.id ?? null);
+    })();
+  }, []);
+
+  async function loadExtras(id) {
+    setIsLoadingExtras(true);
+    setExtrasError("");
+
+    try {
+      const headers = await rawAuthHeaders();
+      const [commentsResponse, attachmentsResponse] = await Promise.all([
+        fetch(`/api/task-comments?taskId=${id}`, { headers }),
+        fetch(`/api/task-attachments?taskId=${id}`, { headers }),
+      ]);
+      const [commentsResult, attachmentsResult] = await Promise.all([
+        commentsResponse.json(),
+        attachmentsResponse.json(),
+      ]);
+
+      setComments(commentsResponse.ok ? commentsResult.comments ?? [] : []);
+      setAttachments(attachmentsResponse.ok ? attachmentsResult.attachments ?? [] : []);
+    } catch (loadError) {
+      setExtrasError(loadError.message);
+    } finally {
+      setIsLoadingExtras(false);
+    }
+  }
+
+  // TaskEditPanel is remounted per task (keyed at the call site), so a single
+  // mount-time load is enough — no need to resync on every task_id change.
+  useEffect(() => {
+    if (!taskId || task?.isNew) return;
+    (async () => {
+      await loadExtras(taskId);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function postComment() {
+    const text = commentDraft.trim();
+    if (!text || isPostingComment || !taskId) return;
+
+    setIsPostingComment(true);
+    setExtrasError("");
+
+    try {
+      const response = await fetch("/api/task-comments", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ taskId, commentText: text }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not post comment.");
+      }
+
+      setComments((current) => [...current, result.comment]);
+      setCommentDraft("");
+    } catch (postError) {
+      setExtrasError(postError.message);
+    } finally {
+      setIsPostingComment(false);
+    }
+  }
+
+  function handleCommentContextMenu(event, comment) {
+    if (comment.userId !== currentUserId) return;
+    event.preventDefault();
+    setCommentContextMenu({ commentId: comment.id, x: event.clientX, y: event.clientY });
+  }
+
+  async function deleteComment(commentId) {
+    if (isDeletingCommentId) return;
+
+    setIsDeletingCommentId(commentId);
+    setExtrasError("");
+
+    try {
+      const response = await fetch(`/api/task-comments?commentId=${commentId}`, {
+        method: "DELETE",
+        headers: await rawAuthHeaders(),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not delete comment.");
+      }
+
+      setComments((current) => current.filter((comment) => comment.id !== commentId));
+    } catch (deleteError) {
+      setExtrasError(deleteError.message);
+    } finally {
+      setIsDeletingCommentId(null);
+    }
+  }
+
+  async function uploadAttachment(file) {
+    if (!file || isUploading || !taskId) return;
+
+    setIsUploading(true);
+    setExtrasError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("taskId", String(taskId));
+      formData.append("file", file);
+
+      const response = await fetch("/api/task-attachments", {
+        method: "POST",
+        headers: await rawAuthHeaders(),
+        body: formData,
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not upload file.");
+      }
+
+      setAttachments((current) => [...current, result.attachment]);
+    } catch (uploadError) {
+      setExtrasError(uploadError.message);
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function deleteAttachment(attachmentId) {
+    if (isDeletingAttachmentId) return;
+
+    setIsDeletingAttachmentId(attachmentId);
+    setExtrasError("");
+
+    try {
+      const response = await fetch(`/api/task-attachments?attachmentId=${attachmentId}`, {
+        method: "DELETE",
+        headers: await rawAuthHeaders(),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not delete attachment.");
+      }
+
+      setAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+    } catch (deleteError) {
+      setExtrasError(deleteError.message);
+    } finally {
+      setIsDeletingAttachmentId(null);
+    }
   }
 
   async function suggestSkillsWithAI() {
@@ -1686,29 +1894,58 @@ export function TaskEditPanel({
         className="pointer-events-auto relative z-10 flex max-h-[calc(100vh-9.5rem)] w-full max-w-sm flex-col overflow-hidden rounded-[2rem] border border-white/60 bg-white/10 shadow-[0_24px_80px_rgba(13,30,76,0.25)] backdrop-blur-md"
       >
         <div className="grid shrink-0 grid-cols-3 items-center gap-4 px-6 pb-6 pt-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
-            aria-label="Close task editor"
-          >
-            <span className="material-symbols-outlined text-xl" aria-hidden="true">
-              close
-            </span>
-          </button>
-          <h3 className="justify-self-center text-xl font-black text-[#0D1E4C]">Details</h3>
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="flex h-11 w-11 items-center justify-center justify-self-end rounded-full bg-[#2563EB] text-white transition hover:scale-110 hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
-            aria-label="Save task"
-          >
-            <span className="material-symbols-outlined text-[28px] leading-none" aria-hidden="true">
-              check
-            </span>
-          </button>
+          {openPanel !== "" ? (
+            <button
+              type="button"
+              onClick={() => setOpenPanel("")}
+              className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
+              aria-label="Back to details"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                arrow_back
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-11 w-11 items-center justify-center justify-self-start rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
+              aria-label="Close task editor"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
+            </button>
+          )}
+          <h3 className="justify-self-center text-xl font-black text-[#0D1E4C]">
+            {openPanel === "comments" ? "Comments" : openPanel === "attachments" ? "Attachments" : "Details"}
+          </h3>
+          {openPanel !== "" ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-11 w-11 items-center justify-center justify-self-end rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
+              aria-label="Close task editor"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex h-11 w-11 items-center justify-center justify-self-end rounded-full bg-[#2563EB] text-white transition hover:scale-110 hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Save task"
+            >
+              <span className="material-symbols-outlined text-[28px] leading-none" aria-hidden="true">
+                check
+              </span>
+            </button>
+          )}
         </div>
 
+        {openPanel === "" ? (
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
           <section className="rounded-3xl bg-white/60 backdrop-blur-3xl px-6 py-2 shadow-sm">
             <input
@@ -1793,38 +2030,6 @@ export function TaskEditPanel({
             onChange={(value) => updateField("groupId", value)}
             locked={isPendingApproval}
           />
-
-          <section className="relative z-0 overflow-hidden rounded-3xl bg-white/70 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setOpenPanel((current) => (current === "attachments" ? "" : "attachments"))}
-              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-black text-[#0D1E4C] transition hover:bg-white/70"
-            >
-              <span>Attachments</span>
-              <span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-[11px] font-black text-[#2563EB]">
-                Open
-              </span>
-            </button>
-            <div className="mx-4 border-t border-[#e6ebf2]" />
-            <button
-              type="button"
-              onClick={() => setOpenPanel((current) => (current === "comments" ? "" : "comments"))}
-              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-black text-[#0D1E4C] transition hover:bg-white/70"
-            >
-              <span>Comments</span>
-              <span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-[11px] font-black text-[#2563EB]">
-                Open
-              </span>
-            </button>
-          </section>
-
-          {openPanel ? (
-            <section className="relative z-0 rounded-3xl bg-white/70 px-4 py-4 text-sm font-semibold text-[#667085] shadow-sm">
-              {openPanel === "attachments"
-                ? "Attachments panel is ready for file/link controls."
-                : "Comments panel is ready for discussion controls."}
-            </section>
-          ) : null}
 
           <section className="relative z-0 rounded-3xl bg-white/60 backdrop-blur-3xl px-4 py-4 shadow-sm">
             <div className="flex items-center justify-between gap-2">
@@ -1915,6 +2120,45 @@ export function TaskEditPanel({
             </div>
           </section>
 
+          {taskId && !task?.isNew ? (
+            <div className="flex items-center justify-center gap-8 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setOpenPanel("comments")}
+                className="flex items-center gap-1.5 text-[#667085] transition hover:text-[#0D1E4C]"
+                aria-label="Comments"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z"
+                  />
+                </svg>
+                <span className="text-xs font-bold">{comments.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpenPanel("attachments")}
+                className="flex items-center gap-1.5 text-[#667085] transition hover:text-[#0D1E4C]"
+                aria-label="Attachments"
+              >
+                <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                  attach_file
+                </span>
+                <span className="text-xs font-bold">{attachments.length}</span>
+              </button>
+            </div>
+          ) : null}
+
           {error ? (
             <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
               {error}
@@ -1943,8 +2187,171 @@ export function TaskEditPanel({
             </div>
           ) : null}
         </div>
+        ) : openPanel === "comments" ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-4">
+              {isLoadingExtras ? (
+                <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">Loading comments…</p>
+              ) : comments.length ? (
+                comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    onContextMenu={(event) => handleCommentContextMenu(event, comment)}
+                    className={`rounded-2xl bg-white/45 px-3.5 py-2.5 transition ${
+                      comment.userId === currentUserId ? "cursor-context-menu hover:bg-white/65" : ""
+                    } ${isDeletingCommentId === comment.id ? "opacity-40" : ""}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <AvatarCircle employee={comment.author} sizeClass="h-6 w-6" className="text-[9px]" />
+                      <span className="truncate text-xs font-black text-[#0D1E4C]">
+                        {getDisplayName(comment.author)}
+                      </span>
+                      <span className="ml-auto shrink-0 text-[10px] font-semibold text-[#94a3b8]">
+                        {formatRelativeTimestamp(comment.createdAt)}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 whitespace-pre-wrap text-sm font-medium leading-5 text-[#334155]">
+                      {comment.commentText}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">No comments yet.</p>
+              )}
+            </div>
 
+            <div className="shrink-0 border-t border-white/50 px-6 pb-6 pt-4">
+              {extrasError ? <p className="mb-2 text-xs font-semibold text-red-600">{extrasError}</p> : null}
+              <div className="flex items-end gap-2">
+                <textarea
+                  value={commentDraft}
+                  onChange={(event) => setCommentDraft(event.target.value)}
+                  placeholder="Write a comment…"
+                  rows={1}
+                  className="min-h-11 flex-1 resize-none rounded-2xl border border-white/60 bg-white/50 px-3.5 py-2.5 text-sm font-medium text-[#0D1E4C] outline-none placeholder:text-[#94a3b8] focus:border-[#2563EB]/50"
+                />
+                <button
+                  type="button"
+                  onClick={postComment}
+                  disabled={!commentDraft.trim() || isPostingComment}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/60 bg-slate-200 text-[#0D1E4C] transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Send comment"
+                >
+                  <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                    send
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-6">
+            {extrasError ? <p className="text-xs font-semibold text-red-600">{extrasError}</p> : null}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) uploadAttachment(file);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-[#cbd5e1] bg-white/30 px-4 py-6 text-center transition hover:border-[#2563EB]/50 hover:bg-white/50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-2xl text-[#94a3b8]" aria-hidden="true">
+                upload_file
+              </span>
+              <span className="text-xs font-bold text-[#0D1E4C]">
+                {isUploading ? "Uploading…" : "Click to upload a file"}
+              </span>
+            </button>
+
+            {isLoadingExtras ? (
+              <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">Loading attachments…</p>
+            ) : attachments.length ? (
+              <div className="space-y-2">
+                {attachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="flex items-center gap-2 rounded-2xl bg-white/45 px-3.5 py-2.5 transition hover:bg-white/65"
+                  >
+                    <a
+                      href={attachment.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex min-w-0 flex-1 items-center gap-3"
+                    >
+                      <span className="material-symbols-outlined text-xl text-[#667085]" aria-hidden="true">
+                        description
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-black text-[#0D1E4C]">
+                          {attachment.fileName}
+                        </span>
+                        <span className="block text-[10px] font-semibold text-[#94a3b8]">
+                          {formatFileSize(attachment.fileSize)} · {getDisplayName(attachment.author)}
+                        </span>
+                      </span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => deleteAttachment(attachment.id)}
+                      disabled={isDeletingAttachmentId === attachment.id}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Delete ${attachment.fileName}`}
+                    >
+                      <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                        close
+                      </span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm font-semibold text-[#94a3b8]">No attachments yet.</p>
+            )}
+          </div>
+        )}
       </form>
+
+      {commentContextMenu ? (
+        <>
+          <button
+            type="button"
+            className="pointer-events-auto fixed inset-0 z-[1000] cursor-default"
+            onClick={() => setCommentContextMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setCommentContextMenu(null);
+            }}
+            aria-label="Close menu"
+          />
+          <div
+            className="pointer-events-auto fixed z-[1001] w-40 overflow-hidden rounded-2xl border border-white/60 bg-white shadow-[0_18px_50px_rgba(7,24,59,0.18)]"
+            style={{ top: commentContextMenu.y, left: commentContextMenu.x }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                deleteComment(commentContextMenu.commentId);
+                setCommentContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-bold text-red-600 transition hover:bg-red-50"
+            >
+              <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                delete
+              </span>
+              Delete
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>,
     document.body,
   );
@@ -1954,10 +2361,10 @@ export function TaskEditPanel({
 // it is editable. Used by the employee board, where task details are for
 // viewing only; the sole action is marking the task complete (also
 // available directly on the card).
-export function TaskViewPanel({ employees = [], onClose, onComplete, onReopen, task }) {
+export function TaskViewPanel({ employees = [], initialPanel = "details", onClose, onComplete, onReopen, task }) {
   const [isCompleting, setIsCompleting] = useState(false);
   const [isReopening, setIsReopening] = useState(false);
-  const [activePanel, setActivePanel] = useState("details");
+  const [activePanel, setActivePanel] = useState(initialPanel);
   const [comments, setComments] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [isLoadingExtras, setIsLoadingExtras] = useState(false);
@@ -2016,12 +2423,12 @@ export function TaskViewPanel({ employees = [], onClose, onComplete, onReopen, t
     if (!taskId) return;
 
     (async () => {
-      setActivePanel("details");
+      setActivePanel(initialPanel);
       setCommentDraft("");
       await loadExtras(taskId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId]);
+  }, [taskId, initialPanel]);
 
   if (!task) return null;
 
@@ -2799,6 +3206,7 @@ export default function WorkspaceBoard({
   viewOnly = false,
 }) {
   const [editingTask, setEditingTask] = useState(null);
+  const [editingTaskPanel, setEditingTaskPanel] = useState("");
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [draggedGroupId, setDraggedGroupId] = useState(null);
@@ -2996,7 +3404,10 @@ export default function WorkspaceBoard({
                   onApprove={onTaskApprove}
                   onAssignEmployee={onTaskAssignEmployee}
                   onComplete={onTaskComplete}
-                  onOpen={setEditingTask}
+                  onOpen={(clickedTask, targetPanel) => {
+                    setEditingTask(clickedTask);
+                    setEditingTaskPanel(targetPanel ?? "");
+                  }}
                   onReject={onTaskReject}
                   onUnassignEmployee={onTaskUnassignEmployee}
                   task={task}
@@ -3070,6 +3481,7 @@ export default function WorkspaceBoard({
         viewOnly ? (
           <TaskViewPanel
             employees={employees}
+            initialPanel={editingTaskPanel === "comments" ? "comments" : "details"}
             onClose={() => setEditingTask(null)}
             onComplete={onTaskComplete}
             task={currentEditingTask}
@@ -3078,6 +3490,7 @@ export default function WorkspaceBoard({
           <TaskEditPanel
             key={currentEditingTask?.task_id ?? "new"}
             groups={groups}
+            initialPanel={editingTaskPanel === "comments" ? "comments" : ""}
             skills={skills}
             task={currentEditingTask}
             onArchive={onTaskArchive}

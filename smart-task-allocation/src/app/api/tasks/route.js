@@ -1010,12 +1010,14 @@ export async function GET(request) {
     let latestAssignmentByTaskId = new Map();
     let requiredSkillsByTaskId = new Map();
     let assigneeIdsByTaskId = new Map();
+    let commentCountByTaskId = new Map();
 
     if (taskIds.length) {
       const [
         { data: assignments, error: assignmentError },
         { data: skillRows, error: skillError },
         { data: assigneeRows, error: assigneeError },
+        { data: commentRows, error: commentError },
       ] = await Promise.all([
         supabase
           .from("task_assignment")
@@ -1027,6 +1029,7 @@ export async function GET(request) {
           .select("task_id, skill_id, skill:skill_id(skill_name)")
           .in("task_id", taskIds),
         supabase.from("task_assignee").select("task_id, user_id").in("task_id", taskIds),
+        supabase.from("task_comment").select("task_id").in("task_id", taskIds),
       ]);
 
       if (assignmentError) {
@@ -1039,6 +1042,10 @@ export async function GET(request) {
 
       if (assigneeError) {
         return NextResponse.json({ error: assigneeError.message }, { status: 400 });
+      }
+
+      if (commentError) {
+        return NextResponse.json({ error: commentError.message }, { status: 400 });
       }
 
       for (const assignment of assignments ?? []) {
@@ -1058,6 +1065,10 @@ export async function GET(request) {
         list.push(row.user_id);
         assigneeIdsByTaskId.set(row.task_id, list);
       }
+
+      for (const row of commentRows ?? []) {
+        commentCountByTaskId.set(row.task_id, (commentCountByTaskId.get(row.task_id) ?? 0) + 1);
+      }
     }
 
     const visibleTasks = (data ?? []).filter(
@@ -1075,6 +1086,7 @@ export async function GET(request) {
         latest_assigned_at: latestAssignment?.assigned_at ?? null,
         requiredSkills: requiredSkillsByTaskId.get(task.task_id) ?? [],
         assigneeIds: assigneeIdsByTaskId.get(task.task_id) ?? [],
+        comment_count: commentCountByTaskId.get(task.task_id) ?? 0,
       };
     });
 

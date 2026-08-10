@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authHeaders } from "@/lib/agentClient";
-import { getAgentAvatarSrc } from "@/lib/agentAvatars";
+import { getAgentAvatarSrc, getAgentAvatarColor } from "@/lib/agentAvatars";
 import AgentTaskProposal from "@/components/AgentTaskProposal";
 
 function MessageBubble({ message }) {
@@ -112,7 +112,10 @@ export default function AIAutomationChat({ actor, onClose }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-end bg-black/10 pb-6 pr-2" onClick={onClose}>
       <div
-        className="flex h-[68vh] w-full max-w-lg flex-col overflow-hidden rounded-[32px] bg-gradient-to-b from-[#2563EB] from-0% to-white/10 to-50% backdrop-blur-xs shadow-[0_28px_80px_rgba(0,0,0,0.35)]"
+        className="flex h-[68vh] w-full max-w-lg flex-col overflow-hidden rounded-[32px] backdrop-blur-xs shadow-[0_28px_80px_rgba(0,0,0,0.35)]"
+        style={{
+          background: `linear-gradient(to bottom, ${getAgentAvatarColor(agent?.avatar_key)} 0%, rgba(255,255,255,0.1) 60%)`,
+        }}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-white/15 bg-transparent px-5 py-4">

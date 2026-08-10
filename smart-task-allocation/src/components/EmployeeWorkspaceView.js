@@ -7,6 +7,86 @@ import TaskHistory from "@/components/TaskHistory";
 import TaskTimeline from "@/components/TaskTimeline";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
+const PRIORITY_FILTERS = [
+  { label: "High", value: "high", tone: "red" },
+  { label: "Medium", value: "medium", tone: "orange" },
+  { label: "Low", value: "low", tone: "green" },
+  { label: "Urgent", value: "urgent", tone: "rose" },
+];
+
+function isSameLocalDay(value, reference = new Date()) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return (
+    date.getFullYear() === reference.getFullYear() &&
+    date.getMonth() === reference.getMonth() &&
+    date.getDate() === reference.getDate()
+  );
+}
+
+function isTaskOverdue(task, reference = new Date()) {
+  if (!task.end_datetime) return false;
+  const status = String(task.status || "").toLowerCase();
+  if (status === "completed" || status === "cancelled") return false;
+  const end = new Date(task.end_datetime);
+  return !Number.isNaN(end.getTime()) && end.getTime() < reference.getTime();
+}
+
+function InsightPill({ active = false, label, onClick, value, progress = 1, tone = "blue" }) {
+  const safeProgress = Math.max(0, Math.min(1, progress));
+  const ringColors = {
+    blue: "#2563EB",
+    green: "#22c55e",
+    orange: "#f59e0b",
+    purple: "#7C3AED",
+    red: "#ef4444",
+    rose: "#ef4444",
+  };
+  const ringColor = ringColors[tone] ?? ringColors.blue;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        borderColor: active ? `${ringColor}80` : undefined,
+        boxShadow: active ? `0 0 0 2px ${ringColor}33` : undefined,
+      }}
+      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[#0D1E4C] shadow-sm backdrop-blur-xl transition hover:bg-white/50 ${
+        active ? "bg-white/70" : "border-white/60 bg-white/25"
+      }`}
+    >
+      <span
+        className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-black"
+        style={{ background: `conic-gradient(${ringColor} ${safeProgress * 360}deg, rgba(255,255,255,0.45) 0deg)` }}
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/80">{value}</span>
+      </span>
+      <span className="whitespace-nowrap text-xs font-black">{label}</span>
+    </button>
+  );
+}
+
+function RefreshIcon({ spinning }) {
+  return (
+    <svg
+      className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
 function formatRelativeTime(value) {
   if (!value) return "";
 
@@ -161,8 +241,12 @@ export default function EmployeeWorkspaceView() {
   const [activity, setActivity] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [editingTaskPanel, setEditingTaskPanel] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [taskFilter, setTaskFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
 
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.user_id, employee])),
@@ -178,12 +262,20 @@ export default function EmployeeWorkspaceView() {
   );
   const filteredTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return enrichedTasks;
-    return enrichedTasks.filter((task) => (task.title || "").toLowerCase().includes(query));
-  }, [enrichedTasks, searchQuery]);
+    return enrichedTasks.filter((task) => {
+      if (query && !(task.title || "").toLowerCase().includes(query)) return false;
+      if (taskFilter === "due-today" && !isSameLocalDay(task.end_datetime)) return false;
+      if (taskFilter === "overdue" && !isTaskOverdue(task)) return false;
+      if (priorityFilter !== "all" && String(task.priority || "medium").toLowerCase() !== priorityFilter) return false;
+      return true;
+    });
+  }, [enrichedTasks, priorityFilter, searchQuery, taskFilter]);
   const currentEditingTask = editingTask
     ? enrichedTasks.find((task) => task.task_id === editingTask.task_id) ?? null
     : null;
+  const totalTasks = enrichedTasks.length;
+  const dueTodayCount = enrichedTasks.filter((task) => isSameLocalDay(task.end_datetime)).length;
+  const overdueCount = enrichedTasks.filter((task) => isTaskOverdue(task)).length;
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -264,6 +356,15 @@ export default function EmployeeWorkspaceView() {
     }
   }
 
+  async function refreshWorkspace() {
+    setIsRefreshing(true);
+    try {
+      await loadWorkspaceData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
   // Inverse of completeTask — reopens a task from Task History's completed
   // list back onto the active board.
   async function reopenTask(task) {
@@ -293,18 +394,67 @@ export default function EmployeeWorkspaceView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-4 shrink-0">
-        <div className="relative flex items-center justify-center">
-          <h1 className="text-2xl font-black text-[#0D1E4C]">My Tasks</h1>
-          <div className="absolute right-0 flex items-center gap-2 rounded-full border border-white/70 bg-white/35 px-3.5 py-2 shadow-[0_12px_30px_rgba(13,30,76,0.16)] backdrop-blur-xl">
-            <span className="material-symbols-outlined text-lg text-[#0D1E4C]" aria-hidden="true">
+        <div className="flex min-h-11 items-center gap-4">
+          <div className="hidden items-center gap-2 xl:flex">
+            <InsightPill
+              active={taskFilter === "all"}
+              label="Total tasks"
+              value={totalTasks}
+              onClick={() => setTaskFilter("all")}
+            />
+            <InsightPill
+              active={taskFilter === "due-today"}
+              label="Due today"
+              value={dueTodayCount}
+              progress={totalTasks ? dueTodayCount / totalTasks : 0}
+              onClick={() => setTaskFilter("due-today")}
+            />
+            <InsightPill
+              active={taskFilter === "overdue"}
+              label="Overdue"
+              value={overdueCount}
+              progress={totalTasks ? overdueCount / totalTasks : 0}
+              tone="red"
+              onClick={() => setTaskFilter("overdue")}
+            />
+            {PRIORITY_FILTERS.map((priority) => {
+              const isActive = priorityFilter === priority.value;
+              const count = enrichedTasks.filter(
+                (task) => String(task.priority || "medium").toLowerCase() === priority.value,
+              ).length;
+              return (
+                <InsightPill
+                  key={priority.value}
+                  active={isActive}
+                  label={priority.label}
+                  value={count}
+                  progress={totalTasks ? count / totalTasks : 0}
+                  tone={priority.tone}
+                  onClick={() => setPriorityFilter((current) => (current === priority.value ? "all" : priority.value))}
+                />
+              );
+            })}
+            <button
+              type="button"
+              onClick={refreshWorkspace}
+              disabled={isRefreshing}
+              aria-label="Refresh tasks"
+              title="Refresh tasks"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-[#0D1E4C] transition hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshIcon spinning={isRefreshing} />
+            </button>
+          </div>
+          <div className="relative ml-auto w-72 shrink-0">
+            <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#64748B]" aria-hidden="true">
               search
             </span>
             <input
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search for tasks"
-              className="w-44 bg-transparent text-sm font-semibold text-[#0D1E4C] outline-none placeholder:text-[#94a3b8]"
+              placeholder="Search tasks"
+              className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
             />
           </div>
         </div>
@@ -322,7 +472,10 @@ export default function EmployeeWorkspaceView() {
               <TaskCard
                 employees={employees}
                 onComplete={completeTask}
-                onOpen={setEditingTask}
+                onOpen={(clickedTask, targetPanel) => {
+                  setEditingTask(clickedTask);
+                  setEditingTaskPanel(targetPanel ?? "");
+                }}
                 task={task}
                 tasks={tasks}
                 viewOnly
@@ -332,12 +485,21 @@ export default function EmployeeWorkspaceView() {
 
           {!filteredTasks.length && !isLoading ? (
             <div className="flex w-full items-center justify-center rounded-2xl border-2 border-dashed border-[#cbd5e1] px-6 py-16 text-center text-sm font-bold text-[#94a3b8]">
-              {searchQuery.trim() ? "No tasks match your search." : "No tasks assigned to you."}
+              {searchQuery.trim() || taskFilter !== "all" || priorityFilter !== "all"
+                ? "No tasks match the current filter."
+                : "No tasks assigned to you."}
             </div>
           ) : null}
         </div>
 
-        <TaskTimeline employees={employees} onOpen={setEditingTask} tasks={filteredTasks} />
+        <TaskTimeline
+          employees={employees}
+          onOpen={(clickedTask) => {
+            setEditingTask(clickedTask);
+            setEditingTaskPanel("");
+          }}
+          tasks={filteredTasks}
+        />
       </div>
 
       <ActivityLogPreview
@@ -351,6 +513,7 @@ export default function EmployeeWorkspaceView() {
       {currentEditingTask ? (
         <TaskViewPanel
           employees={employees}
+          initialPanel={editingTaskPanel === "comments" ? "comments" : "details"}
           onClose={() => setEditingTask(null)}
           onComplete={completeTask}
           task={currentEditingTask}

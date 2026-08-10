@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
-import { requireEmployee } from "@/lib/serverAuth";
+import { getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
+function isManagerOrAdminRole(roleName) {
+  const normalized = String(roleName ?? "").trim().toLowerCase();
+  return normalized === "manager" || normalized === "user admin";
+}
+
 async function getAccount(supabase, user) {
+  const columns = "user_id, organization_id, role:role_id(role_name)";
   const { data, error } = await supabase
     .from("user_account")
-    .select("user_id, organization_id")
+    .select(columns)
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -13,18 +19,15 @@ async function getAccount(supabase, user) {
     return { account: data, error };
   }
 
-  const byEmail = await supabase
-    .from("user_account")
-    .select("user_id, organization_id")
-    .eq("email", user.email)
-    .maybeSingle();
+  const byEmail = await supabase.from("user_account").select(columns).eq("email", user.email).maybeSingle();
 
   return { account: byEmail.data, error: byEmail.error };
 }
 
-// Only an employee assigned to the task (directly or via task_assignee) may
-// read or post comments on it — mirrors the isAssignedToMe gate in
-// /api/employee-tasks's PATCH.
+// An employee assigned to the task (directly or via task_assignee) may read
+// or post comments on it, same as a Manager/User Admin managing the wider
+// board — mirrors the isAssignedToMe gate in /api/employee-tasks's PATCH,
+// but widened so the task's own org-wide managers aren't locked out too.
 async function loadAssignedTask(supabase, account, taskId) {
   const { data: task, error: taskError } = await supabase
     .from("task")
@@ -34,6 +37,10 @@ async function loadAssignedTask(supabase, account, taskId) {
 
   if (taskError || !task || task.organization_id !== account.organization_id) {
     return null;
+  }
+
+  if (isManagerOrAdminRole(account.role?.role_name)) {
+    return task;
   }
 
   if (task.assigned_to === account.user_id) {
@@ -53,7 +60,7 @@ async function loadAssignedTask(supabase, account, taskId) {
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireEmployee(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
@@ -118,7 +125,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireEmployee(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
@@ -178,7 +185,7 @@ export async function POST(request) {
 export async function DELETE(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireEmployee(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
 
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });

@@ -81,14 +81,16 @@ export async function GET(request) {
     const taskIds = myTasksAll.map((task) => task.task_id);
     const requiredSkillsByTaskId = new Map();
     const assigneeIdsByTaskId = new Map();
+    const commentCountByTaskId = new Map();
 
     if (taskIds.length) {
-      const [{ data: skillRows }, { data: assigneeAllRows }] = await Promise.all([
+      const [{ data: skillRows }, { data: assigneeAllRows }, { data: commentRows }] = await Promise.all([
         supabase
           .from("task_skill")
           .select("task_id, skill_id, skill:skill_id(skill_name)")
           .in("task_id", taskIds),
         supabase.from("task_assignee").select("task_id, user_id").in("task_id", taskIds),
+        supabase.from("task_comment").select("task_id").in("task_id", taskIds),
       ]);
 
       for (const row of skillRows ?? []) {
@@ -102,6 +104,10 @@ export async function GET(request) {
         list.push(row.user_id);
         assigneeIdsByTaskId.set(row.task_id, list);
       }
+
+      for (const row of commentRows ?? []) {
+        commentCountByTaskId.set(row.task_id, (commentCountByTaskId.get(row.task_id) ?? 0) + 1);
+      }
     }
 
     function enrichTask(task) {
@@ -109,6 +115,7 @@ export async function GET(request) {
         ...task,
         requiredSkills: requiredSkillsByTaskId.get(task.task_id) ?? [],
         assigneeIds: assigneeIdsByTaskId.get(task.task_id) ?? (task.assigned_to ? [task.assigned_to] : []),
+        comment_count: commentCountByTaskId.get(task.task_id) ?? 0,
       };
     }
 

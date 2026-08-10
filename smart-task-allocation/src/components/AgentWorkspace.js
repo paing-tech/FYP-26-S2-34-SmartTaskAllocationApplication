@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { authHeaders, authHeaderOnly } from "@/lib/agentClient";
-import { AGENT_AVATARS, getAgentAvatarSrc } from "@/lib/agentAvatars";
+import { AGENT_AVATARS, getAgentAvatarSrc, getAgentAvatarColor } from "@/lib/agentAvatars";
 import AgentTaskProposal from "@/components/AgentTaskProposal";
 
 const TELEGRAM_SENTINEL = "telegram";
@@ -781,13 +781,9 @@ export default function AgentWorkspace() {
                       type="text"
                       value={allowedUsernameInput}
                       onChange={(event) => setAllowedUsernameInput(event.target.value)}
-                      placeholder="Your Telegram username (optional)"
+                      placeholder="Your Telegram username"
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-[#0D1E4C] outline-none focus:border-[#2563EB]"
                     />
-                    <p className="text-[10px] text-[#0D1E4C]/50">
-                      Only this username can create tasks directly by chat — everyone else just gets suggestions to
-                      review in the app.
-                    </p>
                     <button
                       type="submit"
                       disabled={connectingTelegram}
@@ -893,7 +889,12 @@ export default function AgentWorkspace() {
           </div>
 
           {/* Right: chat panel — same look as AIAutomationChat.js */}
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-gradient-to-b from-[#2563EB] from-0% via-[#93C5FD] via-40% to-white/10 to-80% backdrop-blur-xs">
+          <section
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] backdrop-blur-xs"
+            style={{
+              background: `linear-gradient(to bottom, ${getAgentAvatarColor(agent.avatar_key)} 0%, rgba(255,255,255,0.1) 60%)`,
+            }}
+          >
             <div className="flex items-center gap-2.5 border-b border-white/15 px-5 py-4 text-white">
               <span className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-white/15">
                 <Image src={getAgentAvatarSrc(agent.avatar_key)} alt="" fill className="object-cover" />

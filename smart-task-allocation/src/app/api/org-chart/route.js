@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUserAdmin, requireUserAdminOrManager } from "@/lib/serverAuth";
+import { requireUserAdmin, getAuthenticatedUser } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { getAccountsWithProfiles, getUserAccount } from "@/app/api/my-organization/route";
 
@@ -125,10 +125,13 @@ function computeDefaultConnectionsForNewAccounts(newAccounts, allAccounts) {
   return connections;
 }
 
+// Read access is broad (any signed-in org member, including employees) since
+// the org chart is a view-only directory for everyone — editing (PATCH
+// below) stays restricted to a User Admin.
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { user, error: authError } = await requireUserAdminOrManager(request, supabase);
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }

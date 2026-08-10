@@ -72,20 +72,31 @@ function initials(name) {
     .toUpperCase();
 }
 
-// A date with no explicit time is written as a bare "00:00" (see
-// combineDateTime in WorkspaceBoard.js), which the API stores verbatim as
-// UTC — so checking UTC hours (not local) is what reliably detects "no time
-// set" regardless of the viewer's timezone, letting the task expand across
-// the whole day instead of pinning to a sliver at some shifted local hour.
+// Task dates are wall-clock values. Rebuild them from the written components
+// so a database UTC suffix cannot shift 9 AM to 5 PM in Singapore.
+function parseTaskDateTime(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return new Date(value);
+  return new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    Number(match[6] ?? 0),
+  );
+}
+
 function hasTimeComponent(date) {
-  return !(date.getUTCHours() === 0 && date.getUTCMinutes() === 0);
+  return !(date.getHours() === 0 && date.getMinutes() === 0);
 }
 
 // A task occupies a span of time on the calendar. Tasks with only one of
 // start/end are treated as occupying a single hour so they still render.
 function getTaskRange(task) {
-  const rawStart = task.start_datetime ? new Date(task.start_datetime) : null;
-  const rawEnd = task.end_datetime ? new Date(task.end_datetime) : null;
+  const rawStart = parseTaskDateTime(task.start_datetime);
+  const rawEnd = parseTaskDateTime(task.end_datetime);
   const validStart = rawStart && !Number.isNaN(rawStart.getTime()) ? rawStart : null;
   const validEnd = rawEnd && !Number.isNaN(rawEnd.getTime()) ? rawEnd : null;
 
