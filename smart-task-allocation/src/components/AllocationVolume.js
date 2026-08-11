@@ -3,15 +3,31 @@
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
-const RADIUS = 36;
-const STROKE_WIDTH = 16;
+const RADIUS = 32;
+const STROKE_WIDTH =30;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-const DONUT_SIZE = 68;
+const DONUT_SIZE = 100;
 
 async function authHeaders() {
   const supabase = getSupabaseBrowserClient();
   const { data } = await supabase.auth.getSession();
   return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
+}
+
+// A legend row that reads as "pointing to" its share of the ring: the
+// title + count sit to the left, a short leader line runs to a small dot in
+// the segment's color, standing in for a line drawn straight to that arc.
+function LegendRow({ title, count, colorClass }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="text-right leading-tight">
+        <p className="text-[10px] font-bold text-[#475569]">{title}</p>
+        <p className="text-sm font-black text-[#0D1E4C]">{count}</p>
+      </div>
+      <span className="h-px w-5 shrink-0 bg-[#94a3b8]" />
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${colorClass}`} />
+    </div>
+  );
 }
 
 // Two-color proportion ring — a blue arc for the primary count, an amber arc
@@ -20,14 +36,19 @@ async function authHeaders() {
 // segments instead of one progress ring, since this shows a split rather
 // than progress toward a target: the primary arc is drawn first from the
 // top, then the secondary arc picks up exactly where it left off (via
-// strokeDashoffset={-primaryArc}).
-function ShareDonut({ label, primaryCount, primaryLabel, secondaryCount, secondaryLabel }) {
+// strokeDashoffset={-primaryArc}). The legend sits to the left instead of
+// captioned underneath, each row leading straight into its own arc.
+function ShareDonut({ primaryCount, primaryLabel, secondaryCount, secondaryLabel }) {
   const total = primaryCount + secondaryCount;
   const primaryArc = total > 0 ? (primaryCount / total) * CIRCUMFERENCE : 0;
   const secondaryArc = CIRCUMFERENCE - primaryArc;
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
+    <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3">
+        <LegendRow title={primaryLabel} count={primaryCount} colorClass="bg-[#2563EB]" />
+        <LegendRow title={secondaryLabel} count={secondaryCount} colorClass="bg-[#F59E0B]" />
+      </div>
       <svg viewBox="0 0 100 100" style={{ height: DONUT_SIZE, width: DONUT_SIZE }}>
         {total === 0 ? (
           <circle cx="50" cy="50" r={RADIUS} fill="none" stroke="#E2E8F0" strokeWidth={STROKE_WIDTH} />
@@ -60,11 +81,6 @@ function ShareDonut({ label, primaryCount, primaryLabel, secondaryCount, seconda
           {total}
         </text>
       </svg>
-      <p className="text-[10px] font-bold text-[#94a3b8]">{label}</p>
-      <p className="text-[10px] font-semibold text-[#64748B]">
-        <span className="font-black text-[#0D1E4C]">{primaryCount}</span> {primaryLabel} ·{" "}
-        <span className="font-black text-[#0D1E4C]">{secondaryCount}</span> {secondaryLabel}
-      </p>
     </div>
   );
 }
@@ -119,27 +135,24 @@ export default function AllocationVolume() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 items-center justify-center gap-8 px-5 pb-4">
+      <div className="flex min-h-0 flex-1 flex-wrap items-center justify-center gap-8 px-5 pb-4">
         {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
         {!error && !rangeData ? <p className="text-sm text-[#52627a]">Loading...</p> : null}
         {!error && rangeData ? (
           <>
             <ShareDonut
-              label="Allocation"
               primaryCount={rangeData.allocation.ai}
-              primaryLabel="Smart"
+              primaryLabel="Smart Task Allocation"
               secondaryCount={rangeData.allocation.manual}
-              secondaryLabel="Manual"
+              secondaryLabel="Manual Task Allocation"
             />
             <ShareDonut
-              label="Creation"
               primaryCount={rangeData.creation.ai}
-              primaryLabel="Smart"
+              primaryLabel="Smart Task Allocation"
               secondaryCount={rangeData.creation.manual}
-              secondaryLabel="Manual"
+              secondaryLabel="Manual Task Allocation"
             />
             <ShareDonut
-              label="AI Suggestion Acceptance"
               primaryCount={rangeData.acceptance.accepted}
               primaryLabel="Accepted"
               secondaryCount={rangeData.acceptance.total - rangeData.acceptance.accepted}

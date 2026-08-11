@@ -13,7 +13,7 @@ export default function UserAdminInsightsPage() {
             <div className="h-1/2">
               <AllocationEfficiency />
             </div>
-            <div className="h-1/4">
+            <div className="h-1/2">
               <AllocationVolume />
             </div>
           </div>
