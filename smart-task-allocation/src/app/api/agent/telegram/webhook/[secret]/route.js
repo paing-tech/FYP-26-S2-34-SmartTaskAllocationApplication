@@ -73,14 +73,6 @@ async function createTasksDirectly(tasks, { origin, agentUserId, agentName, need
     }
   }
 
-  if (created.length) {
-    await fetch(`${origin}/api/tasks`, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify({ action: "auto-allocate-tasks", enabled: true }),
-    });
-  }
-
   return created;
 }
 

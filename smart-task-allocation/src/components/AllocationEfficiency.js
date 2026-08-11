@@ -147,6 +147,25 @@ function BarChart({ ai, manual }) {
   );
 }
 
+// Raw AI-vs-manual counts, separate from the ratio metrics above — kept
+// simple (just numbers, no chart) so this reads as ground-truth volume
+// rather than another comparison, and can feed a daily "reliance on AI"
+// trend later without redoing the underlying counts.
+function RelianceCounts({ ai, manual, taskSource }) {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] font-semibold text-[#94a3b8]">
+      <span>
+        Assigned: <span className="font-black text-[#0D1E4C]">{ai.taskCount}</span> AI ·{" "}
+        <span className="font-black text-[#0D1E4C]">{manual.taskCount}</span> Manual
+      </span>
+      <span>
+        Created: <span className="font-black text-[#0D1E4C]">{taskSource.aiCreated}</span> AI ·{" "}
+        <span className="font-black text-[#0D1E4C]">{taskSource.manualCreated}</span> Manual
+      </span>
+    </div>
+  );
+}
+
 function AiSuggestionSentence({ aiSuggestions }) {
   if (!aiSuggestions?.total) {
     return (
@@ -226,6 +245,16 @@ export default function AllocationEfficiency() {
             ) : null}
 
             <BarChart ai={data.ai} manual={data.manual} />
+
+            {data.ai.excludedOutlierCount + data.manual.excludedOutlierCount > 0 ? (
+              <p className="text-center text-[10px] font-medium text-[#94a3b8]">
+                Allocation Time excludes {data.ai.excludedOutlierCount + data.manual.excludedOutlierCount} task
+                {data.ai.excludedOutlierCount + data.manual.excludedOutlierCount === 1 ? "" : "s"} left unassigned
+                over 1h.
+              </p>
+            ) : null}
+
+            <RelianceCounts ai={data.ai} manual={data.manual} taskSource={data.taskSource} />
 
             <AiSuggestionSentence aiSuggestions={data.aiSuggestions} />
           </div>

@@ -33,6 +33,7 @@ export default function AllocationHistory({ onClose } = {}) {
   const [error, setError] = useState("");
   const [isReassigning, setIsReassigning] = useState(false);
   const [viewingTaskId, setViewingTaskId] = useState(null);
+  const [search, setSearch] = useState("");
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -90,9 +91,17 @@ export default function AllocationHistory({ onClose } = {}) {
 
   // Group allocations by calendar date (already sorted desc by API).
   const grouped = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    const filtered = normalizedSearch
+      ? allocations.filter((allocation) => {
+          const searchable = `${allocation.assigneeName ?? ""} ${allocation.taskTitle ?? ""} ${allocation.assignedBy ?? ""}`;
+          return searchable.toLowerCase().includes(normalizedSearch);
+        })
+      : allocations;
+
     const groups = [];
     const indexByDate = new Map();
-    for (const allocation of allocations) {
+    for (const allocation of filtered) {
       const dateKey = formatDateHeader(allocation.assignedAt);
       if (!indexByDate.has(dateKey)) {
         indexByDate.set(dateKey, groups.length);
@@ -101,7 +110,7 @@ export default function AllocationHistory({ onClose } = {}) {
       groups[indexByDate.get(dateKey)].items.push(allocation);
     }
     return groups;
-  }, [allocations]);
+  }, [allocations, search]);
 
   function toggleSelect(id) {
     setSelectedIds((current) => {
@@ -181,6 +190,18 @@ export default function AllocationHistory({ onClose } = {}) {
         <h2 className="text-lg font-black text-[#0D1E4C]">Allocation History</h2>
 
         <div className="flex items-center gap-2">
+          <div className="relative w-72">
+            <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#64748B]" aria-hidden="true">
+              search
+            </span>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search allocations"
+              className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
+            />
+          </div>
+
           <button
             type="button"
             onClick={() => handleReassign(selectedAllocations.map((allocation) => allocation.taskId))}

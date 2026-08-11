@@ -299,7 +299,6 @@ function AllocationHistoryPreview({ allocations = [], onReassign, onReload }) {
 }
 
 export default function WorkspaceView() {
-  const { guard, isLocked } = usePlanGate();
   const [view, setView] = useState("board");
   const [columnLayout, setColumnLayoutState] = useState(4);
   const [tasks, setTasks] = useState([]);
@@ -521,10 +520,9 @@ export default function WorkspaceView() {
     setWeekStart((current) => addDays(current, 7));
   }
 
-  // Single toggle now stands in for the old separate Smart Task Creation /
-  // Smart Task Allocation switches — turning it on both un-hides pending
-  // Optimus AI suggestions (blue-border cards on the board) and lets Optimus
-  // auto-allocate tasks; turning it off hides those suggestions again.
+  // Shows/hides pending Optimus AI suggestion cards (blue-border cards on
+  // the board) — allocation is no longer a separate concern here, since
+  // Optimus now assigns every task it creates immediately, itself.
   async function toggleOptimus() {
     if (isTogglingOptimus) return;
 
@@ -535,29 +533,15 @@ export default function WorkspaceView() {
 
     try {
       const headers = { "Content-Type": "application/json", ...(await authHeaders()) };
-      const [visibilityResponse, allocationResponse] = await Promise.all([
-        fetch("/api/tasks", {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({ action: "set-ai-task-visibility", enabled: nextValue }),
-        }),
-        fetch("/api/tasks", {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({ action: "auto-allocate-tasks", enabled: nextValue }),
-        }),
-      ]);
-      const [visibilityResult, allocationResult] = await Promise.all([
-        visibilityResponse.json(),
-        allocationResponse.json(),
-      ]);
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ action: "set-ai-task-visibility", enabled: nextValue }),
+      });
+      const result = await response.json();
 
-      if (!visibilityResponse.ok) {
-        throw new Error(visibilityResult.error || "Could not update Optimus AI tasks.");
-      }
-
-      if (!allocationResponse.ok) {
-        throw new Error(allocationResult.error || "Could not update Optimus AI allocation.");
+      if (!response.ok) {
+        throw new Error(result.error || "Could not update Optimus AI tasks.");
       }
 
       await loadWorkspaceData();
@@ -938,16 +922,11 @@ export default function WorkspaceView() {
   }
 
   // Lets Optimus AI pick the assignee (skill/history/department match) for
-  // one task on demand. Which employee gets picked isn't known until the
-  // server responds, so this isn't optimistic — it patches assigneeIds in
-  // once the match comes back instead of guessing beforehand.
+  // one task on demand, from inside the Employee Assignment modal. Which
+  // employee gets picked isn't known until the server responds, so this
+  // isn't optimistic — it patches assigneeIds in once the match comes back.
   async function aiAssignTask(task) {
     if (!task?.task_id) return;
-
-    if (isLocked("ai_auto_assign")) {
-      guard("ai_auto_assign");
-      return;
-    }
 
     setError("");
 

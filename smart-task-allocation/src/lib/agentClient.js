@@ -34,11 +34,12 @@ export async function resolveSkillIds(skillNames, headers) {
 // Creates each selected proposed task via the existing /api/tasks endpoint
 // (source: "optimus_ai" so it renders through the same Approve/Reject card
 // as every other AI-authored task, decorated with a glowing border on the
-// board) and triggers auto-allocation once done. Each task lands in whichever
-// column the agent chose (task.groupId), falling back to the default
-// "Untitled" column server-side when it didn't pick one. When needsApproval
-// is false, the task is stamped pre-approved so it skips straight past the
-// pending-approval UI.
+// board). The endpoint itself assigns a matching available employee in the
+// same request — no separate allocation step needed. Each task lands in
+// whichever column the agent chose (task.groupId), falling back to the
+// default "Untitled" column server-side when it didn't pick one. When
+// needsApproval is false, the task is stamped pre-approved so it skips
+// straight past the pending-approval UI.
 export async function createProposedTasks(tasks, { agentName, needsApproval, headers }) {
   const created = [];
   const approvedAt = new Date().toISOString();
@@ -77,14 +78,6 @@ export async function createProposedTasks(tasks, { agentName, needsApproval, hea
     if (response.ok) {
       created.push(result.task?.title ?? task.title);
     }
-  }
-
-  if (created.length) {
-    await fetch("/api/tasks", {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify({ action: "auto-allocate-tasks", enabled: true }),
-    });
   }
 
   return created;

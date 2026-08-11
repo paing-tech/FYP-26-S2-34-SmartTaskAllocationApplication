@@ -28,15 +28,24 @@ function formatCardDate(iso) {
 // underneath (same grouping AllocationHistory uses).
 export default function TaskHistory({ activity = [], completedTasks = [], employees = [], onClose, onReopenTask }) {
   const [viewingTaskId, setViewingTaskId] = useState(null);
+  const [search, setSearch] = useState("");
   const viewingTask = viewingTaskId
     ? completedTasks.find((task) => task.task_id === viewingTaskId) ?? null
     : null;
 
   const groupedActivity = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    const filtered = normalizedSearch
+      ? activity.filter((entry) => {
+          const searchable = `${entry.taskTitle ?? ""} ${entry.assignedBy ?? ""} ${entry.toStatus ?? ""}`;
+          return searchable.toLowerCase().includes(normalizedSearch);
+        })
+      : activity;
+
     const groups = [];
     const indexByDate = new Map();
 
-    for (const entry of activity) {
+    for (const entry of filtered) {
       const dateKey = formatDateHeader(entry.occurredAt);
       if (!indexByDate.has(dateKey)) {
         indexByDate.set(dateKey, groups.length);
@@ -46,24 +55,39 @@ export default function TaskHistory({ activity = [], completedTasks = [], employ
     }
 
     return groups;
-  }, [activity]);
+  }, [activity, search]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
         <h2 className="text-lg font-black text-[#0D1E4C]">Task History</h2>
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close task history"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
-          >
-            <span className="material-symbols-outlined text-xl" aria-hidden="true">
-              close
+
+        <div className="flex items-center gap-2">
+          <div className="relative w-72">
+            <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#64748B]" aria-hidden="true">
+              search
             </span>
-          </button>
-        ) : null}
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search history"
+              className="h-11 w-full rounded-full border border-[#C7DDEB] bg-white pl-11 pr-6 text-base text-[#0B1B32] shadow-sm outline-none placeholder:text-[#64748B] focus:border-[#83A6CE] focus:ring-2 focus:ring-[#83A6CE]/25"
+            />
+          </div>
+
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close task history"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110 hover:bg-white/70"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                close
+              </span>
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="shrink-0">

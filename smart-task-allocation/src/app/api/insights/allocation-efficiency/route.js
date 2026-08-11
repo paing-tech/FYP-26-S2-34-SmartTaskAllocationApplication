@@ -7,11 +7,28 @@ function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function summarizeBucket(tasks) {
+// A task that sat unassigned for a long stretch before finally getting
+// picked up (an old backlog task, or a manager circling back much later)
+// isn't a fair measure of allocation speed — excluded from the average
+// rather than letting one outlier dominate it. Not silently dropped:
+// excludedOutlierCount reports how many were cut, per bucket.
+const OUTLIER_THRESHOLD_MINUTES = 60;
+
+// Allocation Time only counts the assignment method each bucket actually
+// claims credit for: "ai_auto" for Smart Allocation (Optimus AI/the chat
+// agent assigning the task itself, at creation) and "manual_modal" for
+// Manual (a human picking someone later via the Employee Assignment modal).
+// Tasks assigned inline at creation ("task_creation") aren't a real search
+// for a person — they're excluded from timing on both sides, though they
+// still count toward Allocation Accuracy and Skill Match Rate.
+function summarizeBucket(tasks, timingMethod) {
   const taskCount = tasks.length;
-  const timesToAssignMinutes = tasks
+  const timingEligible = tasks.filter(
+    (task) => task.assignmentMethod === timingMethod && task.minutesToAssign != null && task.minutesToAssign >= 0,
+  );
+  const timesToAssignMinutes = timingEligible
     .map((task) => task.minutesToAssign)
-    .filter((minutes) => minutes != null && minutes >= 0);
+    .filter((minutes) => minutes <= OUTLIER_THRESHOLD_MINUTES);
   const reassignedCount = tasks.filter((task) => task.assignmentCount > 1).length;
   const skillApplicableTasks = tasks.filter((task) => task.skillMatched != null);
   const skillMatchedCount = skillApplicableTasks.filter((task) => task.skillMatched).length;
@@ -19,9 +36,20 @@ function summarizeBucket(tasks) {
   return {
     taskCount,
     averageMinutesToAssign: average(timesToAssignMinutes),
+    excludedOutlierCount: timingEligible.length - timesToAssignMinutes.length,
     firstTimeAccuracy: taskCount ? 1 - reassignedCount / taskCount : null,
     skillMatchRate: skillApplicableTasks.length ? skillMatchedCount / skillApplicableTasks.length : null,
   };
+}
+
+// How many tasks were created by AI (source "optimus_ai": recurring
+// suggestions, completion follow-ups, allocation-history suggestions, or
+// the chat agent) vs. everything else — a separate concern from who
+// *assigned* a task, so this can be tracked alongside allocation counts as
+// a "reliance on AI" signal over time.
+function summarizeTaskSource(tasks) {
+  const aiCreated = tasks.filter((task) => task.source === "optimus_ai").length;
+  return { aiCreated, manualCreated: tasks.length - aiCreated };
 }
 
 // The chat-agent "Auto-approve" path stamps reasons.approvedBy with the
@@ -74,9 +102,10 @@ export async function GET(request) {
 
     if (!organizationId) {
       return NextResponse.json({
-        ai: summarizeBucket([]),
-        manual: summarizeBucket([]),
+        ai: summarizeBucket([], "ai_auto"),
+        manual: summarizeBucket([], "manual_modal"),
         aiSuggestions: summarizeAiSuggestions([]),
+        taskSource: summarizeTaskSource([]),
       });
     }
 
@@ -98,7 +127,7 @@ export async function GET(request) {
         await Promise.all([
           supabase
             .from("task_assignment")
-            .select("task_id, assigned_by, assigned_at, user_id")
+            .select("task_id, assigned_by, assigned_at, user_id, assignment_method")
             .in("task_id", taskIds)
             .order("assigned_at", { ascending: true }),
           supabase.from("task_skill").select("task_id, skill_id").in("task_id", taskIds),
@@ -168,6 +197,7 @@ export async function GET(request) {
       const enrichedTask = {
         assignmentCount: assignments.length,
         minutesToAssign,
+        assignmentMethod: firstAssignment.assignment_method,
         skillMatched,
       };
 
@@ -179,9 +209,10 @@ export async function GET(request) {
     }
 
     return NextResponse.json({
-      ai: summarizeBucket(aiTasks),
-      manual: summarizeBucket(manualTasks),
+      ai: summarizeBucket(aiTasks, "ai_auto"),
+      manual: summarizeBucket(manualTasks, "manual_modal"),
       aiSuggestions: summarizeAiSuggestions(tasks ?? []),
+      taskSource: summarizeTaskSource(tasks ?? []),
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

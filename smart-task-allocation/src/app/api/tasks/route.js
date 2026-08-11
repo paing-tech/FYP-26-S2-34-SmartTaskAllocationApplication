@@ -123,7 +123,13 @@ async function getActorName(supabase, user) {
 }
 
 // Record a task → employee assignment in the allocation history.
-async function recordAssignment(supabase, { taskId, userId, assignedBy }) {
+// assignmentMethod tags how it happened — "task_creation" (assignee picked
+// in the same request the task was created), "manual_modal" (a manager
+// picked someone later via the Employee Assignment modal), or "ai_auto"
+// (Optimus AI/the chat agent assigned it itself at creation) — so
+// Allocation Efficiency reporting can measure each honestly instead of
+// lumping them together.
+async function recordAssignment(supabase, { taskId, userId, assignedBy, assignmentMethod }) {
   if (!taskId || !userId) return;
   await supabase.from("task_assignment").insert({
     task_id: taskId,
@@ -131,6 +137,7 @@ async function recordAssignment(supabase, { taskId, userId, assignedBy }) {
     assigned_by: assignedBy || "Manager",
     assigned_at: new Date().toISOString(),
     status: "Assigned",
+    assignment_method: assignmentMethod || null,
   });
 }
 
@@ -417,12 +424,18 @@ Return ONLY JSON of the form:
   if (requiredSkillIds.length) {
     await syncTaskSkills(supabase, createdTask.task_id, requiredSkillIds);
   }
+
+  await autoAssignAiTask(supabase, { organizationId, taskId: createdTask.task_id });
 }
 
 // On-demand version of the auto-allocate scoring below, scoped to a single
 // task regardless of its current assignment state (used by the "Assign with
 // AI" button). Never suggests someone already on the task, so it always
-// proposes a genuinely new candidate — or null if nobody has any signal.
+// proposes a genuinely new candidate — or null if nobody has any signal and
+// there's no eligible employee to fall back to. Falls back to whichever
+// eligible employee currently carries the fewest open tasks when no
+// skill/history/department signal fires for anyone, so a task Optimus
+// creates always ends up with someone rather than sitting unassigned.
 async function pickAiAssigneeForTask(supabase, { organizationId, taskId }) {
   const { data: task, error: taskError } = await supabase
     .from("task")
@@ -445,7 +458,7 @@ async function pickAiAssigneeForTask(supabase, { organizationId, taskId }) {
       .from("user_account")
       .select("user_id, department:department_id(department_name), role:role_id(role_name)")
       .eq("organization_id", organizationId),
-    supabase.from("task").select("task_id, title").eq("organization_id", organizationId),
+    supabase.from("task").select("task_id, title, assigned_to, status").eq("organization_id", organizationId),
     supabase.from("task_assignee").select("user_id").eq("task_id", taskId),
   ]);
 
@@ -529,24 +542,56 @@ async function pickAiAssigneeForTask(supabase, { organizationId, taskId }) {
     }
   }
 
+  // No skill/history/department signal fired for anyone — fall back to
+  // whichever eligible employee currently has the fewest open tasks, rather
+  // than leaving an AI-created task unassigned.
+  if (!bestEmployeeId && employeeIds.length) {
+    const activeCountByUserId = new Map();
+    for (const orgTask of allOrgTasks ?? []) {
+      if (!orgTask.assigned_to) continue;
+      if (["completed", "cancelled"].includes(String(orgTask.status || "").toLowerCase())) continue;
+      activeCountByUserId.set(orgTask.assigned_to, (activeCountByUserId.get(orgTask.assigned_to) ?? 0) + 1);
+    }
+
+    let leastBusyId = null;
+    let leastBusyCount = Infinity;
+    for (const employeeId of employeeIds) {
+      const count = activeCountByUserId.get(employeeId) ?? 0;
+      if (count < leastBusyCount) {
+        leastBusyCount = count;
+        leastBusyId = employeeId;
+      }
+    }
+
+    if (leastBusyId) {
+      bestEmployeeId = leastBusyId;
+      bestBreakdown = { skillScore: 0, historyCount: 0, isDepartmentMatch: false, isFallback: true };
+    }
+  }
+
   if (!bestEmployeeId) {
     return null;
   }
 
   const allocationReasons = [];
-  if (bestBreakdown.skillScore > 0) {
-    const matchedNames = requiredSkills.map((skill) => skill.name).filter(Boolean);
-    allocationReasons.push(`Matched required skills: ${matchedNames.join(", ")}`);
-  }
-  if (bestBreakdown.historyCount > 0) {
-    allocationReasons.push(`Assigned to "${task.title}" ${bestBreakdown.historyCount} time(s) before`);
-  }
-  if (bestBreakdown.isDepartmentMatch) {
-    allocationReasons.push(`Matches ${matchedDepartment} department`);
+  if (bestBreakdown.isFallback) {
+    allocationReasons.push("No strong skill, history, or department match — assigned to the least busy employee");
+  } else {
+    if (bestBreakdown.skillScore > 0) {
+      const matchedNames = requiredSkills.map((skill) => skill.name).filter(Boolean);
+      allocationReasons.push(`Matched required skills: ${matchedNames.join(", ")}`);
+    }
+    if (bestBreakdown.historyCount > 0) {
+      allocationReasons.push(`Assigned to "${task.title}" ${bestBreakdown.historyCount} time(s) before`);
+    }
+    if (bestBreakdown.isDepartmentMatch) {
+      allocationReasons.push(`Matches ${matchedDepartment} department`);
+    }
   }
 
-  const allocationKind =
-    bestBreakdown.skillScore > 0
+  const allocationKind = bestBreakdown.isFallback
+    ? "least_busy"
+    : bestBreakdown.skillScore > 0
       ? "skill_match"
       : bestBreakdown.historyCount > 0
         ? "history_pattern"
@@ -555,255 +600,49 @@ async function pickAiAssigneeForTask(supabase, { organizationId, taskId }) {
   return { employeeId: bestEmployeeId, allocationReasons, allocationKind };
 }
 
-// Auto-assign any unassigned, non-terminal task to the best-matching employee
-// using three independent signals, each scored only when it's actually
-// present so we never fabricate a match that didn't happen:
-//   - task_skill vs. user_skill overlap
-//   - allocation history: how many times this exact task title was assigned
-//     to this employee before, org-wide
-//   - department match: the employee's department name appears in the title
-// A task is only assigned when at least one signal contributes a positive
-// score — ties are broken by whichever employee is scanned first.
-async function autoAllocateOptimusTasks(supabase, { organizationId }) {
-  const { data: candidateTasks, error: candidateError } = await supabase
+// Called right after an Optimus AI task is inserted (recurring suggestion,
+// completion follow-up, allocation-history suggestion, or a task the chat
+// agent proposed) so it lands with an assignee in the same request instead
+// of waiting for a human to trigger assignment separately — that's what
+// keeps AI Allocation Time to real processing time rather than human
+// trigger-latency. No-op (task stays unassigned) if pickAiAssigneeForTask
+// finds nobody to assign it to.
+async function autoAssignAiTask(supabase, { organizationId, taskId }) {
+  const match = await pickAiAssigneeForTask(supabase, { organizationId, taskId });
+  if (!match) return null;
+
+  const { error: assigneeError } = await supabase
+    .from("task_assignee")
+    .insert({ task_id: taskId, user_id: match.employeeId });
+  if (assigneeError) return null;
+
+  const { data: existingTask } = await supabase
     .from("task")
-    .select("task_id, title, reasons")
-    .eq("organization_id", organizationId)
-    .is("assigned_to", null)
-    .not("status", "in", "(Completed,Cancelled)");
+    .select("assigned_to, reasons")
+    .eq("task_id", taskId)
+    .maybeSingle();
 
-  if (candidateError) {
-    throw new Error(candidateError.message);
-  }
+  await supabase
+    .from("task")
+    .update({
+      assigned_to: existingTask?.assigned_to ?? match.employeeId,
+      reasons: {
+        ...(existingTask?.reasons ?? {}),
+        allocation: match.allocationReasons,
+        allocationKind: match.allocationKind,
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("task_id", taskId);
 
-  if (!(candidateTasks ?? []).length) {
-    return 0;
-  }
+  await recordAssignment(supabase, {
+    taskId,
+    userId: match.employeeId,
+    assignedBy: "Optimus AI",
+    assignmentMethod: "ai_auto",
+  });
 
-  const candidateTaskIds = candidateTasks.map((task) => task.task_id);
-
-  const [
-    { data: requiredSkillRows, error: requiredSkillError },
-    { data: employeeAccounts, error: employeeError },
-    { data: allOrgTasks, error: orgTasksError },
-  ] = await Promise.all([
-    supabase
-      .from("task_skill")
-      .select("task_id, skill_id, skill:skill_id(skill_name)")
-      .in("task_id", candidateTaskIds),
-    supabase
-      .from("user_account")
-      .select("user_id, department:department_id(department_name), role:role_id(role_name)")
-      .eq("organization_id", organizationId),
-    supabase.from("task").select("task_id, title, assigned_to, status").eq("organization_id", organizationId),
-  ]);
-
-  if (requiredSkillError) {
-    throw new Error(requiredSkillError.message);
-  }
-
-  if (employeeError) {
-    throw new Error(employeeError.message);
-  }
-
-  if (orgTasksError) {
-    throw new Error(orgTasksError.message);
-  }
-
-  const requiredSkillsByTaskId = new Map();
-  for (const row of requiredSkillRows ?? []) {
-    const list = requiredSkillsByTaskId.get(row.task_id) ?? [];
-    list.push({ skillId: row.skill_id, name: row.skill?.skill_name });
-    requiredSkillsByTaskId.set(row.task_id, list);
-  }
-
-  const eligibleEmployeeIds = (employeeAccounts ?? [])
-    .filter((employee) => isEmployeeRole(employee.role?.role_name))
-    .map((employee) => employee.user_id);
-  const availableTodayIds = await getAvailableTodayUserIds(supabase, eligibleEmployeeIds);
-  // Only consider employees actually working today — including for the
-  // least-busy fallback tier below, so a task never lands on someone away.
-  const employeeIds = eligibleEmployeeIds.filter((id) => availableTodayIds.has(id));
-  const departmentByUserId = new Map(
-    (employeeAccounts ?? []).map((employee) => [employee.user_id, employee.department?.department_name ?? null]),
-  );
-  const departmentNames = [
-    ...new Set((employeeAccounts ?? []).map((employee) => employee.department?.department_name).filter(Boolean)),
-  ];
-
-  // Fallback tier: how many open/in-progress tasks is each employee already
-  // carrying? Used only when no employee scores a positive skill/history/
-  // department match, so a task never silently sits unassigned (and
-  // consequently never recorded in allocation history) just because it's a
-  // freshly-created, generic-titled task with no signal to go on yet.
-  const activeCountByUserId = new Map();
-  for (const orgTask of allOrgTasks ?? []) {
-    if (!orgTask.assigned_to) continue;
-    if (["completed", "cancelled"].includes(String(orgTask.status || "").toLowerCase())) continue;
-    activeCountByUserId.set(orgTask.assigned_to, (activeCountByUserId.get(orgTask.assigned_to) ?? 0) + 1);
-  }
-
-  const skillsByUserId = new Map();
-  if (employeeIds.length) {
-    const { data: skillRows } = await supabase
-      .from("user_skill")
-      .select("user_id, skill_id")
-      .in("user_id", employeeIds);
-
-    for (const row of skillRows ?? []) {
-      const list = skillsByUserId.get(row.user_id) ?? [];
-      list.push(row.skill_id);
-      skillsByUserId.set(row.user_id, list);
-    }
-  }
-
-  // Allocation-history pattern: how many times has each employee previously
-  // been assigned a task with this exact title, anywhere in the org?
-  const titleByTaskId = new Map(
-    (allOrgTasks ?? []).map((task) => [task.task_id, cleanString(task.title).toLowerCase()]),
-  );
-  const allTaskIds = [...titleByTaskId.keys()];
-  const historyCountByTitleAndUser = new Map();
-
-  if (allTaskIds.length) {
-    const { data: historyAssignments, error: historyError } = await supabase
-      .from("task_assignment")
-      .select("task_id, user_id")
-      .in("task_id", allTaskIds);
-
-    if (historyError) {
-      throw new Error(historyError.message);
-    }
-
-    for (const assignment of historyAssignments ?? []) {
-      const title = titleByTaskId.get(assignment.task_id);
-      if (!title || !assignment.user_id) continue;
-      const byUser = historyCountByTitleAndUser.get(title) ?? new Map();
-      byUser.set(assignment.user_id, (byUser.get(assignment.user_id) ?? 0) + 1);
-      historyCountByTitleAndUser.set(title, byUser);
-    }
-  }
-
-  let assignedCount = 0;
-
-  for (const task of candidateTasks) {
-    const requiredSkills = requiredSkillsByTaskId.get(task.task_id) ?? [];
-    const requiredSkillIds = new Set(requiredSkills.map((skill) => skill.skillId));
-    const normalizedTitle = cleanString(task.title).toLowerCase();
-    const historyByUser = historyCountByTitleAndUser.get(normalizedTitle) ?? new Map();
-    const matchedDepartment = departmentNames.find(
-      (name) => name && normalizedTitle.includes(name.toLowerCase()),
-    );
-
-    let bestEmployeeId = null;
-    let bestScore = 0;
-    let bestBreakdown = null;
-
-    for (const employeeId of employeeIds) {
-      const employeeSkills = skillsByUserId.get(employeeId) ?? [];
-      const skillScore = employeeSkills.filter((skillId) => requiredSkillIds.has(skillId)).length;
-      const historyCount = historyByUser.get(employeeId) ?? 0;
-      const isDepartmentMatch = Boolean(
-        matchedDepartment && departmentByUserId.get(employeeId) === matchedDepartment,
-      );
-
-      const score = skillScore * 3 + historyCount * 4 + (isDepartmentMatch ? 2 : 0);
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestEmployeeId = employeeId;
-        bestBreakdown = { skillScore, historyCount, isDepartmentMatch };
-      }
-    }
-
-    // No skill/history/department signal fired for anyone — rather than
-    // leave the task unassigned (and so never recorded in allocation
-    // history), fall back to whichever employee currently has the fewest
-    // open tasks.
-    if (!bestEmployeeId && employeeIds.length) {
-      let leastBusyId = null;
-      let leastBusyCount = Infinity;
-
-      for (const employeeId of employeeIds) {
-        const count = activeCountByUserId.get(employeeId) ?? 0;
-        if (count < leastBusyCount) {
-          leastBusyCount = count;
-          leastBusyId = employeeId;
-        }
-      }
-
-      if (leastBusyId) {
-        bestEmployeeId = leastBusyId;
-        bestBreakdown = { skillScore: 0, historyCount: 0, isDepartmentMatch: false, isFallback: true };
-      }
-    }
-
-    if (!bestEmployeeId) {
-      continue;
-    }
-
-    // Counts as load for the rest of this batch too, so several
-    // newly-created tasks with no signal spread across the team instead of
-    // all landing on whoever was least busy at the start.
-    activeCountByUserId.set(bestEmployeeId, (activeCountByUserId.get(bestEmployeeId) ?? 0) + 1);
-
-    const allocationReasons = [];
-    if (bestBreakdown.isFallback) {
-      allocationReasons.push("No strong skill, history, or department match — assigned to the least busy employee");
-    } else {
-      if (bestBreakdown.skillScore > 0) {
-        const matchedNames = requiredSkills.map((skill) => skill.name).filter(Boolean);
-        allocationReasons.push(`Matched required skills: ${matchedNames.join(", ")}`);
-      }
-      if (bestBreakdown.historyCount > 0) {
-        allocationReasons.push(`Assigned to "${task.title}" ${bestBreakdown.historyCount} time(s) before`);
-      }
-      if (bestBreakdown.isDepartmentMatch) {
-        allocationReasons.push(`Matches ${matchedDepartment} department`);
-      }
-    }
-
-    const allocationKind = bestBreakdown.isFallback
-      ? "least_busy"
-      : bestBreakdown.skillScore > 0
-        ? "skill_match"
-        : bestBreakdown.historyCount > 0
-          ? "history_pattern"
-          : "department_match";
-
-    const { error: updateError } = await supabase
-      .from("task")
-      .update({
-        assigned_to: bestEmployeeId,
-        reasons: {
-          ...(task.reasons ?? {}),
-          allocation: allocationReasons,
-          allocationKind,
-        },
-        updated_at: new Date().toISOString(),
-      })
-      .eq("task_id", task.task_id);
-
-    if (updateError) {
-      throw new Error(updateError.message);
-    }
-
-    // Keep the multi-assignee set in sync so the AI pick actually shows up as
-    // an assignee chip on the card, not just the legacy assigned_to mirror.
-    await supabase
-      .from("task_assignee")
-      .upsert({ task_id: task.task_id, user_id: bestEmployeeId }, { onConflict: "task_id,user_id", ignoreDuplicates: true });
-
-    await recordAssignment(supabase, {
-      taskId: task.task_id,
-      userId: bestEmployeeId,
-      assignedBy: "Optimus AI",
-    });
-
-    assignedCount += 1;
-  }
-
-  return assignedCount;
+  return match.employeeId;
 }
 
 // Detect a title the manager has been recreating on a consistent weekly
@@ -901,28 +740,39 @@ async function generateRecurringOptimusTasks(supabase, { organizationId, userId 
   let nextSortOrder = Number.isFinite(Number(lastTask?.sort_order)) ? Number(lastTask.sort_order) + 1 : 0;
 
   const nowIso = new Date().toISOString();
-  const { error: insertError } = await supabase.from("task").insert(
-    recurringTitles.map((candidate) => ({
-      organization_id: organizationId,
-      group_id: candidate.groupId,
-      title: candidate.title,
-      description: "Detected from your recurring task-creation pattern.",
-      owner_id: userId,
-      assigned_to: null,
-      status: "Open",
-      priority: "Medium",
-      start_datetime: candidate.startDatetime,
-      end_datetime: candidate.endDatetime,
-      source: "optimus_ai",
-      ai_state: "active",
-      reasons: candidate.reasons,
-      sort_order: nextSortOrder++,
-      created_at: nowIso,
-      updated_at: nowIso,
-    })),
-  );
+  const { data: createdTasks, error: insertError } = await supabase
+    .from("task")
+    .insert(
+      recurringTitles.map((candidate) => ({
+        organization_id: organizationId,
+        group_id: candidate.groupId,
+        title: candidate.title,
+        description: "Detected from your recurring task-creation pattern.",
+        owner_id: userId,
+        assigned_to: null,
+        status: "Open",
+        priority: "Medium",
+        start_datetime: candidate.startDatetime,
+        end_datetime: candidate.endDatetime,
+        source: "optimus_ai",
+        ai_state: "active",
+        reasons: candidate.reasons,
+        sort_order: nextSortOrder++,
+        created_at: nowIso,
+        updated_at: nowIso,
+      })),
+    )
+    .select("task_id");
 
-  return insertError ? 0 : recurringTitles.length;
+  if (insertError) {
+    return 0;
+  }
+
+  for (const createdTask of createdTasks ?? []) {
+    await autoAssignAiTask(supabase, { organizationId, taskId: createdTask.task_id });
+  }
+
+  return recurringTitles.length;
 }
 
 // Smart Task Creation's on-demand refresh: re-checks recurring patterns for
@@ -1010,6 +860,7 @@ async function refreshSmartTasks(supabase, { organizationId, userId }) {
     if (skillIds?.length) {
       await syncTaskSkills(supabase, createdTasks[index].task_id, skillIds);
     }
+    await autoAssignAiTask(supabase, { organizationId, taskId: createdTasks[index].task_id });
   }
 
   return { recurringCreated, historyCreated: candidates.length };
@@ -1242,7 +1093,13 @@ export async function POST(request) {
         taskId: createdTask.task_id,
         userId: assignedTo,
         assignedBy: actor,
+        assignmentMethod: "task_creation",
       });
+    } else if (cleanString(source) === "optimus_ai") {
+      // Recurring/agent-proposed tasks never arrive with an assignee —
+      // Optimus finds and assigns one itself, right here, so it never sits
+      // waiting on a human to trigger assignment separately.
+      await autoAssignAiTask(supabase, { organizationId, taskId: createdTask.task_id });
     }
 
     if (cleanString(source) === "optimus_ai") {
@@ -1388,25 +1245,10 @@ export async function PATCH(request) {
       return NextResponse.json({ success: true });
     }
 
-    if (action === "auto-allocate-tasks") {
-      if (!body.enabled) {
-        return NextResponse.json({ success: true, assigned: 0 });
-      }
-
-      const organizationId = await getManagerOrganizationId(supabase, user);
-      if (!organizationId) {
-        return NextResponse.json({ error: "Organization ID is required." }, { status: 400 });
-      }
-
-      const assigned = await autoAllocateOptimusTasks(supabase, { organizationId });
-
-      return NextResponse.json({ success: true, assigned });
-    }
-
     // Multi-assignee actions: task_assignee holds the full current set of
     // people on a task. assigned_to (single column) is kept as a best-effort
-    // "an assignee" mirror so existing allocation-history/auto-allocate logic
-    // — which only understands a single assignee — keeps working sensibly.
+    // "an assignee" mirror so existing allocation-history logic — which only
+    // understands a single assignee — keeps working sensibly.
     if (action === "assign-employee") {
       if (!taskId || !userId) {
         return NextResponse.json({ error: "Task ID and user ID are required." }, { status: 400 });
@@ -1436,7 +1278,7 @@ export async function PATCH(request) {
         }
 
         const actor = assignedBy || (await getActorName(supabase, user));
-        await recordAssignment(supabase, { taskId, userId, assignedBy: actor });
+        await recordAssignment(supabase, { taskId, userId, assignedBy: actor, assignmentMethod: "manual_modal" });
       }
 
       const { data: existingTask } = await supabase
@@ -1501,8 +1343,12 @@ export async function PATCH(request) {
       return NextResponse.json({ success: true });
     }
 
-    // On-demand AI pick for one task — same three signals as auto-allocate,
-    // but scoped to this task and never suggesting someone already on it.
+    // "Assign with AI" inside the Employee Assignment modal — a manager
+    // asking Optimus to pick for an existing task. Same matcher as the
+    // automatic at-creation path, so it counts as an AI assignment for the
+    // AI-vs-Manual ratio, but tagged "ai_assisted" (not "ai_auto") so it
+    // doesn't pollute Allocation Time with however long the manager took to
+    // click the button.
     if (action === "ai-assign-task") {
       if (!taskId) {
         return NextResponse.json({ error: "Task ID is required." }, { status: 400 });
@@ -1517,7 +1363,7 @@ export async function PATCH(request) {
 
       if (!match) {
         return NextResponse.json(
-          { error: "No AI match found — no employee shares a skill, history, or department signal with this task." },
+          { error: "No AI match found — no available employee shares a skill, history, or department signal with this task." },
           { status: 404 },
         );
       }
@@ -1555,7 +1401,12 @@ export async function PATCH(request) {
         return NextResponse.json({ error: updateError.message }, { status: 400 });
       }
 
-      await recordAssignment(supabase, { taskId, userId: match.employeeId, assignedBy: "Optimus AI" });
+      await recordAssignment(supabase, {
+        taskId,
+        userId: match.employeeId,
+        assignedBy: "Optimus AI",
+        assignmentMethod: "ai_assisted",
+      });
 
       return NextResponse.json({ success: true, employeeId: match.employeeId });
     }
@@ -1724,7 +1575,7 @@ export async function PATCH(request) {
 
     if (assignedTo && assignedTo !== existingTask?.assigned_to) {
       const actor = assignedBy || (await getActorName(supabase, user));
-      await recordAssignment(supabase, { taskId, userId: assignedTo, assignedBy: actor });
+      await recordAssignment(supabase, { taskId, userId: assignedTo, assignedBy: actor, assignmentMethod: "manual_modal" });
     }
 
     if (existingTask?.status && taskUpdates.status && existingTask.status !== taskUpdates.status) {
