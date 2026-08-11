@@ -1367,6 +1367,27 @@ export async function PATCH(request) {
       return NextResponse.json({ success: true, approvedBy: actor, approvedAt });
     }
 
+    // Soft-dismiss rather than delete, so a rejected AI suggestion still
+    // shows up in acceptance-rate reporting instead of vanishing without a
+    // trace. The board's GET already filters ai_state "dismissed" out of the
+    // visible list, so this is a no-op from the manager's point of view.
+    if (action === "dismiss-ai-task") {
+      if (!taskId) {
+        return NextResponse.json({ error: "Task ID is required." }, { status: 400 });
+      }
+
+      const { error: dismissError } = await supabase
+        .from("task")
+        .update({ ai_state: "dismissed", updated_at: new Date().toISOString() })
+        .eq("task_id", taskId);
+
+      if (dismissError) {
+        return NextResponse.json({ error: dismissError.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "auto-allocate-tasks") {
       if (!body.enabled) {
         return NextResponse.json({ success: true, assigned: 0 });

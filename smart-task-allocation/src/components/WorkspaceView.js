@@ -1059,8 +1059,10 @@ export default function WorkspaceView() {
     }
   }
 
-  // Rejecting deletes the AI-generated suggestion outright — it was never a
-  // committed task, so there's nothing to keep around.
+  // Rejecting soft-dismisses the AI-generated suggestion (ai_state
+  // "dismissed") rather than deleting it, so allocation-efficiency reporting
+  // can still count it — the board's GET already excludes dismissed tasks,
+  // so it disappears from view exactly like a delete would.
   async function rejectAiTask(task) {
     if (!task?.task_id) return;
 
@@ -1069,9 +1071,10 @@ export default function WorkspaceView() {
     setError("");
 
     try {
-      const response = await fetch(`/api/tasks?taskId=${task.task_id}`, {
-        method: "DELETE",
-        headers: await authHeaders(),
+      const response = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ action: "dismiss-ai-task", taskId: task.task_id }),
       });
       const result = await response.json();
 
