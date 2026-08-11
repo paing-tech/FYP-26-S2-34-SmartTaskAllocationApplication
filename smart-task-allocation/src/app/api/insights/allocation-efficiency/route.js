@@ -52,6 +52,41 @@ function summarizeTaskSource(tasks) {
   return { aiCreated, manualCreated: tasks.length - aiCreated };
 }
 
+// Rolling window (week or month) counts for Allocation, Creation, and AI
+// Suggestion acceptance — a snapshot of recent behavior rather than an
+// all-time total, so it reflects current reliance on AI (the "Allocation
+// Preference" card) instead of getting diluted by however long the org has
+// been using the tool.
+function summarizeRangeCounts(tasks, assignmentsByTaskId, cutoffMs) {
+  const counts = {
+    allocation: { ai: 0, manual: 0 },
+    creation: { ai: 0, manual: 0 },
+    acceptance: { accepted: 0, total: 0 },
+  };
+
+  for (const task of tasks) {
+    if (new Date(task.created_at).getTime() >= cutoffMs) {
+      if (task.source === "optimus_ai") {
+        counts.creation.ai += 1;
+        counts.acceptance.total += 1;
+        if (String(task.ai_state || "").toLowerCase() === "accepted") {
+          counts.acceptance.accepted += 1;
+        }
+      } else {
+        counts.creation.manual += 1;
+      }
+    }
+
+    const firstAssignment = (assignmentsByTaskId.get(task.task_id) ?? [])[0];
+    if (firstAssignment && new Date(firstAssignment.assigned_at).getTime() >= cutoffMs) {
+      if (firstAssignment.assigned_by === "Optimus AI") counts.allocation.ai += 1;
+      else counts.allocation.manual += 1;
+    }
+  }
+
+  return counts;
+}
+
 // The chat-agent "Auto-approve" path stamps reasons.approvedBy with the
 // agent's own display name at creation time — that's the one reliable way
 // to tell "approved itself" apart from "a manager reviewed and approved it
@@ -99,6 +134,9 @@ export async function GET(request) {
     }
 
     const organizationId = await getRequesterOrganizationId(supabase, user);
+    const rangeWindow = new URL(request.url).searchParams.get("range") === "month" ? "month" : "week";
+    const rangeDays = rangeWindow === "month" ? 30 : 7;
+    const rangeCutoffMs = Date.now() - rangeDays * 24 * 60 * 60 * 1000;
 
     if (!organizationId) {
       return NextResponse.json({
@@ -106,6 +144,7 @@ export async function GET(request) {
         manual: summarizeBucket([], "manual_modal"),
         aiSuggestions: summarizeAiSuggestions([]),
         taskSource: summarizeTaskSource([]),
+        range: { window: rangeWindow, ...summarizeRangeCounts([], new Map(), rangeCutoffMs) },
       });
     }
 
@@ -213,6 +252,10 @@ export async function GET(request) {
       manual: summarizeBucket(manualTasks, "manual_modal"),
       aiSuggestions: summarizeAiSuggestions(tasks ?? []),
       taskSource: summarizeTaskSource(tasks ?? []),
+      range: {
+        window: rangeWindow,
+        ...summarizeRangeCounts(tasks ?? [], assignmentsByTaskId, rangeCutoffMs),
+      },
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

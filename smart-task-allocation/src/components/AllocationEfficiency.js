@@ -52,50 +52,24 @@ function getHeadline(ai, manual) {
   return null;
 }
 
+// Only percentage metrics now — Allocation Time moved to its own horizontal
+// benchmark-style section (see AllocationTimeBenchmark) since "shorter bar =
+// faster" and "taller bar = higher percentage" can't both live in the same
+// vertical chart without one of them reading as backwards.
 const CHART_METRICS = [
-  { key: "averageMinutesToAssign", label: "Allocation Time", type: "time" },
-  { key: "firstTimeAccuracy", label: "Allocation Accuracy", type: "percent" },
-  { key: "skillMatchRate", label: "Skill Match Rate", type: "percent" },
+  { key: "firstTimeAccuracy", label: "Allocation Accuracy" },
+  { key: "skillMatchRate", label: "Skill Match Rate" },
 ];
 
-// Percentage metrics chart at their real value. The time metric can't share
-// that 0-100% scale honestly (it's a duration, not a ratio) — instead the
-// faster side gets full height and the other is scaled relative to it, so
-// the bars still read as "who's ahead," while the actual duration is shown
-// as the label above each bar rather than a made-up percentage.
 function getBarHeights(metric, ai, manual) {
   const aiValue = ai[metric.key];
   const manualValue = manual[metric.key];
 
-  if (metric.type === "percent") {
-    return {
-      aiHeight: aiValue == null ? 0 : Math.min(100, Math.max(2, Math.round(aiValue * 100))),
-      manualHeight: manualValue == null ? 0 : Math.min(100, Math.max(2, Math.round(manualValue * 100))),
-      aiLabel: formatPercent(aiValue),
-      manualLabel: formatPercent(manualValue),
-    };
-  }
-
-  if (aiValue == null || manualValue == null) {
-    return {
-      aiHeight: aiValue != null ? 100 : 0,
-      manualHeight: manualValue != null ? 100 : 0,
-      aiLabel: formatMinutes(aiValue),
-      manualLabel: formatMinutes(manualValue),
-    };
-  }
-
-  const fastest = Math.min(aiValue, manualValue);
-  const heightFor = (value) => {
-    if (fastest <= 0) return value <= 0 ? 100 : 4;
-    return Math.min(100, Math.max(4, Math.round((fastest / value) * 100)));
-  };
-
   return {
-    aiHeight: heightFor(aiValue),
-    manualHeight: heightFor(manualValue),
-    aiLabel: formatMinutes(aiValue),
-    manualLabel: formatMinutes(manualValue),
+    aiHeight: aiValue == null ? 0 : Math.min(100, Math.max(2, Math.round(aiValue * 100))),
+    manualHeight: manualValue == null ? 0 : Math.min(100, Math.max(2, Math.round(manualValue * 100))),
+    aiLabel: formatPercent(aiValue),
+    manualLabel: formatPercent(manualValue),
   };
 }
 
@@ -106,6 +80,49 @@ function ChartBar({ heightPct, label, colorClass }) {
         <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-black text-[#0D1E4C]">
           {label}
         </span>
+      </div>
+    </div>
+  );
+}
+
+// Horizontal "lower is better" benchmark bar — length is directly
+// proportional to the raw minutes (no inversion), so a shorter bar always
+// means a smaller number, the way load-time/latency benchmarks are usually
+// shown. This is deliberately separate from the percentage bars above: those
+// read "taller = better," and forcing Allocation Time into that same system
+// meant inverting its height so the *faster* side looked *taller* — visually
+// backwards next to its own (smaller) number.
+function AllocationTimeBar({ label, minutes, maxMinutes, colorClass }) {
+  const widthPct = minutes == null || maxMinutes <= 0 ? 0 : Math.max(2, Math.round((minutes / maxMinutes) * 100));
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-14 shrink-0 text-xs font-bold text-[#475569]">{label}</span>
+      <div className="h-5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/40">
+        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${widthPct}%` }} />
+      </div>
+      <span className="w-14 shrink-0 text-right text-xs font-black text-[#0D1E4C]">{formatMinutes(minutes)}</span>
+    </div>
+  );
+}
+
+function AllocationTimeBenchmark({ ai, manual }) {
+  const aiMinutes = ai.averageMinutesToAssign;
+  const manualMinutes = manual.averageMinutesToAssign;
+
+  if (aiMinutes == null && manualMinutes == null) return null;
+
+  const maxMinutes = Math.max(aiMinutes ?? 0, manualMinutes ?? 0, 1);
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-center gap-1.5">
+        <p className="text-xs font-bold text-[#475569]">Allocation Time</p>
+        <p className="text-[10px] font-semibold text-[#94a3b8]">(lower is better)</p>
+      </div>
+      <div className="mt-2 space-y-2">
+        <AllocationTimeBar label="Smart" minutes={aiMinutes} maxMinutes={maxMinutes} colorClass="bg-[#2563EB]" />
+        <AllocationTimeBar label="Manual" minutes={manualMinutes} maxMinutes={maxMinutes} colorClass="bg-[#F59E0B]" />
       </div>
     </div>
   );
@@ -124,7 +141,7 @@ function BarChart({ ai, manual }) {
         {groups.map(({ metric, heights }) => (
           <div key={metric.key} className="flex h-full items-end gap-2">
             <ChartBar heightPct={heights.aiHeight} label={heights.aiLabel} colorClass="bg-[#2563EB]" />
-            <ChartBar heightPct={heights.manualHeight} label={heights.manualLabel} colorClass="bg-violet-300" />
+            <ChartBar heightPct={heights.manualHeight} label={heights.manualLabel} colorClass="bg-[#F59E0B]" />
           </div>
         ))}
       </div>
@@ -140,28 +157,9 @@ function BarChart({ ai, manual }) {
           <span className="h-2.5 w-2.5 rounded-full bg-[#2563EB]" /> Smart Task Allocation
         </span>
         <span className="flex items-center gap-1.5 text-xs font-semibold text-[#475569]">
-          <span className="h-2.5 w-2.5 rounded-full bg-violet-300" /> Manual Task Allocation
+          <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B]" /> Manual Task Allocation
         </span>
       </div>
-    </div>
-  );
-}
-
-// Raw AI-vs-manual counts, separate from the ratio metrics above — kept
-// simple (just numbers, no chart) so this reads as ground-truth volume
-// rather than another comparison, and can feed a daily "reliance on AI"
-// trend later without redoing the underlying counts.
-function RelianceCounts({ ai, manual, taskSource }) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] font-semibold text-[#94a3b8]">
-      <span>
-        Assigned: <span className="font-black text-[#0D1E4C]">{ai.taskCount}</span> AI ·{" "}
-        <span className="font-black text-[#0D1E4C]">{manual.taskCount}</span> Manual
-      </span>
-      <span>
-        Created: <span className="font-black text-[#0D1E4C]">{taskSource.aiCreated}</span> AI ·{" "}
-        <span className="font-black text-[#0D1E4C]">{taskSource.manualCreated}</span> Manual
-      </span>
     </div>
   );
 }
@@ -237,12 +235,14 @@ export default function AllocationEfficiency() {
           <div className="space-y-3">
             {headline ? (
               <div className="flex flex-col items-center gap-1 text-center">
-                <span className="rounded-full bg-gradient-to-r from-[#2563EB] to-violet-400 px-4 py-1.5 text-sm font-black text-white">
+                <span className="rounded-full bg-gradient-to-r from-[#2563EB] to-[#F59E0B] px-4 py-1.5 text-sm font-black text-white">
                   Smart Task Allocation is {headline}
                 </span>
                 <p className="text-xs font-medium text-[#64748B]">Compared with Manual Task Allocation</p>
               </div>
             ) : null}
+
+            <AllocationTimeBenchmark ai={data.ai} manual={data.manual} />
 
             <BarChart ai={data.ai} manual={data.manual} />
 
@@ -253,8 +253,6 @@ export default function AllocationEfficiency() {
                 over 1h.
               </p>
             ) : null}
-
-            <RelianceCounts ai={data.ai} manual={data.manual} taskSource={data.taskSource} />
 
             <AiSuggestionSentence aiSuggestions={data.aiSuggestions} />
           </div>

@@ -1,6 +1,7 @@
 import SideMenuLayout from "@/components/SideMenuLayout";
 import GlassSurface from "@/components/ui/glass-surface";
 import AllocationEfficiency from "@/components/AllocationEfficiency";
+import AllocationVolume from "@/components/AllocationVolume";
 import ProductivityTrends from "@/components/ProductivityTrends";
 
 export default function UserAdminInsightsPage() {
@@ -8,8 +9,13 @@ export default function UserAdminInsightsPage() {
     <SideMenuLayout actor="useradmin">
       <GlassSurface className="h-full overflow-hidden p-6">
         <div className="grid h-full grid-cols-2 gap-4">
-          <div className="h-1/2">
-            <AllocationEfficiency />
+          <div className="flex h-full flex-col gap-4">
+            <div className="h-1/2">
+              <AllocationEfficiency />
+            </div>
+            <div className="h-1/4">
+              <AllocationVolume />
+            </div>
           </div>
           <div className="h-[30%] min-h-[300px]">
             <ProductivityTrends />
