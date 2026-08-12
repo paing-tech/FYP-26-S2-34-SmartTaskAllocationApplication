@@ -30,27 +30,51 @@ function addUtcDays(date, days) {
   return next;
 }
 
-function buildBuckets(range) {
+// periodOffset 0 = the current week/month, -1 = the one immediately before
+// it — used to build a comparison baseline for the "% from last week/month"
+// headline stat without a second round-trip to the DB (both periods are
+// checked against the same already-fetched completion data).
+function buildBuckets(range, periodOffset = 0) {
   const { year, month, day } = currentDateParts();
 
   if (range === "month") {
-    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    return Array.from({ length: 5 }, (_, index) => ({
-      label: `Week ${index + 1}`,
-      keys: Array.from(
-        { length: Math.max(0, Math.min(7, daysInMonth - index * 7)) },
-        (__, offset) => dateKey(new Date(Date.UTC(year, month - 1, index * 7 + offset + 1, 12))),
-      ),
-    }));
+    const shifted = new Date(Date.UTC(year, month - 1 + periodOffset, 1, 12));
+    const shiftedYear = shifted.getUTCFullYear();
+    const shiftedMonth = shifted.getUTCMonth() + 1;
+    const daysInMonth = new Date(Date.UTC(shiftedYear, shiftedMonth, 0)).getUTCDate();
+
+    return Array.from({ length: 5 }, (_, index) => {
+      const startDay = index * 7 + 1;
+      const numDays = Math.max(0, Math.min(7, daysInMonth - index * 7));
+      const endDay = startDay + numDays - 1;
+      return {
+        // "1–7" instead of "Week 1" — the actual calendar days a bucket
+        // covers, not a generic ordinal that needs the month figured out
+        // separately.
+        label: numDays > 0 ? `${startDay}–${endDay}` : null,
+        keys: Array.from({ length: numDays }, (__, offset) =>
+          dateKey(new Date(Date.UTC(shiftedYear, shiftedMonth - 1, startDay + offset, 12))),
+        ),
+      };
+    }).filter((bucket) => bucket.label);
   }
 
   const today = new Date(Date.UTC(year, month - 1, day, 12));
-  const mondayOffset = (today.getUTCDay() + 6) % 7;
-  const monday = addUtcDays(today, -mondayOffset);
+  const shiftedToday = addUtcDays(today, periodOffset * 7);
+  const mondayOffset = (shiftedToday.getUTCDay() + 6) % 7;
+  const monday = addUtcDays(shiftedToday, -mondayOffset);
   return ["Mon", "Tue", "Wed", "Thu", "Fri"].map((label, index) => ({
     label,
     keys: [dateKey(addUtcDays(monday, index))],
   }));
+}
+
+function countCompletedForKeys(firstCompletionByTask, keySet) {
+  let count = 0;
+  for (const [, completedAt] of firstCompletionByTask) {
+    if (keySet.has(dateKey(completedAt))) count += 1;
+  }
+  return count;
 }
 
 export async function GET(request) {
@@ -62,12 +86,14 @@ export async function GET(request) {
 
     const organizationId = await getRequesterOrganizationId(supabase, user);
     const range = new URL(request.url).searchParams.get("range") === "month" ? "month" : "week";
-    const buckets = buildBuckets(range);
+    const buckets = buildBuckets(range, 0);
+    const previousBuckets = buildBuckets(range, -1);
 
     if (!organizationId) {
       return NextResponse.json({
         range,
         points: buckets.map(({ label }) => ({ label, completed: 0, beforeDeadline: 0, overdue: 0 })),
+        summary: { totalCompleted: 0, percentChange: 0 },
       });
     }
 
@@ -139,7 +165,16 @@ export async function GET(request) {
       return { label, completed, beforeDeadline, overdue };
     });
 
-    return NextResponse.json({ range, points });
+    const totalCompleted = points.reduce((sum, point) => sum + point.completed, 0);
+    const previousKeySet = new Set(previousBuckets.flatMap((bucket) => bucket.keys));
+    const previousCompleted = countCompletedForKeys(firstCompletionByTask, previousKeySet);
+    const percentChange = previousCompleted > 0
+      ? Math.round(((totalCompleted - previousCompleted) / previousCompleted) * 100)
+      : totalCompleted > 0
+        ? 100
+        : 0;
+
+    return NextResponse.json({ range, points, summary: { totalCompleted, percentChange } });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

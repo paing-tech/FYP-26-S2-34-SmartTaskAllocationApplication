@@ -1,6 +1,7 @@
 import SideMenuLayout from "@/components/SideMenuLayout";
 import LeavePolicySettings from "@/components/LeavePolicySettings";
 import WorkHourPolicySettings from "@/components/WorkHourPolicySettings";
+import WorkloadPolicySettings from "@/components/WorkloadPolicySettings";
 import GlassSurface from "@/components/ui/glass-surface";
 
 export default function UserAdminSettingsPage() {
@@ -13,6 +14,10 @@ export default function UserAdminSettingsPage() {
 
         <GlassSurface className="shrink-0 p-5">
           <WorkHourPolicySettings />
+        </GlassSurface>
+
+        <GlassSurface className="shrink-0 p-5">
+          <WorkloadPolicySettings />
         </GlassSurface>
       </div>
     </SideMenuLayout>

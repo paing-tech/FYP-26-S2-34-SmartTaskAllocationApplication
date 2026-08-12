@@ -220,6 +220,8 @@ export async function GET(request) {
     const manualTasks = [];
 
     for (const task of tasks ?? []) {
+      if (new Date(task.created_at).getTime() < rangeCutoffMs) continue; // outside the selected week/month window
+
       const assignments = assignmentsByTaskId.get(task.task_id) ?? [];
       if (!assignments.length) continue; // unassigned tasks don't belong to either bucket
 
@@ -247,10 +249,12 @@ export async function GET(request) {
       }
     }
 
+    const rangeTasks = (tasks ?? []).filter((task) => new Date(task.created_at).getTime() >= rangeCutoffMs);
+
     return NextResponse.json({
       ai: summarizeBucket(aiTasks, "ai_auto"),
       manual: summarizeBucket(manualTasks, "manual_modal"),
-      aiSuggestions: summarizeAiSuggestions(tasks ?? []),
+      aiSuggestions: summarizeAiSuggestions(rangeTasks),
       taskSource: summarizeTaskSource(tasks ?? []),
       range: {
         window: rangeWindow,

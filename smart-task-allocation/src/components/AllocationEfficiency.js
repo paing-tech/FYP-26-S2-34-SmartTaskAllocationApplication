@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { downloadCsv } from "@/lib/csvExport";
+import InsightsExportButton from "@/components/InsightsExportButton";
 
 async function authHeaders() {
   const supabase = getSupabaseBrowserClient();
@@ -11,7 +13,7 @@ async function authHeaders() {
   };
 }
 
-// "2d 4h" / "3h 20m" / "45m" — compact enough to sit above a bar.
+// "2d 4h" / "3h 20m" / "45 mins" — compact enough to sit above a bar.
 function formatMinutes(totalMinutes) {
   if (totalMinutes == null) return "—";
   const minutes = Math.round(totalMinutes);
@@ -21,7 +23,7 @@ function formatMinutes(totalMinutes) {
 
   if (days) return `${days}d ${hours}h`;
   if (hours) return `${hours}h ${mins}m`;
-  return `${mins}m`;
+  return `${mins} min${mins === 1 ? "" : "s"}`;
 }
 
 function formatPercent(ratio) {
@@ -52,173 +54,158 @@ function getHeadline(ai, manual) {
   return null;
 }
 
-// Only percentage metrics now — Allocation Time moved to its own horizontal
-// benchmark-style section (see AllocationTimeBenchmark) since "shorter bar =
-// faster" and "taller bar = higher percentage" can't both live in the same
-// vertical chart without one of them reading as backwards.
-const CHART_METRICS = [
-  { key: "firstTimeAccuracy", label: "Allocation Accuracy" },
-  { key: "skillMatchRate", label: "Skill Match Rate" },
-];
-
-function getBarHeights(metric, ai, manual) {
-  const aiValue = ai[metric.key];
-  const manualValue = manual[metric.key];
-
-  return {
-    aiHeight: aiValue == null ? 0 : Math.min(100, Math.max(2, Math.round(aiValue * 100))),
-    manualHeight: manualValue == null ? 0 : Math.min(100, Math.max(2, Math.round(manualValue * 100))),
-    aiLabel: formatPercent(aiValue),
-    manualLabel: formatPercent(manualValue),
-  };
-}
-
-function ChartBar({ heightPct, label, colorClass }) {
+// Shared horizontal bar row — length is directly proportional to the value
+// (never inverted), so a longer bar always means a bigger number. Used by
+// every metric on this card (Allocation Time, Allocation Accuracy, Skill
+// Match Rate) so the whole card reads as one consistent visual system
+// instead of mixing a vertical "taller = better" chart with a horizontal
+// one. No per-row label — color alone (blue = Smart, amber = Manual) is
+// already the convention everywhere else on this card, so a repeated label
+// on every row would just be a third layer of the same information.
+function MetricBar({ widthPct, displayValue, colorClass }) {
   return (
-    <div className="flex h-full w-18 items-end justify-center">
-      <div className={`relative w-full rounded-t-lg ${colorClass}`} style={{ height: `${heightPct}%` }}>
-        <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-black text-[#0D1E4C]">
-          {label}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// Horizontal "lower is better" benchmark bar — length is directly
-// proportional to the raw minutes (no inversion), so a shorter bar always
-// means a smaller number, the way load-time/latency benchmarks are usually
-// shown. This is deliberately separate from the percentage bars above: those
-// read "taller = better," and forcing Allocation Time into that same system
-// meant inverting its height so the *faster* side looked *taller* — visually
-// backwards next to its own (smaller) number.
-function AllocationTimeBar({ label, minutes, maxMinutes, colorClass }) {
-  const widthPct = minutes == null || maxMinutes <= 0 ? 0 : Math.max(2, Math.round((minutes / maxMinutes) * 100));
-
-  return (
-    <div className="flex items-center gap-3">
-      <span className="w-14 shrink-0 text-xs font-bold text-[#475569]">{label}</span>
-      <div className="h-5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/40">
+    <div className="mx-auto flex w-[90%] items-center justify-start gap-2">
+      <div className="h-5 w-[90%] overflow-hidden rounded-full border border-slate-300 bg-white/40">
         <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${widthPct}%` }} />
       </div>
-      <span className="w-14 shrink-0 text-right text-xs font-black text-[#0D1E4C]">{formatMinutes(minutes)}</span>
+      <span className="shrink-0 text-left text-xs font-black text-[#0D1E4C]">{displayValue}</span>
     </div>
   );
 }
 
-function AllocationTimeBenchmark({ ai, manual }) {
+function MetricBlock({ title, subtitle, children }) {
+  return (
+    <div>
+      <div className="flex flex-col items-center justify-center">
+        <p className="text-sm font-bold text-[#475569]">{title}</p>
+        {subtitle ? <p className="text-[10px] font-semibold text-[#94a3b8]">{subtitle}</p> : null}
+      </div>
+      <div className="mt-2 space-y-2">{children}</div>
+    </div>
+  );
+}
+
+// Allocation Time is a duration, not a ratio, so it can't share a 0-100%
+// width scale honestly — instead the faster side gets full bar width and
+// the other is scaled relative to it, while the real duration (not a made-up
+// percentage) is still shown as the value on the right.
+function AllocationTimeBlock({ ai, manual }) {
   const aiMinutes = ai.averageMinutesToAssign;
   const manualMinutes = manual.averageMinutesToAssign;
 
   if (aiMinutes == null && manualMinutes == null) return null;
 
   const maxMinutes = Math.max(aiMinutes ?? 0, manualMinutes ?? 0, 1);
+  const widthFor = (minutes) =>
+    minutes == null || maxMinutes <= 0 ? 0 : Math.max(2, Math.round((minutes / maxMinutes) * 100));
 
   return (
-    <div>
-      <div className="flex items-baseline justify-center gap-1.5">
-        <p className="text-xs font-bold text-[#475569]">Allocation Time</p>
-        <p className="text-[10px] font-semibold text-[#94a3b8]">(lower is better)</p>
-      </div>
-      <div className="mt-2 space-y-2">
-        <AllocationTimeBar label="Smart" minutes={aiMinutes} maxMinutes={maxMinutes} colorClass="bg-[#2563EB]" />
-        <AllocationTimeBar label="Manual" minutes={manualMinutes} maxMinutes={maxMinutes} colorClass="bg-[#F59E0B]" />
-      </div>
-    </div>
+    <MetricBlock title="Allocation Time" subtitle="(lower is better)">
+      <MetricBar
+        widthPct={widthFor(aiMinutes)}
+        displayValue={formatMinutes(aiMinutes)}
+        colorClass="bg-[#2563EB]"
+      />
+      <MetricBar
+        widthPct={widthFor(manualMinutes)}
+        displayValue={formatMinutes(manualMinutes)}
+        colorClass="bg-[#F59E0B]"
+      />
+    </MetricBlock>
   );
 }
 
-// Each group is 2 bars (w-18) + the gap between them (gap-2) = 152px = w-38,
-// and the label row below reuses that exact width and the same gap-12
-// between groups, so each category label centers under its own bar pair
-// instead of drifting as the rows accumulate different gaps.
-function BarChart({ ai, manual }) {
-  const groups = CHART_METRICS.map((metric) => ({ metric, heights: getBarHeights(metric, ai, manual) }));
+// Percentage metrics chart at their real value — bar width is just the
+// percentage itself, no relative scaling needed.
+function PercentMetricBlock({ title, metricKey, ai, manual }) {
+  const aiValue = ai[metricKey];
+  const manualValue = manual[metricKey];
+  const widthFor = (value) => (value == null ? 0 : Math.min(100, Math.max(2, Math.round(value * 100))));
 
   return (
-    <div className="pt-5">
-      <div className="flex h-40 items-end justify-center gap-12">
-        {groups.map(({ metric, heights }) => (
-          <div key={metric.key} className="flex h-full items-end gap-2">
-            <ChartBar heightPct={heights.aiHeight} label={heights.aiLabel} colorClass="bg-[#2563EB]" />
-            <ChartBar heightPct={heights.manualHeight} label={heights.manualLabel} colorClass="bg-[#F59E0B]" />
-          </div>
-        ))}
-      </div>
-      <div className="flex justify-center gap-12 pt-1.5">
-        {groups.map(({ metric }) => (
-          <p key={metric.key} className="w-38 text-center text-xs font-bold text-[#475569]">
-            {metric.label}
-          </p>
-        ))}
-      </div>
-      <div className="mt-3 flex items-center justify-center gap-5">
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-[#475569]">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#2563EB]" /> Smart Task Allocation
-        </span>
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-[#475569]">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B]" /> Manual Task Allocation
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function AiSuggestionSentence({ aiSuggestions }) {
-  if (!aiSuggestions?.total) {
-    return (
-      <p className="text-left text-xs font-semibold text-[#94a3b8]">
-        No tasks created by Optimus AI or the chat agent yet.
-      </p>
-    );
-  }
-
-  // Combined share of AI/agent-created tasks a human either approved or the
-  // agent auto-approved — i.e. everything except the dismissed ones.
-  const acceptanceRate = (aiSuggestions.managerApprovedRate ?? 0) + (aiSuggestions.autoApprovedRate ?? 0);
-
-  return (
-    <p className="text-center text-xs font-bold text-slate-500">
-      AI Suggestion Acceptance Rate: <span className="text-[#2563EB]">{formatPercent(acceptanceRate)}</span>
-    </p>
+    <MetricBlock title={title}>
+      <MetricBar
+        widthPct={widthFor(aiValue)}
+        displayValue={formatPercent(aiValue)}
+        colorClass="bg-[#2563EB]"
+      />
+      <MetricBar
+        widthPct={widthFor(manualValue)}
+        displayValue={formatPercent(manualValue)}
+        colorClass="bg-[#F59E0B]"
+      />
+    </MetricBlock>
   );
 }
 
 export default function AllocationEfficiency() {
-  const [data, setData] = useState(null);
+  const [range, setRange] = useState("week");
+  const [dataByRange, setDataByRange] = useState({});
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const timeout = setTimeout(async () => {
-      setError("");
-      setIsLoading(true);
+    if (dataByRange[range]) return;
+    let cancelled = false;
 
+    (async () => {
       try {
-        const response = await fetch("/api/insights/allocation-efficiency", { headers: await authHeaders() });
+        setError("");
+        const response = await fetch(`/api/insights/allocation-efficiency?range=${range}`, {
+          headers: await authHeaders(),
+        });
         const result = await response.json();
 
         if (!response.ok) {
           throw new Error(result.error || "Could not load allocation efficiency.");
         }
 
-        setData(result);
+        if (!cancelled) setDataByRange((current) => ({ ...current, [range]: result }));
       } catch (loadError) {
-        setError(loadError.message);
-      } finally {
-        setIsLoading(false);
+        if (!cancelled) setError(loadError.message);
       }
-    }, 0);
+    })();
 
-    return () => clearTimeout(timeout);
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [dataByRange, range]);
 
+  const data = dataByRange[range];
+  const isLoading = !error && !data;
   const hasData = data && (data.ai.taskCount || data.manual.taskCount);
   const headline = data ? getHeadline(data.ai, data.manual) : null;
 
+  function handleExport() {
+    if (!hasData) return;
+    downloadCsv(`allocation-efficiency-${range}-${new Date().toISOString().slice(0, 10)}.csv`, ["Metric", "Smart", "Manual"], [
+      ["Allocation Time", formatMinutes(data.ai.averageMinutesToAssign), formatMinutes(data.manual.averageMinutesToAssign)],
+      ["Allocation Accuracy", formatPercent(data.ai.firstTimeAccuracy), formatPercent(data.manual.firstTimeAccuracy)],
+      ["Skill Match Rate", formatPercent(data.ai.skillMatchRate), formatPercent(data.manual.skillMatchRate)],
+    ]);
+  }
+
   return (
     <section className="flex h-full min-h-0 flex-col rounded-3xl border border-white/60 bg-white/20 backdrop-blur-sm">
-      <h2 className="shrink-0 px-5 py-3 text-lg font-black text-[#0D1E4C]">Allocation Efficiency</h2>
+      <div className="flex shrink-0 items-center justify-between gap-4 px-5 py-3">
+        <h2 className="text-lg font-black text-[#0D1E4C]">Allocation Efficiency</h2>
+        <div className="flex items-center gap-2">
+          <InsightsExportButton onClick={handleExport} disabled={!hasData} label="Export allocation efficiency data" />
+          <div className="flex rounded-full border border-white/70 bg-white/40 p-1">
+            {["week", "month"].map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setRange(option)}
+                className={`rounded-full px-4 py-1.5 text-xs font-bold capitalize transition ${
+                  range === option ? "bg-[#0D1E4C] text-white" : "text-[#0D1E4C] hover:bg-white/60"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5">
         {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
@@ -232,7 +219,7 @@ export default function AllocationEfficiency() {
         ) : null}
 
         {!isLoading && !error && hasData ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {headline ? (
               <div className="flex flex-col items-center gap-1 text-center">
                 <span className="rounded-full bg-gradient-to-r from-[#2563EB] to-[#F59E0B] px-4 py-1.5 text-sm font-black text-white">
@@ -242,9 +229,20 @@ export default function AllocationEfficiency() {
               </div>
             ) : null}
 
-            <AllocationTimeBenchmark ai={data.ai} manual={data.manual} />
+            <div className="space-y-4">
+              <AllocationTimeBlock ai={data.ai} manual={data.manual} />
+              <PercentMetricBlock title="Allocation Accuracy" metricKey="firstTimeAccuracy" ai={data.ai} manual={data.manual} />
+              <PercentMetricBlock title="Skill Match Rate" metricKey="skillMatchRate" ai={data.ai} manual={data.manual} />
+            </div>
 
-            <BarChart ai={data.ai} manual={data.manual} />
+            <div className="flex items-center justify-center gap-5 mt-4">
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-[#475569]">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#2563EB]" /> Smart Task Allocation
+              </span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-[#475569]">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B]" /> Manual Task Allocation
+              </span>
+            </div>
 
             {data.ai.excludedOutlierCount + data.manual.excludedOutlierCount > 0 ? (
               <p className="text-center text-[10px] font-medium text-[#94a3b8]">
@@ -253,8 +251,6 @@ export default function AllocationEfficiency() {
                 over 1h.
               </p>
             ) : null}
-
-            <AiSuggestionSentence aiSuggestions={data.aiSuggestions} />
           </div>
         ) : null}
       </div>
