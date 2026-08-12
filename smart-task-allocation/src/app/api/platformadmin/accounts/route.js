@@ -40,6 +40,14 @@ export async function GET(request) {
       })),
     });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // A bare "fetch failed" hides the actual reason (DNS, timeout, TLS,
+    // refused connection, ...) — Node/undici nests it in error.cause, which
+    // the default error.message drops. Surface it so this is diagnosable
+    // from the browser instead of needing terminal access.
+    const causeMessage = error.cause?.message || error.cause?.code;
+    return NextResponse.json(
+      { error: causeMessage ? `${error.message}: ${causeMessage}` : error.message },
+      { status: 500 },
+    );
   }
 }
