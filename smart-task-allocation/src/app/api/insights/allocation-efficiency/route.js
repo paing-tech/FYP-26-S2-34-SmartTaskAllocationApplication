@@ -113,11 +113,16 @@ function summarizeAiSuggestions(tasks) {
     }
   }
 
+  // Whatever's left after the three decided outcomes — a suggestion still
+  // waiting on a review, not yet accepted or dismissed either way.
+  const pending = total - autoApproved - managerApproved - dismissed;
+
   return {
     total,
     managerApproved,
     autoApproved,
     dismissed,
+    pending,
     managerApprovedRate: total ? managerApproved / total : null,
     autoApprovedRate: total ? autoApproved / total : null,
     dismissedRate: total ? dismissed / total : null,

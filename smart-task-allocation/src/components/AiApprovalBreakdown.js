@@ -57,8 +57,9 @@ export default function AiApprovalBreakdown() {
       ["Outcome", "Count", "Percent"],
       [
         ["Auto-approved", data.autoApproved, `${pct(data.autoApproved, data.total)}%`],
-        ["Manager-approved", data.managerApproved, `${pct(data.managerApproved, data.total)}%`],
+        ["Manual-approved", data.managerApproved, `${pct(data.managerApproved, data.total)}%`],
         ["Dismissed", data.dismissed, `${pct(data.dismissed, data.total)}%`],
+        ["Pending", data.pending, `${pct(data.pending, data.total)}%`],
       ],
     );
   }
@@ -86,7 +87,7 @@ export default function AiApprovalBreakdown() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-5 py-4">
+      <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-10">
         {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
         {!error && !data ? <p className="text-sm text-[#52627a]">Loading...</p> : null}
         {!error && data && !hasData ? (
@@ -95,39 +96,43 @@ export default function AiApprovalBreakdown() {
 
         {!error && hasData ? (
           <>
-            <div className="flex h-5 w-full overflow-hidden rounded-full border border-slate-300">
+            <div className="flex h-6 w-full overflow-hidden rounded-full border border-slate-300">
               <div className="h-full bg-[#2563EB]" style={{ width: `${pct(data.autoApproved, data.total)}%` }} />
               <div className="h-full bg-[#F59E0B]" style={{ width: `${pct(data.managerApproved, data.total)}%` }} />
-              <div className="h-full bg-slate-300" style={{ width: `${pct(data.dismissed, data.total)}%` }} />
+              <div className="h-full bg-violet-400" style={{ width: `${pct(data.dismissed, data.total)}%` }} />
+              <div className="h-full bg-slate-400" style={{ width: `${pct(data.pending, data.total)}%` }} />
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-4 gap-2 text-center pt-2">
               <div>
                 <p className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#475569]">
                   <span className="h-2.5 w-2.5 rounded-full bg-[#2563EB]" /> Auto-approved
                 </p>
-                <p className="mt-1 text-xl font-black text-[#0D1E4C]">{data.autoApproved}</p>
-                <p className="text-xs font-semibold text-[#94a3b8]">{pct(data.autoApproved, data.total)}%</p>
+                <p className="text-sm font-black text-[#0D1E4C]">{data.autoApproved}</p>
+                <p className="pl-1 text-xs font-semibold text-[#94a3b8]">{pct(data.autoApproved, data.total)}%</p>
               </div>
               <div>
                 <p className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#475569]">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B]" /> Manager-approved
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B]" /> Manual-approved
                 </p>
-                <p className="mt-1 text-xl font-black text-[#0D1E4C]">{data.managerApproved}</p>
-                <p className="text-xs font-semibold text-[#94a3b8]">{pct(data.managerApproved, data.total)}%</p>
+                <p className="text-sm font-black text-[#0D1E4C]">{data.managerApproved}</p>
+                <p className="pl-1 text-xs font-semibold text-[#94a3b8]">{pct(data.managerApproved, data.total)}%</p>
               </div>
               <div>
                 <p className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#475569]">
-                  <span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> Dismissed
+                  <span className="h-2.5 w-2.5 rounded-full bg-violet-400" /> Dismissed
                 </p>
-                <p className="mt-1 text-xl font-black text-[#0D1E4C]">{data.dismissed}</p>
-                <p className="text-xs font-semibold text-[#94a3b8]">{pct(data.dismissed, data.total)}%</p>
+                <p className="text-sm font-black text-[#0D1E4C]">{data.dismissed}</p>
+                <p className="pl-1 text-xs font-semibold text-[#94a3b8]">{pct(data.dismissed, data.total)}%</p>
+              </div>
+              <div>
+                <p className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#475569]">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-400" /> Pending
+                </p>
+                <p className="text-sm font-black text-[#0D1E4C]">{data.pending}</p>
+                <p className="pl-1 text-xs font-semibold text-[#94a3b8]">{pct(data.pending, data.total)}%</p>
               </div>
             </div>
-
-            <p className="mt-3 text-center text-[10.5px] font-semibold text-[#94a3b8]">
-              Of {data.total} AI-suggested task{data.total === 1 ? "" : "s"}
-            </p>
           </>
         ) : null}
       </div>
