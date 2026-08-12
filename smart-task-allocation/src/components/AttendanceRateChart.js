@@ -31,6 +31,10 @@ const BAR_TRACK_HEIGHT = 90; // px
 export default function AttendanceRateChart() {
   const [rates, setRates] = useState(() => Array(12).fill(0));
   const [lateCounts, setLateCounts] = useState(() => Array(12).fill(0));
+  // Which months actually had a schedule — the average below only counts
+  // these, so months with nothing scheduled (rate forced to 0 above) don't
+  // drag a mostly-inactive year down to a misleadingly low number.
+  const [scheduledMonths, setScheduledMonths] = useState(() => Array(12).fill(false));
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -48,6 +52,7 @@ export default function AttendanceRateChart() {
 
         const nextRates = [];
         const nextLateCounts = [];
+        const nextScheduledMonths = [];
 
         for (let index = 0; index < months.length; index += 1) {
           const scheduleResult = await scheduleResponses[index].json();
@@ -59,6 +64,7 @@ export default function AttendanceRateChart() {
 
           const scheduledDays = new Set((scheduleResult.days ?? []).map((day) => day.work_date));
           const records = attendanceResult.records ?? [];
+          nextScheduledMonths.push(scheduledDays.size > 0);
 
           if (scheduledDays.size === 0) {
             nextRates.push(0);
@@ -78,6 +84,7 @@ export default function AttendanceRateChart() {
 
         setRates(nextRates);
         setLateCounts(nextLateCounts);
+        setScheduledMonths(nextScheduledMonths);
       } catch (loadError) {
         setError(loadError.message);
       }
@@ -86,9 +93,24 @@ export default function AttendanceRateChart() {
     return () => clearTimeout(timeout);
   }, []);
 
+  const scheduledRates = rates.filter((_, index) => scheduledMonths[index]);
+  const averageRate = scheduledRates.length
+    ? Math.round(scheduledRates.reduce((sum, rate) => sum + rate, 0) / scheduledRates.length)
+    : null;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <p className="shrink-0 text-lg font-black text-[#0D1E4C]">Attendance Rate</p>
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        <p className="text-lg font-black text-[#0D1E4C]">Attendance Rate</p>
+        {averageRate != null ? (
+          <p className="flex items-center gap-1 text-sm font-bold text-[#0D1E4C]">
+            <span className="material-symbols-outlined text-lg" aria-hidden="true">
+              bar_chart
+            </span>
+            Average {averageRate}%
+          </p>
+        ) : null}
+      </div>
       <div className="mt-4 flex min-h-0 flex-1 items-end justify-between gap-1">
         {MONTH_LABELS.map((label, index) => (
           <div key={label} className="flex flex-1 flex-col items-center gap-1">
