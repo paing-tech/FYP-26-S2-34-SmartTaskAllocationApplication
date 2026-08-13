@@ -581,10 +581,10 @@ export default function TopInformationBar({ actor }) {
               setIsProfileOpen(false);
               setHighlightedIndex(0);
             }}
-            className="absolute inset-0 flex h-full w-full items-center justify-between rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-3 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
+            className="absolute inset-0 flex h-full w-full items-center justify-between rounded-full border border-transparent bg-slate-100/40 pl-10 pr-3 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-slate-100 focus:border-[#b8c4d8] focus:bg-white"
             aria-label="Open global search"
           >
-            <span>Search...</span>
+            <span>Search anything...</span>
             <span className="hidden shrink-0 rounded-md border border-[#c7d0e0] bg-white/70 px-1.5 py-0.5 text-[10px] font-bold text-[#61708a] sm:inline">
               {"⌘"}K
             </span>
