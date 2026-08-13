@@ -558,6 +558,177 @@ function WorkforceAttendanceHistoryShell({ days }) {
   );
 }
 
+function SkillManagementModal({ onClose }) {
+  const [skills, setSkills] = useState([]);
+  const [query, setQuery] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [skillDrafts, setSkillDrafts] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [skillError, setSkillError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/skills", { headers: await authHeaders() });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not load skills.");
+        if (!cancelled) setSkills(result.skills ?? []);
+      } catch (loadError) {
+        if (!cancelled) setSkillError(loadError.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function removeSkill(skill) {
+    if ((skill.assignment_count ?? 0) > 0) return;
+    setSkillError("");
+    const response = await fetch(`/api/skills?skillId=${skill.skill_id}`, {
+      method: "DELETE",
+      headers: await authHeaders(),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setSkillError(result.error || "Could not delete this skill.");
+      return;
+    }
+    setSkills((current) => current.filter((item) => item.skill_id !== skill.skill_id));
+  }
+
+  async function renameSkill(skill) {
+    const nextName = String(skillDrafts[skill.skill_id] ?? skill.skill_name).trim();
+    if (!nextName || nextName === skill.skill_name) return;
+    setSkillError("");
+    const response = await fetch("/api/skills", {
+      method: "PATCH",
+      headers: { ...(await authHeaders()), "Content-Type": "application/json" },
+      body: JSON.stringify({ skillId: skill.skill_id, skillName: nextName }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setSkillError(result.error || "Could not rename this skill.");
+      return;
+    }
+    setSkills((current) => current
+      .map((item) => item.skill_id === skill.skill_id ? { ...item, skill_name: result.skill.skill_name } : item)
+      .sort((a, b) => a.skill_name.localeCompare(b.skill_name)));
+  }
+
+  const normalizedQuery = query.trim().toLowerCase();
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="skill-management-title"
+        className="flex h-[85vh] w-[120vw] flex-col rounded-[36px] border border-white/70 bg-slate-100 px-10 py-8 shadow-[0_28px_90px_rgba(13,30,76,0.25)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-6">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEditMode((active) => !active)}
+              aria-label={editMode ? "Turn edit mode off" : "Turn edit mode on"}
+              aria-pressed={editMode}
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition hover:bg-white/70 ${editMode ? "text-[#2563EB]" : "text-slate-400"}`}
+            >
+              <span className="material-symbols-outlined text-3xl" aria-hidden="true">{editMode ? "edit_off" : "edit"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeleteMode((active) => !active)}
+              aria-label={deleteMode ? "Turn delete mode off" : "Turn delete mode on"}
+              aria-pressed={deleteMode}
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition hover:bg-white/70 ${deleteMode ? "text-red-700" : "text-slate-400"}`}
+            >
+              <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 7h16" />
+                <path d="M9 7V4h6v3" />
+                <path d="M6.5 7l.8 13h9.4l.8-13" />
+                <path d="M10 11v5.5M14 11v5.5" />
+              </svg>
+            </button>
+          </div>
+          <h2 id="skill-management-title" className="flex items-center gap-2 text-2xl font-black text-[#0D1E4C]">
+            <span className="material-symbols-outlined text-3xl" aria-hidden="true">interests</span>
+            Skills
+          </h2>
+          <div className="flex items-center justify-end gap-3">
+            <label className="flex h-14 w-96 items-center gap-4 rounded-full border border-sky-200 bg-white px-6 shadow-[0_2px_6px_rgba(13,30,76,0.12)]">
+              <span className="material-symbols-outlined text-3xl text-slate-500" aria-hidden="true">search</span>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search skills"
+                className="min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0D1E4C] outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <button type="button" onClick={onClose} aria-label="Close skills" className="flex h-12 w-12 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-white/70">
+              <span className="material-symbols-outlined text-3xl" aria-hidden="true">close</span>
+            </button>
+          </div>
+        </div>
+
+        {skillError ? <p className="mt-3 shrink-0 text-center text-sm font-bold text-red-700">{skillError}</p> : null}
+        <div className="mt-8 flex min-h-0 flex-1 content-start justify-center gap-4 overflow-y-auto px-3 pb-3 flex-wrap">
+          {loading ? <p className="text-sm font-bold text-slate-400">Loading skills…</p> : null}
+          {!loading && !skills.length ? <p className="text-sm font-bold text-slate-400">No skills available.</p> : null}
+          {skills.map((skill) => {
+            const count = skill.assignment_count ?? 0;
+            const matchesSearch = Boolean(normalizedQuery) && skill.skill_name.toLowerCase().includes(normalizedQuery);
+            return (
+              <span
+                key={skill.skill_id}
+                className={`flex h-fit w-fit items-center gap-2 rounded-full border px-5 py-2.5 text-base font-bold transition ${
+                  matchesSearch
+                    ? "border-[#2563EB] bg-[#2563EB] text-white"
+                    : count > 0
+                      ? "border-[#2563EB] bg-white/50 text-[#0D1E4C]"
+                      : "border-slate-300 bg-white/40 text-[#0D1E4C]"
+                }`}
+              >
+                {editMode ? (
+                  <input
+                    value={skillDrafts[skill.skill_id] ?? skill.skill_name}
+                    onChange={(event) => setSkillDrafts((current) => ({ ...current, [skill.skill_id]: event.target.value }))}
+                    onBlur={() => renameSkill(skill)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                      if (event.key === "Escape") {
+                        setSkillDrafts((current) => ({ ...current, [skill.skill_id]: skill.skill_name }));
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    aria-label={`Rename ${skill.skill_name}`}
+                    className="min-w-0 bg-transparent font-bold outline-none"
+                    style={{ width: `${Math.max(3, (skillDrafts[skill.skill_id] ?? skill.skill_name).length)}ch` }}
+                  />
+                ) : skill.skill_name}
+                {count > 0 ? <span className="font-black">{count}</span> : null}
+                {deleteMode && count === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => removeSkill(skill)}
+                    aria-label={`Delete ${skill.skill_name}`}
+                    className={`material-symbols-outlined text-lg transition hover:text-red-600 ${matchesSearch ? "text-white" : "text-slate-400"}`}
+                  >
+                    close
+                  </button>
+                ) : null}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WorkforceOverview() {
   const [view, setView] = useState("performance");
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -567,6 +738,7 @@ export default function WorkforceOverview() {
   const [heatmapData, setHeatmapData] = useState(null);
   const [error, setError] = useState("");
   const [isSavingImage, setIsSavingImage] = useState(false);
+  const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
   const previousPersonIdRef = useRef(null);
   const performanceViewRef = useRef(null);
 
@@ -677,6 +849,7 @@ export default function WorkforceOverview() {
           {view === "performance" ? (
             <button
               type="button"
+              onClick={() => setIsSkillModalOpen(true)}
               className="absolute right-22 flex h-12.5 items-center gap-2 rounded-full border border-white/70 bg-white/20 px-6 text-sm font-bold text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110"
             >
               <span className="material-symbols-outlined text-xl" aria-hidden="true">
@@ -786,6 +959,8 @@ export default function WorkforceOverview() {
           <WorkforceScheduleCalendar />
         </div>
       ) : null}
+
+      {isSkillModalOpen ? <SkillManagementModal onClose={() => setIsSkillModalOpen(false)} /> : null}
     </div>
   );
 }
