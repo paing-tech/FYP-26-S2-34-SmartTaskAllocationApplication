@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser, requirePlatformAdmin } from "@/lib/serverAuth";
+import { getAuthenticatedUser, isPlatformAdminRole, requirePlatformAdmin } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const BUCKET = "support-inquiry-attachments";
@@ -28,6 +28,23 @@ async function resolveAccount(supabase, user) {
     .maybeSingle();
 
   return byEmail.data;
+}
+
+async function resolveAccountWithRole(supabase, user) {
+  const account = await resolveAccount(supabase, user);
+  if (!account) return null;
+
+  const { data: full } = await supabase
+    .from("user_account")
+    .select("user_id, organization_id, role:role_id(role_name)")
+    .eq("user_id", account.user_id)
+    .maybeSingle();
+
+  return {
+    userId: account.user_id,
+    organizationId: account.organization_id,
+    isPlatformAdmin: isPlatformAdminRole(full?.role?.role_name),
+  };
 }
 
 // Contact Support should still work for a suspended account, same as the
@@ -97,15 +114,74 @@ export async function POST(request) {
   }
 }
 
+// A single ticket can also be fetched by its own submitter (not just a
+// Platform Admin) — that's what lets the "open ticket" action on a reply
+// notification show the requester their own ticket.
+async function getSingleInquiry(request, supabase, inquiryId) {
+  const { user, error: authError } = await getAuthenticatedUser(request, supabase);
+  if (authError) return NextResponse.json({ error: authError }, { status: 403 });
+
+  const requester = await resolveAccountWithRole(supabase, user);
+  if (!requester) return NextResponse.json({ error: "Account not found." }, { status: 404 });
+
+  const { data: inquiry, error } = await supabase
+    .from("support_inquiry")
+    .select(
+      "inquiry_id, ticket_number, user_id, organization_id, subject, message, status, attachment_url, created_at, resolved_at",
+    )
+    .eq("inquiry_id", inquiryId)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (!inquiry) return NextResponse.json({ error: "Ticket not found." }, { status: 404 });
+
+  const isOwner = inquiry.user_id === requester.userId;
+  if (!isOwner && !requester.isPlatformAdmin) {
+    return NextResponse.json({ error: "You do not have access to this ticket." }, { status: 403 });
+  }
+
+  const [{ data: profile }, { data: account }, { data: organization }] = await Promise.all([
+    supabase.from("profile").select("full_name, job_title").eq("user_id", inquiry.user_id).maybeSingle(),
+    supabase.from("user_account").select("username, email").eq("user_id", inquiry.user_id).maybeSingle(),
+    inquiry.organization_id
+      ? supabase.from("organization").select("organization_name").eq("organization_id", inquiry.organization_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  return NextResponse.json({
+    inquiry: {
+      inquiryId: inquiry.inquiry_id,
+      ticketNumber: inquiry.ticket_number,
+      subject: inquiry.subject,
+      message: inquiry.message,
+      status: inquiry.status,
+      attachmentUrl: inquiry.attachment_url,
+      createdAt: inquiry.created_at,
+      resolvedAt: inquiry.resolved_at,
+      fullName: profile?.full_name || null,
+      jobTitle: profile?.job_title || null,
+      username: account?.username ?? null,
+      email: account?.email ?? null,
+      organizationName: organization?.organization_name ?? null,
+      isOwner,
+    },
+  });
+}
+
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
+    const inquiryId = new URL(request.url).searchParams.get("inquiryId");
+    if (inquiryId) return await getSingleInquiry(request, supabase, inquiryId);
+
     const { error: authError } = await requirePlatformAdmin(request, supabase);
     if (authError) return NextResponse.json({ error: authError }, { status: 403 });
 
     const { data: inquiries, error } = await supabase
       .from("support_inquiry")
-      .select("inquiry_id, user_id, organization_id, subject, message, status, attachment_url, created_at, resolved_at")
+      .select(
+        "inquiry_id, ticket_number, user_id, organization_id, subject, message, status, attachment_url, created_at, resolved_at",
+      )
       .order("created_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -118,7 +194,7 @@ export async function GET(request) {
 
     if (userIds.length) {
       const [{ data: profiles }, { data: accounts }] = await Promise.all([
-        supabase.from("profile").select("user_id, full_name").in("user_id", userIds),
+        supabase.from("profile").select("user_id, full_name, job_title").in("user_id", userIds),
         supabase.from("user_account").select("user_id, username, email").in("user_id", userIds),
       ]);
       profileByUserId = new Map((profiles ?? []).map((profile) => [profile.user_id, profile]));
@@ -137,6 +213,7 @@ export async function GET(request) {
       const account = accountByUserId.get(inquiry.user_id);
       return {
         inquiryId: inquiry.inquiry_id,
+        ticketNumber: inquiry.ticket_number,
         subject: inquiry.subject,
         message: inquiry.message,
         status: inquiry.status,
@@ -144,6 +221,7 @@ export async function GET(request) {
         createdAt: inquiry.created_at,
         resolvedAt: inquiry.resolved_at,
         fullName: profileByUserId.get(inquiry.user_id)?.full_name || null,
+        jobTitle: profileByUserId.get(inquiry.user_id)?.job_title || null,
         username: account?.username ?? null,
         email: account?.email ?? null,
         organizationName: organizationById.get(inquiry.organization_id)?.organization_name ?? null,
@@ -156,15 +234,35 @@ export async function GET(request) {
   }
 }
 
+// A Platform Admin can resolve or reopen any ticket; the ticket's own
+// submitter can only close (resolve) their own — reopening stays admin-only
+// since it's a triage decision, not something the requester needs.
 export async function PATCH(request) {
   try {
     const supabase = getSupabaseAdminClient();
-    const { error: authError } = await requirePlatformAdmin(request, supabase);
-    if (authError) return NextResponse.json({ error: authError }, { status: 403 });
-
     const { inquiryId, action } = await request.json();
     if (!inquiryId || !["resolve", "reopen"].includes(action)) {
       return NextResponse.json({ error: "A valid inquiry ID and action are required." }, { status: 400 });
+    }
+
+    const { user, error: authError } = await getAuthenticatedUser(request, supabase);
+    if (authError) return NextResponse.json({ error: authError }, { status: 403 });
+
+    const requester = await resolveAccountWithRole(supabase, user);
+    if (!requester) return NextResponse.json({ error: "Account not found." }, { status: 404 });
+
+    if (!requester.isPlatformAdmin) {
+      if (action !== "resolve") {
+        return NextResponse.json({ error: "Only Platform Admin can reopen a ticket." }, { status: 403 });
+      }
+      const { data: inquiry } = await supabase
+        .from("support_inquiry")
+        .select("user_id")
+        .eq("inquiry_id", inquiryId)
+        .maybeSingle();
+      if (inquiry?.user_id !== requester.userId) {
+        return NextResponse.json({ error: "You do not have access to this ticket." }, { status: 403 });
+      }
     }
 
     const { error: updateError } = await supabase

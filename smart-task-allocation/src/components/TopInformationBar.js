@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
 import ProfileDetailCard from "@/components/ProfileDetailCard";
 import ContactSupportModal from "@/components/ContactSupportModal";
+import TicketDetailModal from "@/components/TicketDetailModal";
 import { usePlanGate } from "@/components/PlanProvider";
 import {
   DEMO_ROLES,
@@ -134,6 +135,7 @@ export default function TopInformationBar({ actor }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileCardOpen, setIsProfileCardOpen] = useState(false);
   const [isContactSupportOpen, setIsContactSupportOpen] = useState(false);
+  const [detailInquiryId, setDetailInquiryId] = useState(null);
   const [announcements, setAnnouncements] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [accountSearchItems, setAccountSearchItems] = useState([]);
@@ -142,6 +144,7 @@ export default function TopInformationBar({ actor }) {
   const [now, setNow] = useState(() => new Date());
   const [isDemo, setIsDemo] = useState(false);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
+  const isPlatformAdmin = actor === "platformadmin";
 
   useEffect(() => {
     queueMicrotask(() => setIsDemo(isDemoSession()));
@@ -520,6 +523,20 @@ export default function TopInformationBar({ actor }) {
                       </span>
                     </div>
                     <p className="mt-1 text-xs leading-5 text-[#61708a]">{item.body}</p>
+                    {item.relatedInquiryId ? (
+                      <div className="mt-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setDetailInquiryId(item.relatedInquiryId)}
+                          aria-label="Open ticket"
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-[#0a2a66] transition hover:bg-white/70"
+                        >
+                          <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                            open_in_new
+                          </span>
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ))
               ) : (
@@ -555,7 +572,7 @@ export default function TopInformationBar({ actor }) {
             )}
           </button>
 
-          {plan && plan !== "starter" ? (
+          {!isPlatformAdmin && plan && plan !== "starter" ? (
             <span
               className={`pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[7px] font-black text-white shadow-sm ${
                 PLAN_TIER_CHIP_TONES[plan] ?? "bg-[#0a2a66]"
@@ -566,7 +583,7 @@ export default function TopInformationBar({ actor }) {
           ) : null}
 
           {isProfileOpen ? (
-            <div className="absolute right-0 top-14 w-52 rounded-[28px] border border-white/60 bg-slate-200 px-4 py-4 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
+            <div className="absolute right-0 top-14 w-60 rounded-[28px] border border-white/60 bg-slate-200 px-4 py-4 shadow-[0_18px_60px_rgba(7,24,59,0.16)]">
               <div className="flex items-center gap-3 px-3 py-2">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a2a66] text-white">
                   {profile.profilePictureUrl ? (
@@ -634,7 +651,7 @@ export default function TopInformationBar({ actor }) {
                     View Profile
                   </button>
                 )}
-                {!isDemo && plan ? (
+                {!isDemo && !isPlatformAdmin && plan ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -656,7 +673,7 @@ export default function TopInformationBar({ actor }) {
                     </span>
                   </button>
                 ) : null}
-                {isDemo ? null : (
+                {isDemo || isPlatformAdmin ? null : (
                   <button
                     type="button"
                     onClick={() => {
@@ -762,6 +779,14 @@ export default function TopInformationBar({ actor }) {
 
       {isProfileCardOpen ? <ProfileDetailCard onClose={() => setIsProfileCardOpen(false)} /> : null}
       {isContactSupportOpen ? <ContactSupportModal onClose={() => setIsContactSupportOpen(false)} /> : null}
+      {detailInquiryId ? (
+        <TicketDetailModal
+          inquiryId={detailInquiryId}
+          variant="user"
+          onClose={() => setDetailInquiryId(null)}
+          onChanged={() => setDetailInquiryId(null)}
+        />
+      ) : null}
     </>
   );
 }

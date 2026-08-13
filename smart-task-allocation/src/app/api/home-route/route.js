@@ -14,7 +14,11 @@ export async function GET(request) {
       );
     }
 
-    const { homeRoute, error: routeError } = await getUserHomeRoute(user, supabase);
+    const { homeRoute, error: routeError, unassigned } = await getUserHomeRoute(user, supabase);
+
+    if (unassigned) {
+      return NextResponse.json({ unassigned: true });
+    }
 
     if (routeError) {
       return NextResponse.json({ error: routeError }, { status: 400 });

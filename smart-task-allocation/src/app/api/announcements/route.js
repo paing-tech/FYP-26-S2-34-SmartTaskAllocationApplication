@@ -14,7 +14,8 @@ export async function GET(request) {
 
     const { data: announcements, error: announcementsError } = await supabase
       .from("announcement")
-      .select("announcement_id, title, body, created_at")
+      .select("announcement_id, title, body, related_inquiry_id, created_at")
+      .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
       .order("created_at", { ascending: false })
       .limit(RECENT_LIMIT);
 
@@ -38,6 +39,7 @@ export async function GET(request) {
       announcementId: item.announcement_id,
       title: item.title,
       body: item.body,
+      relatedInquiryId: item.related_inquiry_id,
       createdAt: item.created_at,
       isRead: readIds.has(item.announcement_id),
     }));
@@ -89,7 +91,8 @@ export async function PATCH(request) {
 
     const { data: announcements, error: announcementsError } = await supabase
       .from("announcement")
-      .select("announcement_id");
+      .select("announcement_id")
+      .or(`target_user_id.is.null,target_user_id.eq.${user.id}`);
 
     if (announcementsError) return NextResponse.json({ error: announcementsError.message }, { status: 400 });
 

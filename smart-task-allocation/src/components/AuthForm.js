@@ -6,9 +6,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import CornerNav from "@/components/CornerNav";
+import AssignmentSelectors from "@/components/AssignmentSelectors";
 
 const inputClass =
   "auth-dark-field h-14 w-full rounded-md border border-white/40 bg-black/40 px-4 text-base text-white outline-none transition-colors placeholder:text-white/40 focus:border-white/60 focus:ring-2 focus:ring-white/20";
+
+const authPrimaryButtonClass =
+  "h-14 rounded-full border border-white/20 bg-[#2563EB]/20 px-6 text-base font-bold uppercase text-white shadow-[0_8px_24px_rgba(37,99,235,0.60)] transition duration-200 hover:brightness-120 hover:shadow-[0_0_28px_rgba(37,99,235,0.6)] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/50 disabled:cursor-not-allowed disabled:opacity-60";
 
 function GoogleIcon() {
   return (
@@ -41,6 +45,13 @@ export default function AuthForm() {
   const [resetMessage, setResetMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
+  const [isUnassigned, setIsUnassigned] = useState(false);
+  const [assignmentData, setAssignmentData] = useState(null);
+  const [requestedRoleId, setRequestedRoleId] = useState("");
+  const [requestedOrganizationId, setRequestedOrganizationId] = useState("");
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [requestSubmitted, setRequestSubmitted] = useState(false);
+  const [requestError, setRequestError] = useState("");
   const [appealSubmitted, setAppealSubmitted] = useState(false);
   const [isAppealFormOpen, setIsAppealFormOpen] = useState(false);
   const [appealReason, setAppealReason] = useState("");
@@ -72,6 +83,23 @@ export default function AuthForm() {
       return true;
     }
 
+    if (routeResult.unassigned) {
+      setIsUnassigned(true);
+      const requestResponse = await fetch("/api/account-assignment-request", {
+        headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+      });
+      const requestResult = await requestResponse.json();
+      if (requestResponse.ok) {
+        setAssignmentData(requestResult);
+        setRequestedRoleId(String(requestResult.requestedRoleId ?? ""));
+        setRequestedOrganizationId(String(requestResult.requestedOrganizationId ?? ""));
+        setRequestSubmitted(Boolean(requestResult.requestedRoleId && requestResult.requestedOrganizationId));
+      } else {
+        setRequestError(requestResult.error || "Could not load roles and organizations.");
+      }
+      return true;
+    }
+
     if (!routeResponse.ok) {
       setError(`Login succeeded, but ${routeResult.error}`);
       return true;
@@ -83,14 +111,40 @@ export default function AuthForm() {
   }
 
   useEffect(() => {
-    (async () => {
-      const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClient();
+    let isActive = true;
+    let lastHandledAccessToken = "";
+
+    async function handleSession(session) {
+      if (!isActive || !session?.access_token || session.access_token === lastHandledAccessToken) {
+        return;
+      }
+
+      lastHandledAccessToken = session.access_token;
       try {
         await redirectIfSignedIn(supabase);
       } catch (sessionError) {
-        setError(sessionError.message);
+        if (isActive) setError(sessionError.message);
       }
-    })();
+    }
+
+    // Handle an already-restored session, including a normal page refresh.
+    supabase.auth.getSession().then(({ data }) => handleSession(data.session));
+
+    // OAuth session restoration can finish after the first render. Listen for
+    // that completed sign-in instead of relying only on the initial check.
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
+        // Run outside the auth callback so follow-up Supabase calls cannot
+        // contend with the client while it is persisting the new session.
+        window.setTimeout(() => handleSession(session), 0);
+      }
+    });
+
+    return () => {
+      isActive = false;
+      authListener.subscription.unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -181,6 +235,44 @@ export default function AuthForm() {
     }
   }
 
+  async function handleUnassignedLogout() {
+    const supabase = getSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    setIsUnassigned(false);
+    setAssignmentData(null);
+    setRequestedRoleId("");
+    setRequestedOrganizationId("");
+    setRequestSubmitted(false);
+    setRequestError("");
+    resetToEmailStep();
+    router.refresh();
+  }
+
+  async function submitAssignmentRequest() {
+    if (!requestedRoleId || !requestedOrganizationId || isSubmittingRequest) return;
+    setIsSubmittingRequest(true);
+    setRequestError("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch("/api/account-assignment-request", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ roleId: Number(requestedRoleId), organizationId: requestedOrganizationId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not submit your request.");
+      setRequestSubmitted(true);
+    } catch (submitError) {
+      setRequestError(submitError.message);
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  }
+
   async function handleSuspendedLogout() {
     const supabase = getSupabaseBrowserClient();
     await supabase.auth.signOut();
@@ -227,10 +319,56 @@ export default function AuthForm() {
     }
   }
 
+  if (isUnassigned) {
+    return (
+      <div className="w-full max-w-xl">
+        <section className="rounded-[28px] border border-white/20 bg-white/10 px-8 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.5)] backdrop-blur-2xl sm:px-10">
+          <h2 className="text-center text-2xl font-black text-white">Request Role &amp; Organization</h2>
+          <p className="mt-2 text-center text-sm font-semibold text-white/70">{assignmentData?.email ?? "Signed-in account"}</p>
+
+          {assignmentData ? (
+            <div className="mt-7 text-left">
+              <AssignmentSelectors
+                roleId={requestedRoleId}
+                setRoleId={(value) => { setRequestedRoleId(value); setRequestSubmitted(false); }}
+                organizationId={requestedOrganizationId}
+                setOrganizationId={(value) => { setRequestedOrganizationId(value); setRequestSubmitted(false); }}
+                roles={assignmentData.roles}
+                organizations={assignmentData.organizations}
+                dark
+              />
+            </div>
+          ) : null}
+
+          {requestError ? <p className="mt-3 text-center text-xs font-bold text-red-300">{requestError}</p> : null}
+          {requestSubmitted ? <p className="mt-4 text-center text-sm font-bold text-emerald-300">Request submitted. Waiting for approval.</p> : null}
+
+          <div className="mx-auto mt-6 flex max-w-sm flex-col gap-3">
+            <button
+              type="button"
+              onClick={submitAssignmentRequest}
+              disabled={!assignmentData || !requestedRoleId || !requestedOrganizationId || isSubmittingRequest}
+              className={authPrimaryButtonClass}
+            >
+              {isSubmittingRequest ? "Requesting…" : "Request"}
+            </button>
+            <button
+              type="button"
+              onClick={handleUnassignedLogout}
+              className="h-13 rounded-full border border-[#cbd5e1] bg-white px-6 font-bold text-[#0D1E4C] transition hover:bg-slate-100"
+            >
+              Log Out
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   if (isSuspended) {
     return (
       <div className="w-full max-w-xl">
-        <section className="rounded-[32px] border border-white/30 bg-white/20 backdrop-blur-xs px-10 py-12 text-center shadow-[0_28px_80px_rgba(0,0,0,0.42)]">
+        <section className="rounded-[28px] border border-white/20 bg-white/10 px-8 py-10 text-center shadow-[0_28px_80px_rgba(0,0,0,0.5)] backdrop-blur-2xl sm:px-10">
           <span
             className="material-symbols-outlined text-red-600"
             style={{ fontSize: "72px" }}
@@ -238,12 +376,12 @@ export default function AuthForm() {
           >
             account_circle_off
           </span>
-          <p className="mt-5 text-xl font-bold text-[#0D1E4C]">
+          <p className="mt-5 text-xl font-bold text-white">
             Your organization has suspended your account.
           </p>
 
           {appealSubmitted ? (
-            <p className="mx-auto mt-6 max-w-sm text-sm font-semibold text-emerald-700">
+            <p className="mx-auto mt-6 max-w-sm text-sm font-semibold text-emerald-300">
               Your appeal has been submitted.
             </p>
           ) : isAppealFormOpen ? (
@@ -254,7 +392,7 @@ export default function AuthForm() {
                 placeholder="Explain why your account should be reactivated…"
                 rows={4}
                 autoFocus
-                className="w-full resize-none rounded-2xl border border-white/40 bg-white/70 px-4 py-3 text-sm font-medium text-[#0D1E4C] outline-none placeholder:text-[#94a3b8] focus:border-[#2563EB]"
+                className="auth-dark-field w-full resize-none rounded-md border border-white/40 bg-black/40 px-4 py-3 text-sm font-medium text-white outline-none placeholder:text-white/40 focus:border-white/60 focus:ring-2 focus:ring-white/20"
               />
               {appealError ? <p className="mt-2 text-xs font-bold text-red-600">{appealError}</p> : null}
             </div>
@@ -266,7 +404,7 @@ export default function AuthForm() {
                 type="button"
                 onClick={submitAppeal}
                 disabled={!appealReason.trim() || isSubmittingAppeal}
-                className="h-13 rounded-full bg-[#0D1E4C] px-6 font-bold text-white transition hover:brightness-120 disabled:cursor-not-allowed disabled:opacity-60"
+              className={authPrimaryButtonClass}
               >
                 {isSubmittingAppeal ? "Submitting…" : "Submit Appeal"}
               </button>
@@ -274,7 +412,7 @@ export default function AuthForm() {
               <button
                 type="button"
                 onClick={() => setIsAppealFormOpen(true)}
-                className="h-13 rounded-full bg-[#0D1E4C] px-6 font-bold text-white transition hover:brightness-120"
+                className={authPrimaryButtonClass}
               >
                 Appeal
               </button>
@@ -385,7 +523,7 @@ export default function AuthForm() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="h-14 w-full rounded-full border border-white/20 bg-[#2563EB]/20 text-base uppercase font-bold text-white shadow-[0_8px_24px_rgba(37,99,235,0.60)] transition duration-200 hover:brightness-120 hover:shadow-[0_0_28px_rgba(37,99,235,0.6)] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/50 disabled:cursor-not-allowed disabled:opacity-60"
+            className={`w-full ${authPrimaryButtonClass}`}
           >
             {isSubmitting ? "Authenticating…" : step === "email" ? "Continue" : "Sign in"}
           </button>

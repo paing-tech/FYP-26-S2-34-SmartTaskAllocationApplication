@@ -23,7 +23,7 @@ async function authHeaders() {
 // "locked feature" prompt and the "choose a plan" card picker it opens
 // into. Any component can call usePlanGate().guard(featureKey, fn) to run
 // fn only if the org's plan clears that feature's required_plan bar.
-export function PlanProvider({ children }) {
+export function PlanProvider({ children, bypassPlanGate = false }) {
   const [plan, setPlan] = useState(null);
   const [featureFlags, setFeatureFlags] = useState([]);
   const [lockedFeatureKey, setLockedFeatureKey] = useState(null);
@@ -52,13 +52,14 @@ export function PlanProvider({ children }) {
 
   const isLocked = useCallback(
     (featureKey) => {
+      if (bypassPlanGate) return false;
       // No org (e.g. Platform Admin) or not loaded yet — never block.
       if (!plan) return false;
       const feature = featureByKey.get(featureKey);
       if (!feature) return false;
       return (PLAN_RANK[plan] ?? 0) < (PLAN_RANK[feature.required_plan] ?? 0);
     },
-    [plan, featureByKey],
+    [bypassPlanGate, plan, featureByKey],
   );
 
   const guard = useCallback(
@@ -106,7 +107,9 @@ export function PlanProvider({ children }) {
     setError("");
   }
 
-  const openPlanPicker = useCallback(() => setIsChoosingPlan(true), []);
+  const openPlanPicker = useCallback(() => {
+    if (!bypassPlanGate) setIsChoosingPlan(true);
+  }, [bypassPlanGate]);
 
   const lockedFeature = lockedFeatureKey ? featureByKey.get(lockedFeatureKey) : null;
   const value = useMemo(
@@ -118,7 +121,7 @@ export function PlanProvider({ children }) {
     <PlanContext.Provider value={value}>
       {children}
 
-      {lockedFeature ? (
+      {!bypassPlanGate && lockedFeature ? (
         <Portal>
           <div
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
@@ -159,7 +162,7 @@ export function PlanProvider({ children }) {
         </Portal>
       ) : null}
 
-      {isChoosingPlan ? (
+      {!bypassPlanGate && isChoosingPlan ? (
         <Portal>
           <div className="fixed inset-0 z-[110] flex min-h-screen flex-col justify-center overflow-y-auto bg-black/70 p-6 backdrop-blur-md">
             <div className="relative mx-auto flex w-full max-w-6xl items-center justify-center pb-6 pt-2">

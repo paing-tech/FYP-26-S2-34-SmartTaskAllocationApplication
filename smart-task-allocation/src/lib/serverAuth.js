@@ -97,7 +97,7 @@ export async function getRequesterOrganizationId(supabase, user) {
 export async function getUserHomeRoute(user, supabase) {
   const { data: accountByUserId, error: accountByUserIdError } = await supabase
     .from("user_account")
-    .select("role_id")
+    .select("role_id, organization_id, account_status")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -110,7 +110,7 @@ export async function getUserHomeRoute(user, supabase) {
   if (!account && user.email) {
     const { data: accountByEmail, error: accountByEmailError } = await supabase
       .from("user_account")
-      .select("role_id")
+      .select("role_id, organization_id, account_status")
       .eq("email", user.email)
       .maybeSingle();
 
@@ -121,8 +121,21 @@ export async function getUserHomeRoute(user, supabase) {
     account = accountByEmail;
   }
 
-  if (account?.role_id == null) {
-    return { error: "No role is assigned to this user." };
+  if (!account) {
+    // A first-time Google/Microsoft user exists in auth.users before an
+    // application account exists. Let the assignment modal collect both
+    // required foreign keys before creating user_account.
+    return { unassigned: true };
+  }
+
+  // "Unassigned" is a derived UI state, not an account_status value. An
+  // account must have both assignment keys before entering its workspace.
+  if (
+    account.account_status === "Pending" ||
+    account.role_id == null ||
+    account.organization_id == null
+  ) {
+    return { unassigned: true };
   }
 
   const { data: role, error: roleError } = await supabase

@@ -25,6 +25,22 @@ async function logAccountActivity(supabase, { organizationId, actorUserId, targe
   });
 }
 
+const PLATFORM_LOG_TYPE_BY_ACTION = { approve: "joined", suspend: "suspended", activate: "activated" };
+
+// Feeds the Platform Admin dashboard's cross-org Activity Logs panel —
+// separate from account_activity_log above, which User Admin's own
+// Activity Logs panel reads and is scoped to a single organization.
+async function logPlatformActivity(supabase, { organizationId, action, email }) {
+  const type = PLATFORM_LOG_TYPE_BY_ACTION[action];
+  if (!type || !email) return;
+
+  await supabase.from("platform_activity_log").insert({
+    organization_id: organizationId,
+    type,
+    emails: [email],
+  });
+}
+
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
@@ -107,7 +123,7 @@ export async function PATCH(request) {
     const requesterOrgId = await getRequesterOrganizationId(supabase, user);
     const { data: target } = await supabase
       .from("user_account")
-      .select("user_id, role:role_id(role_name)")
+      .select("user_id, email, role:role_id(role_name)")
       .eq("user_id", userId)
       .eq("organization_id", requesterOrgId ?? "")
       .maybeSingle();
@@ -168,6 +184,7 @@ export async function PATCH(request) {
         targetLabel,
         action,
       });
+      await logPlatformActivity(supabase, { organizationId: requesterOrgId, action, email: target.email });
     }
 
     return NextResponse.json({ success: true });

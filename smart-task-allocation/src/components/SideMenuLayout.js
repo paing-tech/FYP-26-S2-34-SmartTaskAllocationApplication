@@ -292,7 +292,7 @@ function SideMenuLayoutInner({ actor, children }) {
 
 export default function SideMenuLayout({ actor, children }) {
   return (
-    <PlanProvider>
+    <PlanProvider bypassPlanGate={actor === "platformadmin"}>
       <SideMenuLayoutInner actor={actor}>{children}</SideMenuLayoutInner>
     </PlanProvider>
   );
