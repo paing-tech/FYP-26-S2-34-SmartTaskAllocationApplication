@@ -221,7 +221,7 @@ function SideMenuLayoutInner({ actor, children }) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      title={item.label}
+                      title={item.shortcut ? `${item.label} (G ${item.shortcut.toUpperCase()})` : item.label}
                       aria-label={item.label}
                       aria-current={isActive ? "page" : undefined}
                       className={`flex h-12 w-full items-center gap-3 rounded-full px-3 transition-colors ${
@@ -232,8 +232,17 @@ function SideMenuLayoutInner({ actor, children }) {
                     >
                       <NavIcon name={item.icon} />
 
-                      <span className="hidden whitespace-nowrap text-sm font-bold group-hover:block">
-                        {item.label}
+                      <span className="hidden min-w-0 flex-1 items-center justify-between gap-2 whitespace-nowrap text-sm font-bold group-hover:flex">
+                        <span className="truncate">{item.label}</span>
+                        {item.shortcut ? (
+                          <span
+                            className={`shrink-0 rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                              isActive ? "border-white/40 text-white/70" : "border-[#0D1E4C]/20 text-[#0D1E4C]/50"
+                            }`}
+                          >
+                            G {item.shortcut}
+                          </span>
+                        ) : null}
                       </span>
                     </Link>
                   );

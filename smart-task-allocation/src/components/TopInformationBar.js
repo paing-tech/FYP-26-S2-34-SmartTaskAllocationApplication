@@ -167,8 +167,11 @@ export default function TopInformationBar({ actor }) {
   const pathname = usePathname();
   const { plan, openPlanPicker } = usePlanGate();
   const searchInputRef = useRef(null);
+  const pendingJumpKeyRef = useRef(null);
   const [query, setQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [activeTab, setActiveTab] = useState("all");
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileCardOpen, setIsProfileCardOpen] = useState(false);
@@ -195,7 +198,8 @@ export default function TopInformationBar({ actor }) {
         label: item.label,
         href: item.href,
         group: sideMenuNavigation[actor].label,
-        type: "Action",
+        type: "Page",
+        shortcut: item.shortcut,
       })) ?? [];
     const actionItems = (roleActions[actor] ?? []).map((item) => ({
       ...item,
@@ -223,19 +227,23 @@ export default function TopInformationBar({ actor }) {
 
   const searchResults = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const scopedItems =
+      activeTab === "actions"
+        ? searchItems.filter((item) => item.type === "Action" || item.type === "AI Agent")
+        : searchItems;
 
     if (!normalizedQuery) {
-      return searchItems;
+      return scopedItems;
     }
 
-    return searchItems
-      .filter((item) =>
-        `${item.group} ${item.label} ${item.description ?? ""} ${item.type} ${item.href}`
-          .toLowerCase()
-          .includes(normalizedQuery)
-      )
-      .slice(0, 12);
-  }, [query, searchItems]);
+    const matched = scopedItems.filter((item) =>
+      `${item.group} ${item.label} ${item.description ?? ""} ${item.type} ${item.href}`
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+
+    return activeTab === "actions" ? matched : matched.slice(0, 12);
+  }, [activeTab, query, searchItems]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(new Date()), 1000);
@@ -250,6 +258,62 @@ export default function TopInformationBar({ actor }) {
 
     searchInputRef.current?.focus();
   }, [isSearchOpen]);
+
+  // Global shortcuts, active anywhere in the app (TopInformationBar is
+  // mounted on every authenticated page via SideMenuLayout):
+  //  - Cmd/Ctrl+K toggles the search palette, even while another input is
+  //    focused — the same convention as GitHub/Linear/Vercel command bars.
+  //  - "G" then a letter jumps straight to a nav item without opening the
+  //    palette at all (see the per-item `shortcut` in sideMenuNavigation),
+  //    Gmail/Linear style. Ignored while typing in a field so it doesn't
+  //    hijack normal text entry.
+  useEffect(() => {
+    function isEditableTarget(target) {
+      const tag = target?.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable;
+    }
+
+    function handleKeyDown(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        pendingJumpKeyRef.current = null;
+        setIsSearchOpen((current) => {
+          const next = !current;
+          if (!next) setQuery("");
+          setHighlightedIndex(0);
+          return next;
+        });
+        return;
+      }
+
+      if (isSearchOpen || isEditableTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (pendingJumpKeyRef.current === "g") {
+        pendingJumpKeyRef.current = null;
+        const items = sideMenuNavigation[actor]?.items ?? [];
+        const target = items.find((item) => item.shortcut === key);
+        if (target) {
+          event.preventDefault();
+          router.push(target.href);
+        }
+        return;
+      }
+
+      if (key === "g") {
+        pendingJumpKeyRef.current = "g";
+        window.setTimeout(() => {
+          pendingJumpKeyRef.current = null;
+        }, 1200);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [actor, isSearchOpen, router]);
 
   async function authHeaders() {
     const supabase = getSupabaseBrowserClient();
@@ -460,6 +524,7 @@ export default function TopInformationBar({ actor }) {
   function closeSearch() {
     setIsSearchOpen(false);
     setQuery("");
+    setActiveTab("all");
   }
 
   function runSearchResult(item) {
@@ -514,11 +579,15 @@ export default function TopInformationBar({ actor }) {
               setIsSearchOpen(true);
               setIsNotificationsOpen(false);
               setIsProfileOpen(false);
+              setHighlightedIndex(0);
             }}
-            className="absolute inset-0 h-full w-full rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-4 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
+            className="absolute inset-0 flex h-full w-full items-center justify-between rounded-full border border-transparent bg-[#e8ebf1] pl-10 pr-3 text-left text-sm font-medium text-[#61708a] outline-none transition hover:bg-white/80 focus:border-[#b8c4d8] focus:bg-white"
             aria-label="Open global search"
           >
-            Search...
+            <span>Search...</span>
+            <span className="hidden shrink-0 rounded-md border border-[#c7d0e0] bg-white/70 px-1.5 py-0.5 text-[10px] font-bold text-[#61708a] sm:inline">
+              {"⌘"}K
+            </span>
           </button>
         </div>
       </div>
@@ -767,11 +836,37 @@ export default function TopInformationBar({ actor }) {
               <input
                 ref={searchInputRef}
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setHighlightedIndex(0);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
-                    setIsSearchOpen(false);
-                    setQuery("");
+                    closeSearch();
+                    return;
+                  }
+                  if (event.key === "Tab") {
+                    event.preventDefault();
+                    setActiveTab((current) => (current === "all" ? "actions" : "all"));
+                    setHighlightedIndex(0);
+                    return;
+                  }
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setHighlightedIndex((current) => Math.min(current + 1, searchResults.length - 1));
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setHighlightedIndex((current) => Math.max(current - 1, 0));
+                    return;
+                  }
+                  if (event.key === "Enter") {
+                    const target = searchResults[highlightedIndex];
+                    if (target) {
+                      event.preventDefault();
+                      runSearchResult(target);
+                    }
                   }
                 }}
                 placeholder="Search everything..."
@@ -780,28 +875,56 @@ export default function TopInformationBar({ actor }) {
               />
               <button
                 type="button"
-                onClick={() => {
-                  setIsSearchOpen(false);
-                  setQuery("");
-                }}
+                onClick={closeSearch}
                 className="rounded-md border border-white/60 bg-white/20 px-3 py-2 text-sm font-bold text-[#52627a] hover:bg-white/40"
               >
                 Esc
               </button>
             </div>
 
+            <div className="flex items-center gap-2 border-b border-white/60 px-6 py-2.5">
+              {[
+                { key: "all", label: "All" },
+                { key: "actions", label: "Actions" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.key);
+                    setHighlightedIndex(0);
+                    searchInputRef.current?.focus();
+                  }}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                    activeTab === tab.key
+                      ? "bg-[#0D1E4C] text-white"
+                      : "bg-white/30 text-[#52627a] hover:bg-white/50"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <span className="ml-1 rounded border border-white/60 bg-white/30 px-1.5 py-0.5 text-[10px] font-bold text-[#667085]">
+                Tab
+              </span>
+              <span className="text-[11px] font-semibold text-[#667085]">to switch</span>
+            </div>
+
             <div className="max-h-[60vh] overflow-y-auto px-4 py-4">
               <p className="px-3 py-2 text-sm font-bold text-[#52627a]">
-                Results
+                {activeTab === "actions" ? "Actions" : "Results"}
               </p>
               <div className="space-y-1">
-              {searchResults.map((item) => (
+              {searchResults.map((item, index) => (
                   <button
                     key={`${item.type}-${item.group}-${item.href}-${item.label}-${item.id ?? ""}`}
                     onClick={() => {
                       runSearchResult(item);
                     }}
-                    className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-3 text-left hover:bg-white/35"
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    className={`flex w-full items-center justify-between gap-4 rounded-lg px-3 py-3 text-left ${
+                      index === highlightedIndex ? "bg-white/50" : "hover:bg-white/35"
+                    }`}
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-bold">{item.label}</span>
@@ -811,8 +934,15 @@ export default function TopInformationBar({ actor }) {
                         </span>
                       ) : null}
                     </span>
-                    <span className="shrink-0 text-sm font-semibold text-[#667085]">
-                      {item.type}
+                    <span className="flex shrink-0 items-center gap-2">
+                      {item.shortcut ? (
+                        <span className="flex items-center gap-1 rounded-md border border-white/60 bg-white/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#52627a]">
+                          G {item.shortcut}
+                        </span>
+                      ) : null}
+                      <span className="text-sm font-semibold text-[#667085]">
+                        {activeTab === "actions" ? item.group : item.type}
+                      </span>
                     </span>
                   </button>
                 ))}
@@ -824,6 +954,18 @@ export default function TopInformationBar({ actor }) {
                   </p>
                 ) : null}
               </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 border-t border-white/60 px-6 py-3 text-[11px] font-semibold text-[#667085]">
+              <span className="flex items-center gap-1.5">
+                <kbd className="rounded border border-white/60 bg-white/40 px-1.5 py-0.5">↑↓</kbd> Navigate
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd className="rounded border border-white/60 bg-white/40 px-1.5 py-0.5">↵</kbd> Open
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd className="rounded border border-white/60 bg-white/40 px-1.5 py-0.5">G</kbd> then a letter to jump to a page from anywhere
+              </span>
             </div>
           </div>
         </div>
