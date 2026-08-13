@@ -261,6 +261,7 @@ export async function PATCH(request) {
       const { data: existingSkill, error: findSkillError } = await supabase
         .from("skill")
         .select("skill_id")
+        .eq("organization_id", account.organization_id)
         .ilike("skill_name", name)
         .maybeSingle();
 
@@ -272,7 +273,7 @@ export async function PATCH(request) {
       if (!skillId) {
         const { data: createdSkill, error: createSkillError } = await supabase
           .from("skill")
-          .insert({ skill_name: name })
+          .insert({ skill_name: name, organization_id: account.organization_id })
           .select("skill_id")
           .single();
 

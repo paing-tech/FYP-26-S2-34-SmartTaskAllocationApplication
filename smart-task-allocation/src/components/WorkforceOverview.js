@@ -5,6 +5,7 @@ import { toPng } from "html-to-image";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import GlassSurface from "@/components/ui/glass-surface";
 import WorkforcePersonPicker from "@/components/WorkforcePersonPicker";
+import WorkforceScheduleCalendar from "@/components/WorkforceScheduleCalendar";
 
 const STORAGE_KEY = "workforce-selected-person";
 
@@ -647,9 +648,9 @@ export default function WorkforceOverview() {
   }, [selectedPerson, range]);
 
   return (
-    <div ref={performanceViewRef} className="grid h-full min-h-0 gap-4 md:grid-cols-[3fr_7fr]">
+    <div ref={performanceViewRef} className="relative grid h-full min-h-0 gap-4 md:grid-cols-[3fr_7fr]">
       <div className="flex min-h-0 flex-col gap-2">
-        <div className="flex shrink-0 items-center justify-between">
+        <div className="relative z-20 flex shrink-0 items-center justify-between">
           <div className="flex w-46 rounded-full border border-white/60 bg-white/30 p-1 backdrop-blur-sm">
             {VIEWS.map((option) => {
               const isActive = view === option.id;
@@ -674,7 +675,19 @@ export default function WorkforceOverview() {
           </div>
 
           {view === "performance" ? (
-            <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="absolute right-22 flex h-12.5 items-center gap-2 rounded-full border border-white/70 bg-white/20 px-6 text-sm font-bold text-[#0D1E4C] backdrop-blur-sm transition hover:scale-110"
+            >
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">
+                interests
+              </span>
+              Skills
+            </button>
+          ) : null}
+
+          <div className="flex items-center gap-1">
+            {view === "performance" ? (
               <button
                 type="button"
                 onClick={handleSaveImage}
@@ -686,8 +699,9 @@ export default function WorkforceOverview() {
                   download
                 </span>
               </button>
+            ) : null}
 
-              <div className="relative">
+            {view === "performance" ? <div className="relative">
                 <button
                   type="button"
                   onClick={() => setIsPickerOpen((open) => !open)}
@@ -708,9 +722,8 @@ export default function WorkforceOverview() {
                     }}
                   />
                 ) : null}
-              </div>
-            </div>
-          ) : null}
+            </div> : null}
+          </div>
         </div>
 
         {view === "performance" ? (
@@ -767,6 +780,12 @@ export default function WorkforceOverview() {
           </>
         ) : null}
       </div>
+
+      {view === "schedule" ? (
+        <div className="absolute inset-0 z-10 min-h-0">
+          <WorkforceScheduleCalendar />
+        </div>
+      ) : null}
     </div>
   );
 }

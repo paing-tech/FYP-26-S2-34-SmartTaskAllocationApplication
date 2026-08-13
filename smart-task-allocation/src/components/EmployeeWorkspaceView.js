@@ -328,6 +328,24 @@ export default function EmployeeWorkspaceView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep scheduled status transitions visible while this page remains open.
+  // The API persists Open -> In Progress when the scheduled start is reached.
+  useEffect(() => {
+    const intervalId = window.setInterval(async () => {
+      try {
+        const response = await fetch("/api/employee-tasks", { headers: await authHeaders() });
+        if (!response.ok) return;
+        const result = await response.json();
+        setTasks(result.tasks ?? []);
+        setCompletedTasks(result.completedTasks ?? []);
+      } catch {
+        // The normal refresh/error flow handles transient connection failures.
+      }
+    }, 30_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   async function completeTask(task) {
     if (!task?.task_id) return;
 

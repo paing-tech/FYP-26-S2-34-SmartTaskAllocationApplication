@@ -3,6 +3,7 @@ import { getAuthenticatedUser, requireManager } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { ensureUntitledGroup } from "@/lib/taskGroups";
 import { notifyAgentOwnerTelegram } from "@/lib/agentNotifications";
+import { syncStartedTaskStatuses } from "@/lib/taskStatusSync";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -911,6 +912,8 @@ export async function GET(request) {
     const organizationId = await getManagerOrganizationId(supabase, user);
     const includeArchived = new URL(request.url).searchParams.get("includeArchived") === "true";
 
+    await syncStartedTaskStatuses(supabase, organizationId);
+
     let query = supabase
       .from("task")
       .select("*")
@@ -992,11 +995,14 @@ export async function GET(request) {
       }
     }
 
-    const visibleTasks = (data ?? []).filter(
-      (task) =>
-        !["hidden", "dismissed"].includes(String(task.ai_state || "").toLowerCase()) &&
-        (includeArchived || String(task.status || "").toLowerCase() !== "archived"),
-    );
+    const visibleTasks = (data ?? []).filter((task) => {
+      if (["hidden", "dismissed"].includes(String(task.ai_state || "").toLowerCase())) return false;
+      if (includeArchived) return true;
+
+      // Completed and archived tasks belong in Allocation History, not the
+      // active Board or Calendar workspace views.
+      return !["completed", "archived"].includes(String(task.status || "").toLowerCase());
+    });
 
     const tasks = visibleTasks.map((task) => {
       const latestAssignment = latestAssignmentByTaskId.get(task.task_id);

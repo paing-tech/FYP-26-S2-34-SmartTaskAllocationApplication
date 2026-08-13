@@ -11,43 +11,39 @@ async function authHeaders() {
   return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
 }
 
-function formatDateLabel(dateStr) {
-  const date = new Date(`${dateStr}T00:00:00`);
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+function formatDateRanges(dates) {
+  if (!dates?.length) return "No dates selected";
+  const sorted = [...new Set(dates)].sort();
+  const shortDate = (value) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
+  };
+  if (sorted.length === 1) return shortDate(sorted[0]);
+  if (sorted.length === 2) return `${shortDate(sorted[0])} – ${shortDate(sorted[1])}`;
+
+  const finalParts = sorted.at(-1).split("-").map(Number);
+  const prefixDates = sorted.slice(0, -1);
+  const prefix = prefixDates.map((value, index) => {
+    const [year, month, day] = value.split("-").map(Number);
+    const next = (prefixDates[index + 1] || sorted.at(-1)).split("-").map(Number);
+    const showMonth = index === prefixDates.length - 1 || year !== next[0] || month !== next[1];
+    const showYear = index === prefixDates.length - 1 || year !== finalParts[0];
+    const monthLabel = new Date(year, month - 1, day).toLocaleDateString("en-GB", { month: "short" });
+    return `${day}${showMonth ? ` ${monthLabel}` : ""}${showYear ? ` ${String(year).slice(-2)}` : ""}`;
+  }).join(", ");
+  return `${prefix} - ${shortDate(sorted.at(-1))}`;
 }
 
-// Local-date-safe "+1 day" — deliberately avoids toISOString(), which
-// converts to UTC and can shift the date backward/forward across midnight
-// for any timezone offset from UTC, silently breaking contiguous-range
-// detection below.
-function addOneDay(dateStr) {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() + 1);
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function dateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-// Groups a sorted list of "YYYY-MM-DD" strings into contiguous ranges so a
-// 5-day request reads as "Jul 22 – Jul 26, 2026" instead of five separate dates.
-function formatDateRanges(dates) {
-  if (!dates?.length) return "No dates selected";
-  const sorted = [...dates].sort();
-  const ranges = [];
-  let rangeStart = sorted[0];
-  let previous = sorted[0];
-
-  for (let i = 1; i <= sorted.length; i += 1) {
-    const current = sorted[i];
-    const nextDayStr = addOneDay(previous);
-
-    if (current !== nextDayStr) {
-      ranges.push(rangeStart === previous ? formatDateLabel(rangeStart) : `${formatDateLabel(rangeStart)} – ${formatDateLabel(previous)}`);
-      rangeStart = current;
-    }
-    previous = current;
-  }
-
-  return ranges.join(", ");
+function monthDays(monthDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  return [...Array(new Date(year, month, 1).getDay()).fill(null), ...Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, index) => index + 1)];
 }
 
 function RequestRecord({ record, onUpdated, onCancelled }) {
@@ -57,7 +53,14 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
   const [editCertificateFile, setEditCertificateFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
+  const [detailMonth, setDetailMonth] = useState(() => {
+    const [year, month] = (record.dates?.[0] || dateKey(new Date())).split("-").map(Number);
+    return new Date(year, month - 1, 1);
+  });
   const editFileInputRef = useRef(null);
+  const normalizedStatus = String(record.status || "Pending").toLowerCase();
+  const isProcessed = normalizedStatus === "approved" || normalizedStatus === "rejected";
 
   function startEditing() {
     setEditDates(new Set(record.dates));
@@ -131,9 +134,9 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
 
   return (
     <>
-      <div className="rounded-3xl bg-white/40 p-3">
+      <div className={`rounded-3xl bg-white/40 p-3 ${isProcessed ? "flex items-center gap-3" : ""}`}>
         <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-bold text-[#0D1E4C]">{formatDateRanges(record.dates)}</p>
+          <p className="text-sm font-bold text-[#0D1E4C]">{formatDateRanges(record.dates?.slice(0, 1))}</p>
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${
               record.leave_type === "sick" ? "bg-sky-100 text-sky-700" : "bg-indigo-100 text-indigo-700"
@@ -143,9 +146,13 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
           </span>
         </div>
 
+        {isProcessed ? (
+          <div className="ml-auto flex shrink-0 items-center gap-1.5"><button type="button" onClick={() => setShowDetails(true)} aria-label="View leave request details" className="flex h-7 w-7 items-center justify-center rounded-full text-[#0D1E4C] transition hover:bg-white/70"><span className="material-symbols-outlined text-[20px]" aria-hidden="true">description</span></button><span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black text-white ${normalizedStatus === "approved" ? "bg-emerald-700" : "bg-red-700"}`}>{normalizedStatus === "approved" ? "Approved" : "Rejected"}</span></div>
+        ) : null}
+
         {!isEditing && error ? <p className="mt-2 text-xs font-bold text-red-600">{error}</p> : null}
 
-        <div className="mt-2 flex gap-2">
+        {!isProcessed ? <div className="mt-2 flex gap-2">
           <button
             type="button"
             onClick={startEditing}
@@ -161,7 +168,7 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
           >
             Cancel request
           </button>
-        </div>
+        </div> : null}
       </div>
 
       {isEditing ? (
@@ -234,6 +241,19 @@ function RequestRecord({ record, onUpdated, onCancelled }) {
             </div>
           </div>
         </div>
+        </Portal>
+      ) : null}
+      {showDetails ? (
+        <Portal>
+          <div className="fixed inset-0 z-[75] flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowDetails(false); }}>
+            <section className="max-h-[90vh] w-full max-w-xs overflow-y-auto rounded-3xl bg-white/40 p-6 text-[#0D1E4C] shadow-xl backdrop-blur-sm">
+              <div className="relative text-center"><p className="text-lg font-black">Your Leave Request</p><p className="mt-1 text-sm font-bold capitalize text-slate-500">{record.leave_type} leave</p><button type="button" onClick={() => setShowDetails(false)} className="absolute -right-2 -top-2 flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/70" aria-label="Close details"><span className="material-symbols-outlined">close</span></button></div>
+              <div className="mt-5"><div className="flex items-center justify-between"><button type="button" onClick={() => setDetailMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/70" aria-label="Previous month"><span className="material-symbols-outlined">chevron_left</span></button><h4 className="text-base font-black">{detailMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</h4><button type="button" onClick={() => setDetailMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/70" aria-label="Next month"><span className="material-symbols-outlined">chevron_right</span></button></div><div className="mt-2 grid grid-cols-7 text-center text-xs font-black text-slate-400">{WEEKDAYS.map((day) => <span key={day} className="py-2">{day.slice(0, 2)}</span>)}</div><div className="grid grid-cols-7 text-center text-sm font-bold">{monthDays(detailMonth).map((day, index) => { const key = day ? dateKey(new Date(detailMonth.getFullYear(), detailMonth.getMonth(), day)) : ""; const selected = record.dates?.includes(key); return <span key={`${day}-${index}`} className="flex h-10 items-center justify-center"><span className={`flex h-9 w-9 items-center justify-center rounded-full ${selected ? "bg-[#0D1E4C] text-white" : ""}`}>{day}</span></span>; })}</div></div>
+              <div className="mt-5 text-center"><p className="text-xs font-black uppercase tracking-wide text-slate-400">Reason</p><p className="mx-auto mt-2 max-w-[15rem] whitespace-pre-wrap break-words text-base">{record.description || "No reason provided."}</p></div>
+              {record.certificate_url ? <a href={record.certificate_url} target="_blank" rel="noreferrer" className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-white/70 bg-white/60 text-sm font-black transition hover:bg-white"><span className="material-symbols-outlined">attach_file</span>View Medical Certificate</a> : null}
+              <div className="mt-6 flex justify-center"><span className={`rounded-full px-4 py-2 text-sm font-black text-white ${normalizedStatus === "approved" ? "bg-emerald-700" : "bg-red-700"}`}>{normalizedStatus === "approved" ? "Approved" : "Rejected"}</span></div>
+            </section>
+          </div>
         </Portal>
       ) : null}
     </>

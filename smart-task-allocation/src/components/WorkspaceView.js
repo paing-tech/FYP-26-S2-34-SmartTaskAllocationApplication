@@ -494,6 +494,23 @@ export default function WorkspaceView() {
     }
   }
 
+  // Keep scheduled status transitions visible while this page remains open.
+  // The API persists Open -> In Progress when the scheduled start is reached.
+  useEffect(() => {
+    const intervalId = window.setInterval(async () => {
+      try {
+        const response = await fetch("/api/tasks", { headers: await authHeaders() });
+        if (!response.ok) return;
+        const result = await response.json();
+        setTasks(result.tasks ?? []);
+      } catch {
+        // The normal refresh/error flow handles transient connection failures.
+      }
+    }, 30_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   useEffect(() => {
     (async () => {
       await loadWorkspaceData();

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireEmployee } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { syncStartedTaskStatuses } from "@/lib/taskStatusSync";
 
 async function getAccount(supabase, user) {
   const { data, error } = await supabase
@@ -44,6 +45,8 @@ export async function GET(request) {
     if (!account?.organization_id) {
       return NextResponse.json({ tasks: [], completedTasks: [], groups: [], employees: [] });
     }
+
+    await syncStartedTaskStatuses(supabase, account.organization_id);
 
     // "Assigned to me" means either the single-assignee mirror column or a
     // row in the multi-assignee join table.

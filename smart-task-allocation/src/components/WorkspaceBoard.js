@@ -21,9 +21,8 @@ const STATUS_TONES = {
 };
 
 const AVATAR_COLORS = ["#1E40AF", "#0F766E", "#7C3AED", "#B45309", "#BE185D"];
-const STATUS_OPTIONS = ["Open", "In Progress", "Completed", "Cancelled"];
+const STATUS_OPTIONS = ["Open", "In Progress", "Completed"];
 const PRIORITY_OPTIONS = ["Low", "Medium", "High", "Urgent"];
-const REPEAT_OPTIONS = ["Never", "Daily", "Weekdays", "Weekends", "Weekly", "Monthly", "Custom"];
 
 function initials(name) {
   if (!name) return "?";
@@ -1490,7 +1489,6 @@ export function TaskEditPanel({
     description: task?.description ?? "",
     status: task?.status ?? "Open",
     priority: task?.priority ?? "Medium",
-    repeat: "Never",
     groupId: task?.group_id ?? "",
     requiredSkillIds: (task?.requiredSkills ?? []).map((skill) => skill.skill_id),
     startDateEnabled: Boolean(startParts.date),
@@ -2013,13 +2011,6 @@ export function TaskEditPanel({
               value={form.priority}
               options={PRIORITY_OPTIONS}
               onChange={(value) => updateField("priority", value)}
-            />
-            <SelectRow
-              icon="repeat"
-              label="Repeat"
-              value={form.repeat}
-              options={REPEAT_OPTIONS}
-              onChange={(value) => updateField("repeat", value)}
               isLast
             />
           </section>

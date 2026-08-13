@@ -148,6 +148,44 @@ async function getSingleInquiry(request, supabase, inquiryId) {
       : Promise.resolve({ data: null }),
   ]);
 
+  const { data: replyRows, error: repliesError } = await supabase
+    .from("announcement")
+    .select("announcement_id, created_by, target_user_id, body, created_at")
+    .eq("related_inquiry_id", inquiryId)
+    .order("created_at", { ascending: true });
+
+  if (repliesError) return NextResponse.json({ error: repliesError.message }, { status: 400 });
+
+  const replyAuthorIds = [...new Set((replyRows ?? []).map((reply) => reply.created_by).filter(Boolean))];
+  const [{ data: replyProfiles }, { data: replyAccounts }] = replyAuthorIds.length
+    ? await Promise.all([
+        supabase.from("profile").select("user_id, full_name").in("user_id", replyAuthorIds),
+        supabase.from("user_account").select("user_id, username, email").in("user_id", replyAuthorIds),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const replyProfileById = new Map((replyProfiles ?? []).map((item) => [item.user_id, item]));
+  const replyAccountById = new Map((replyAccounts ?? []).map((item) => [item.user_id, item]));
+
+  // A requester reply is fanned out to every Platform Admin, creating one
+  // announcement per recipient. Collapse those delivery copies into one chat
+  // message while retaining separate replies sent at different times.
+  const seenReplies = new Set();
+  const replies = [];
+  for (const reply of replyRows ?? []) {
+    const dedupeKey = `${reply.created_by}|${reply.created_at}|${reply.body}`;
+    if (seenReplies.has(dedupeKey)) continue;
+    seenReplies.add(dedupeKey);
+    const authorProfile = replyProfileById.get(reply.created_by);
+    const authorAccount = replyAccountById.get(reply.created_by);
+    replies.push({
+      replyId: reply.announcement_id,
+      message: reply.body,
+      createdAt: reply.created_at,
+      authorName: authorProfile?.full_name || authorAccount?.username || authorAccount?.email || "User",
+      isOwn: reply.created_by === requester.userId,
+    });
+  }
+
   return NextResponse.json({
     inquiry: {
       inquiryId: inquiry.inquiry_id,
@@ -164,6 +202,7 @@ async function getSingleInquiry(request, supabase, inquiryId) {
       email: account?.email ?? null,
       organizationName: organization?.organization_name ?? null,
       isOwner,
+      replies,
     },
   });
 }
