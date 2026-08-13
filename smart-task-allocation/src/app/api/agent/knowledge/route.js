@@ -5,6 +5,7 @@ import { uploadFoundryFile, addFileToVectorStore, deleteFoundryFile } from "@/li
 
 const BUCKET = "agent-knowledge";
 const MAX_BYTES = 20 * 1024 * 1024;
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const ALLOWED_TYPES = new Set([
   "application/pdf",
   "application/msword",
@@ -42,7 +43,19 @@ export async function GET(request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ files: data ?? [] });
+    // The bucket is private, so the raw storage_path isn't fetchable from the
+    // browser — each file needs its own short-lived signed URL to be viewable.
+    const files = await Promise.all(
+      (data ?? []).map(async (file) => {
+        const { data: signedUrlData } = await supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(file.storage_path, SIGNED_URL_TTL_SECONDS);
+
+        return { ...file, url: signedUrlData?.signedUrl ?? null };
+      }),
+    );
+
+    return NextResponse.json({ files });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

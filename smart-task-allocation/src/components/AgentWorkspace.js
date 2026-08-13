@@ -320,7 +320,10 @@ export default function AgentWorkspace() {
       const res = await fetch("/api/agent/knowledge", { method: "POST", headers, body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not upload the file.");
-      setFiles((current) => [data.file, ...current]);
+      // Re-fetch rather than prepending data.file directly — the POST
+      // response has no signed `url` (only GET computes those), so a
+      // manual splice would leave the just-uploaded file unclickable.
+      await loadFiles();
     } catch (error) {
       setKnowledgeError(error.message);
     } finally {
@@ -697,10 +700,22 @@ export default function AgentWorkspace() {
                   key={file.agent_knowledge_file_id}
                   className="flex items-center justify-between rounded-xl border border-white/40 bg-white/40 px-3 py-2"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-bold text-[#0D1E4C]">{file.filename}</p>
-                    <p className="text-[10px] text-[#0D1E4C]/60">{formatBytes(file.file_size_bytes)}</p>
-                  </div>
+                  {file.url ? (
+                    <a
+                      href={file.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="min-w-0 hover:underline"
+                    >
+                      <p className="truncate text-xs font-bold text-[#0D1E4C]">{file.filename}</p>
+                      <p className="text-[10px] text-[#0D1E4C]/60">{formatBytes(file.file_size_bytes)}</p>
+                    </a>
+                  ) : (
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-bold text-[#0D1E4C]">{file.filename}</p>
+                      <p className="text-[10px] text-[#0D1E4C]/60">{formatBytes(file.file_size_bytes)}</p>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDeleteFile(file.agent_knowledge_file_id)}
