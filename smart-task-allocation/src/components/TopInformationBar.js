@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
 import ProfileDetailCard from "@/components/ProfileDetailCard";
+import ContactSupportModal from "@/components/ContactSupportModal";
 import { usePlanGate } from "@/components/PlanProvider";
 import {
   DEMO_ROLES,
@@ -63,18 +64,10 @@ const aiAgentItems = {
   ],
 };
 
-const notificationItems = [
-  {
-    id: 1,
-    title: "Workspace activity",
-    text: "Task updates and assignments will appear here.",
-  },
-  {
-    id: 2,
-    title: "Profile",
-    text: "Profile and account alerts are available from every page.",
-  },
-];
+function formatAnnouncementTime(isoString) {
+  if (!isoString) return "";
+  return new Date(isoString).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
 function SearchIcon() {
   return (
@@ -140,6 +133,9 @@ export default function TopInformationBar({ actor }) {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileCardOpen, setIsProfileCardOpen] = useState(false);
+  const [isContactSupportOpen, setIsContactSupportOpen] = useState(false);
+  const [announcements, setAnnouncements] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [accountSearchItems, setAccountSearchItems] = useState([]);
   const [isLoadingSearchItems, setIsLoadingSearchItems] = useState(false);
   const [profile, setProfile] = useState({ email: "", name: "", profilePictureUrl: "" });
@@ -327,6 +323,42 @@ export default function TopInformationBar({ actor }) {
     return () => window.clearTimeout(timeout);
   }, []);
 
+  async function loadAnnouncements() {
+    try {
+      const result = await fetchJson("/api/announcements");
+      setAnnouncements(result.announcements ?? []);
+      setUnreadCount(result.unreadCount ?? 0);
+    } catch {
+      /* best-effort — the bell just stays empty */
+    }
+  }
+
+  useEffect(() => {
+    const timeout = window.setTimeout(loadAnnouncements, 0);
+    return () => window.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function openNotifications() {
+    const opening = !isNotificationsOpen;
+    setIsNotificationsOpen(opening);
+    setIsProfileOpen(false);
+
+    if (opening && unreadCount > 0) {
+      setAnnouncements((current) => current.map((item) => ({ ...item, isRead: true })));
+      setUnreadCount(0);
+      try {
+        await fetch("/api/announcements", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({ markAllRead: true }),
+        });
+      } catch {
+        /* best-effort — worst case the dot reappears next load */
+      }
+    }
+  }
+
   async function openProfileMenu() {
     if (!isProfileOpen) {
       await loadProfile();
@@ -455,16 +487,15 @@ export default function TopInformationBar({ actor }) {
         <div className="relative">
         <button
           type="button"
-          onClick={() => {
-            setIsNotificationsOpen((current) => !current);
-            setIsProfileOpen(false);
-          }}
+          onClick={openNotifications}
           className="relative flex h-11 w-11 items-center justify-center rounded-full text-[#07183b] transition hover:bg-white/70"
           aria-label="Open notifications"
-          title="Workspace activity"
+          title="Notifications"
         >
           <BellIcon />
-          <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-[#0a72e8] ring-2 ring-white/70" />
+          {unreadCount > 0 ? (
+            <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-[#0a72e8] ring-2 ring-white/70" />
+          ) : null}
         </button>
 
         {isNotificationsOpen ? (
@@ -475,13 +506,27 @@ export default function TopInformationBar({ actor }) {
                 Live
               </span>
             </div>
-            <div className="mt-3 space-y-2">
-              {notificationItems.map((item) => (
-                <div key={item.id} className="rounded-lg bg-[#f8faff] p-3">
-                  <p className="text-sm font-bold text-[#07183b]">{item.title}</p>
-                  <p className="mt-1 text-xs leading-5 text-[#61708a]">{item.text}</p>
-                </div>
-              ))}
+            <div className="mt-3 max-h-96 space-y-2 overflow-y-auto">
+              {announcements.length ? (
+                announcements.map((item) => (
+                  <div
+                    key={item.announcementId}
+                    className={`rounded-lg p-3 ${item.isRead ? "bg-[#f8faff]" : "bg-[#eef6ff]"}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-bold text-[#07183b]">{item.title}</p>
+                      <span className="shrink-0 text-[10px] font-semibold text-[#94a3b8]">
+                        {formatAnnouncementTime(item.createdAt)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#61708a]">{item.body}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="rounded-lg bg-[#f8faff] p-3 text-xs font-semibold text-[#61708a]">
+                  No announcements yet.
+                </p>
+              )}
             </div>
           </div>
         ) : null}
@@ -611,6 +656,21 @@ export default function TopInformationBar({ actor }) {
                     </span>
                   </button>
                 ) : null}
+                {isDemo ? null : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      setIsContactSupportOpen(true);
+                    }}
+                    className="flex items-center gap-2.5 rounded-full px-4 py-3 text-left text-sm font-bold text-[#07183b] transition hover:bg-white/60"
+                  >
+                    <span className="material-symbols-outlined text-lg text-[#94a3b8]" aria-hidden="true">
+                      contact_support
+                    </span>
+                    Contact Support
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={isDemo ? exitDemo : signOut}
@@ -701,6 +761,7 @@ export default function TopInformationBar({ actor }) {
       ) : null}
 
       {isProfileCardOpen ? <ProfileDetailCard onClose={() => setIsProfileCardOpen(false)} /> : null}
+      {isContactSupportOpen ? <ContactSupportModal onClose={() => setIsContactSupportOpen(false)} /> : null}
     </>
   );
 }

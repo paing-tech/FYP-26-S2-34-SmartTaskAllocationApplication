@@ -116,16 +116,31 @@ export default function PlatformAdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
+  async function fetchAccounts() {
+    const response = await fetch("/api/platformadmin/accounts", { headers: await authHeaders() });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not load platform accounts.");
+    return result.accounts ?? [];
+  }
+
+  // A bare "fetch failed" is almost always a one-off network blip between
+  // the server and Supabase, not a real fault — retry once before showing
+  // the user anything, and only surface a friendly message if it recurs.
   async function loadAccounts() {
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/platformadmin/accounts", { headers: await authHeaders() });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Could not load platform accounts.");
-      setAccounts(result.accounts ?? []);
-    } catch (loadError) {
-      setError(loadError.message);
+      setAccounts(await fetchAccounts());
+    } catch (firstError) {
+      if (/fetch failed/i.test(firstError.message)) {
+        try {
+          setAccounts(await fetchAccounts());
+        } catch {
+          setError("Could not reach the server. Check your connection and try refreshing.");
+        }
+      } else {
+        setError(firstError.message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -134,6 +149,7 @@ export default function PlatformAdminDashboard() {
   useEffect(() => {
     const timeout = setTimeout(loadAccounts, 0);
     return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const roleOptions = useMemo(

@@ -129,6 +129,15 @@ function NavIcon({ name }) {
     );
   }
 
+  if (name === "mail") {
+    return (
+      <svg {...commonProps}>
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <path d="m2 6 10 7 10-7" />
+      </svg>
+    );
+  }
+
   if (name === "content") {
     return (
       <svg {...commonProps}>
