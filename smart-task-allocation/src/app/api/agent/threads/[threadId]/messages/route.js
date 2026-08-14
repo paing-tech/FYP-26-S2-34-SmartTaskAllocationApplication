@@ -230,15 +230,41 @@ export async function PATCH(request, { params }) {
     }
 
     const body = await request.json();
-    const messageIndex = Number(body.messageIndex);
+    const requestedIndex = Number(body.messageIndex);
     const taskProposal = body.taskProposal;
     const messages = thread.messages ?? [];
-    if (!Number.isInteger(messageIndex) || !messages[messageIndex]) {
+
+    function hasUnresolvedProposal(message) {
+      return message?.role === "assistant" && message?.taskProposal && message.taskProposal.status !== "done";
+    }
+
+    // The client-supplied index isn't trusted as-is: it's only ever
+    // meaningful when it actually points at the assistant message carrying
+    // the proposal being resolved. If it doesn't (stale local state, a
+    // reload mid-flow, etc.), fall back to the most recent assistant
+    // message that still has an unresolved proposal — otherwise this can
+    // silently patch the wrong message (observed patching the user's own
+    // message instead, leaving the real proposal looking permanently
+    // unresolved and re-clickable).
+    let targetIndex = Number.isInteger(requestedIndex) && hasUnresolvedProposal(messages[requestedIndex])
+      ? requestedIndex
+      : -1;
+
+    if (targetIndex === -1) {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (hasUnresolvedProposal(messages[index])) {
+          targetIndex = index;
+          break;
+        }
+      }
+    }
+
+    if (targetIndex === -1) {
       return NextResponse.json({ error: "Message not found." }, { status: 404 });
     }
 
     const updatedMessages = messages.map((message, index) =>
-      index === messageIndex ? { ...message, taskProposal } : message,
+      index === targetIndex ? { ...message, taskProposal } : message,
     );
 
     const { error } = await supabase
