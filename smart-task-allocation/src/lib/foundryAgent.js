@@ -207,7 +207,21 @@ const ARRANGE_ORG_CHART_TOOL = {
   },
 };
 
-const TOOL_NAMES = ["propose_tasks", "create_tasks_now", "arrange_org_chart"];
+// Only offered to a User Admin's agent (see the messages route), which
+// prefetches today's schedule data and passes it straight in — there's
+// nothing for the model to specify, so no parameters. Unlike the other
+// tools, this one's result is real data, not a canned confirmation: the
+// follow-up call below feeds it the actual schedule so it can answer in
+// prose grounded in today's real numbers instead of guessing from memory.
+const TODAYS_SCHEDULE_TOOL = {
+  type: "function",
+  name: "get_todays_schedule",
+  description:
+    "Look up today's work schedule: who is scheduled to work today, what time each person is scheduled, and whether they've already clocked in. Always reflects the current day only. Call this whenever the user asks about today's schedule, a specific person's hours today, or clock-in status — never guess or answer from memory.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+
+const TOOL_NAMES = ["propose_tasks", "create_tasks_now", "arrange_org_chart", "get_todays_schedule"];
 
 function findToolCall(response) {
   return (response.output ?? []).find((item) => item.type === "function_call" && TOOL_NAMES.includes(item.name));
@@ -272,6 +286,7 @@ export async function sendMessageAndGetReply({
   allowDirectCreate,
   orgChartRoster,
   taskGroups,
+  todaysSchedule,
   images,
 }) {
   const { deployment } = getFoundryConfig();
@@ -290,11 +305,15 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   if (orgChartRoster?.length) {
     augmentedInstructions += ` You can also set up the organization chart with the arrange_org_chart tool when asked to build/arrange it from an uploaded document. The real people in this organization are: ${orgChartRoster.join(", ")}. Only reference these exact names — never invent a person who isn't in this list; match names from the document to the closest name here.`;
   }
+  if (todaysSchedule) {
+    augmentedInstructions += " You can also look up today's real work schedule with the get_todays_schedule tool — who's working today, their scheduled hours, and whether they've clocked in yet.";
+  }
   augmentedInstructions = augmentedInstructions.trim();
 
   const tools = [PROPOSE_TASKS_TOOL];
   if (allowDirectCreate) tools.push(CREATE_TASKS_NOW_TOOL);
   if (orgChartRoster?.length) tools.push(ARRANGE_ORG_CHART_TOOL);
+  if (todaysSchedule) tools.push(TODAYS_SCHEDULE_TOOL);
   if (vectorStoreId) tools.push({ type: "file_search", vector_store_ids: [vectorStoreId] });
 
   async function callResponses(prevId) {
@@ -344,6 +363,10 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
     followUpOutput = "The proposed tasks were shown to the user to review, select, and confirm. Do not create them yourself.";
   } else if (functionCall.name === "arrange_org_chart") {
     followUpOutput = "The organization chart is being set up now.";
+  } else if (functionCall.name === "get_todays_schedule") {
+    followUpOutput = todaysSchedule?.length
+      ? JSON.stringify(todaysSchedule)
+      : "No one is scheduled to work today.";
   }
 
   // The API rejects the *next* previous_response_id-chained call if a

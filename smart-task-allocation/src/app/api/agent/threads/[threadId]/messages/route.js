@@ -5,6 +5,36 @@ import { sendMessageAndGetReply } from "@/lib/foundryAgent";
 import { matchTaskGroupByName } from "@/lib/taskGroups";
 import { arrangeOrgChart } from "@/lib/orgChartAutomation";
 import { getAccountsWithProfiles } from "@/app/api/my-organization/route";
+import { getTodaysScheduleSummary } from "@/app/api/useradmin/workforce-schedule/route";
+
+function pad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function todayDateStr() {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// Shared gate for the two tools offered only to a User Admin's agent
+// (org-chart setup and today's schedule lookup) — everyone else's agent
+// never even sees them as options.
+async function isUserAdminAgent(supabase, agent) {
+  const { data: account } = await supabase
+    .from("user_account")
+    .select("role_id")
+    .eq("user_id", agent.user_id)
+    .maybeSingle();
+  if (!account?.role_id) return false;
+
+  const { data: role } = await supabase.from("role").select("role_name").eq("role_id", account.role_id).maybeSingle();
+  return (role?.role_name ?? "").trim().toLowerCase() === "user admin";
+}
+
+async function getTodaysSchedule(supabase, agent) {
+  if (!(await isUserAdminAgent(supabase, agent))) return null;
+  return getTodaysScheduleSummary(supabase, agent.organization_id, todayDateStr());
+}
 
 async function getMyThread(supabase, user, threadId) {
   const { data: agent } = await supabase.from("agent").select("*").eq("user_id", user.id).maybeSingle();
@@ -20,18 +50,8 @@ async function getMyThread(supabase, user, threadId) {
   return { agent, thread };
 }
 
-// The org-chart tool is only offered to a User Admin's agent — everyone
-// else's agent never even sees it as an option.
 async function getOrgChartRoster(supabase, agent) {
-  const { data: account } = await supabase
-    .from("user_account")
-    .select("role_id")
-    .eq("user_id", agent.user_id)
-    .maybeSingle();
-  if (!account?.role_id) return null;
-
-  const { data: role } = await supabase.from("role").select("role_name").eq("role_id", account.role_id).maybeSingle();
-  if ((role?.role_name ?? "").trim().toLowerCase() !== "user admin") return null;
+  if (!(await isUserAdminAgent(supabase, agent))) return null;
 
   const { accounts } = await getAccountsWithProfiles(supabase, agent.organization_id);
   return (accounts ?? []).map((a) => a.full_name).filter(Boolean);
@@ -118,6 +138,7 @@ export async function POST(request, { params }) {
     }
 
     const orgChartRoster = await getOrgChartRoster(supabase, agent);
+    const todaysSchedule = await getTodaysSchedule(supabase, agent);
     const images = thread.last_response_id ? [] : await getKnowledgeImages(supabase, agent.agent_id);
     const taskGroups = await getTaskGroups(supabase, agent.organization_id);
 
@@ -134,6 +155,7 @@ export async function POST(request, { params }) {
       vectorStoreId: agent.foundry_vector_store_id,
       orgChartRoster,
       taskGroups: taskGroups.map((group) => group.group_name),
+      todaysSchedule,
       images,
     });
 

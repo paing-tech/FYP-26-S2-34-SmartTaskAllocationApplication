@@ -14,7 +14,7 @@ function MessageBubble({ message }) {
       <div
         className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm font-medium ${
           isUser
-            ? "rounded-br-sm bg-white/20 text-white"
+            ? "rounded-br-sm bg-slate-500/40 text-white"
             : message.tone === "error"
               ? "rounded-bl-sm border border-red-200 bg-red-50 text-red-700"
               : "rounded-bl-sm bg-[#2563EB]/40 text-white"

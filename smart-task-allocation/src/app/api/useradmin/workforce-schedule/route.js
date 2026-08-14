@@ -2,6 +2,65 @@ import { NextResponse } from "next/server";
 import { getRequesterOrganizationId, requireUserAdmin } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
+// Compact, single-day version of the query above — used by the agent's
+// get_todays_schedule tool (see the agent messages route), which only ever
+// needs "who's working today, what time, have they clocked in" rather than
+// the full week-view payload the calendar UI fetches.
+export async function getTodaysScheduleSummary(supabase, organizationId, dateStr) {
+  if (!organizationId) return [];
+
+  const { data: accounts, error: accountsError } = await supabase
+    .from("user_account")
+    .select("user_id, role:role_id(role_name), department:department_id(department_name)")
+    .eq("organization_id", organizationId)
+    .eq("account_status", "Active");
+  if (accountsError || !accounts?.length) return [];
+
+  // Same manager/employee-only filter as the calendar's own query below —
+  // other roles (e.g. User Admin) don't have attendance schedules, so
+  // including them would just be noise in the agent's answer.
+  const peopleAccounts = accounts.filter((account) => {
+    const role = String(account.role?.role_name || "").toLowerCase();
+    return role === "manager" || role === "employee";
+  });
+  if (!peopleAccounts.length) return [];
+  const userIds = peopleAccounts.map((account) => account.user_id);
+
+  const [profilesResult, schedulesResult, attendanceResult] = await Promise.all([
+    supabase.from("profile").select("user_id, full_name").in("user_id", userIds),
+    supabase
+      .from("attendance_schedule")
+      .select("user_id, start_time, end_time")
+      .in("user_id", userIds)
+      .eq("work_date", dateStr),
+    supabase
+      .from("attendance")
+      .select("user_id, clock_in_at, clock_out_at")
+      .in("user_id", userIds)
+      .eq("work_date", dateStr),
+  ]);
+
+  const profiles = new Map((profilesResult.data ?? []).map((profile) => [profile.user_id, profile]));
+  const schedules = new Map((schedulesResult.data ?? []).map((row) => [row.user_id, row]));
+  const attendance = new Map((attendanceResult.data ?? []).map((row) => [row.user_id, row]));
+
+  return peopleAccounts
+    .map((account) => {
+      const schedule = schedules.get(account.user_id);
+      const record = attendance.get(account.user_id);
+      return {
+        name: profiles.get(account.user_id)?.full_name || "Unnamed",
+        department: account.department?.department_name ?? "No department",
+        scheduledStart: schedule?.start_time ?? null,
+        scheduledEnd: schedule?.end_time ?? null,
+        clockedIn: Boolean(record?.clock_in_at),
+        clockInTime: record?.clock_in_at ?? null,
+        clockedOut: Boolean(record?.clock_out_at),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function GET(request) {
   try {
     const supabase = getSupabaseAdminClient();
