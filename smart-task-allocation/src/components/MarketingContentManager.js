@@ -5,6 +5,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { SITE_CONTENT_DEFAULTS } from "@/lib/siteContentSchema";
 import { FeatureIcon } from "@/components/FeatureShowcase";
 import { SocialIcon } from "@/components/LandingFooter";
+import TestimonialsReviewQueue from "@/components/TestimonialsReviewQueue";
 
 function isSameContent(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -361,7 +362,7 @@ function TestimonialsPreview({ draft, onChange }) {
         />
       </div>
       <p className="mt-6 text-xs font-semibold text-[#94a3b8]">
-        Real testimonials from users are pulled in live and shown below this header — nothing to edit there.
+        Real testimonials from users are pulled in live and shown below this header — review and approve them under the &ldquo;Testimonials&rdquo; tab above.
       </p>
     </div>
   );
@@ -751,32 +752,47 @@ export default function MarketingContentManager() {
           >
             Pricing
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("testimonials")}
+            className={`rounded-full px-5 py-2 text-sm font-bold transition ${
+              tab === "testimonials" ? "bg-[#0D1E4C] text-white" : "text-[#0D1E4C] hover:bg-white/60"
+            }`}
+          >
+            Testimonials
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {error ? <span className="text-xs font-bold text-red-600">{error}</span> : null}
-          {!error && justSaved && !dirtyKeys.length ? (
-            <span className="text-xs font-bold text-emerald-600">Saved — live on the site.</span>
-          ) : null}
-          {dirtyKeys.length ? (
+          {tab === "testimonials" ? null : (
             <>
-              <span className="text-xs font-bold text-[#52627a]">
-                {dirtyKeys.length} section{dirtyKeys.length > 1 ? "s" : ""} changed
-              </span>
-              <button
-                type="button"
-                onClick={handleDiscardAll}
-                className="rounded-full border border-white/60 bg-white/40 px-4 py-2 text-sm font-bold text-[#52627a] transition hover:bg-white/70"
-              >
-                Discard
-              </button>
+              {error ? <span className="text-xs font-bold text-red-600">{error}</span> : null}
+              {!error && justSaved && !dirtyKeys.length ? (
+                <span className="text-xs font-bold text-emerald-600">Saved — live on the site.</span>
+              ) : null}
+              {dirtyKeys.length ? (
+                <>
+                  <span className="text-xs font-bold text-[#52627a]">
+                    {dirtyKeys.length} section{dirtyKeys.length > 1 ? "s" : ""} changed
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleDiscardAll}
+                    className="rounded-full border border-white/60 bg-white/40 px-4 py-2 text-sm font-bold text-[#52627a] transition hover:bg-white/70"
+                  >
+                    Discard
+                  </button>
+                </>
+              ) : null}
             </>
-          ) : null}
+          )}
           <button
             type="button"
             onClick={handleSaveAll}
-            disabled={!dirtyKeys.length || isSaving}
-            className="rounded-full bg-[#0a2a66] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#061a40] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={tab === "testimonials" || !dirtyKeys.length || isSaving}
+            className={`rounded-full bg-[#0a2a66] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#061a40] disabled:cursor-not-allowed disabled:opacity-50 ${
+              tab === "testimonials" ? "hidden" : ""
+            }`}
           >
             {isSaving ? "Saving…" : "Save changes"}
           </button>
@@ -784,7 +800,9 @@ export default function MarketingContentManager() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto rounded-[28px] border border-white/60 shadow-[0_20px_60px_rgba(13,30,76,0.15)]">
-        {tab === "homepage" ? (
+        {tab === "testimonials" ? (
+          <TestimonialsReviewQueue />
+        ) : tab === "homepage" ? (
           <div>
             <SectionFrame hidden={draftByKey.nav.hidden} onToggleHidden={() => toggleHidden("nav")}>
               <NavPreview draft={draftByKey.nav} onChange={(next) => updateSection("nav", next)} />

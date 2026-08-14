@@ -221,7 +221,29 @@ const TODAYS_SCHEDULE_TOOL = {
   parameters: { type: "object", properties: {}, required: [] },
 };
 
-const TOOL_NAMES = ["propose_tasks", "create_tasks_now", "arrange_org_chart", "get_todays_schedule"];
+// Only offered to a Platform Admin's agent (see the messages route). No
+// parameters — the model can't specify which feedback to look at, it always
+// analyzes whatever's unprocessed. This is an action tool like
+// arrange_org_chart, not a data tool like get_todays_schedule: the actual
+// AI-drafting + DB writes happen in the caller (messages route) after this
+// call returns, via the same curateTestimonialsFromFeedback() the "Curate
+// from feedback" button calls — never auto-published, drafts always land
+// as Pending awaiting a human's Approve/Reject.
+const CURATE_TESTIMONIALS_TOOL = {
+  type: "function",
+  name: "curate_testimonials",
+  description:
+    "Analyze recent user feedback (Feedback-category Contact Support submissions) and draft candidate testimonials for the public marketing website. Drafted testimonials always land as Pending, awaiting Platform Admin approval — never published automatically. Only call this when explicitly asked to review feedback, find good testimonials, or curate testimonials.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+
+const TOOL_NAMES = [
+  "propose_tasks",
+  "create_tasks_now",
+  "arrange_org_chart",
+  "get_todays_schedule",
+  "curate_testimonials",
+];
 
 function findToolCall(response) {
   return (response.output ?? []).find((item) => item.type === "function_call" && TOOL_NAMES.includes(item.name));
@@ -287,6 +309,7 @@ export async function sendMessageAndGetReply({
   orgChartRoster,
   taskGroups,
   todaysSchedule,
+  allowTestimonialCuration,
   images,
 }) {
   const { deployment } = getFoundryConfig();
@@ -308,12 +331,16 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   if (todaysSchedule) {
     augmentedInstructions += " You can also look up today's real work schedule with the get_todays_schedule tool — who's working today, their scheduled hours, and whether they've clocked in yet.";
   }
+  if (allowTestimonialCuration) {
+    augmentedInstructions += " You can also analyze recent user feedback and draft candidate public testimonials with the curate_testimonials tool — the drafts always need Platform Admin approval before they go live, so never claim they're already published.";
+  }
   augmentedInstructions = augmentedInstructions.trim();
 
   const tools = [PROPOSE_TASKS_TOOL];
   if (allowDirectCreate) tools.push(CREATE_TASKS_NOW_TOOL);
   if (orgChartRoster?.length) tools.push(ARRANGE_ORG_CHART_TOOL);
   if (todaysSchedule) tools.push(TODAYS_SCHEDULE_TOOL);
+  if (allowTestimonialCuration) tools.push(CURATE_TESTIMONIALS_TOOL);
   if (vectorStoreId) tools.push({ type: "file_search", vector_store_ids: [vectorStoreId] });
 
   async function callResponses(prevId) {
@@ -346,6 +373,7 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
       proposedTasks: null,
       createTasksNow: null,
       arrangeOrgChart: null,
+      curateTestimonials: false,
       usage: sumUsage(response),
     };
   }
@@ -355,6 +383,7 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   const proposedTasks = functionCall.name === "propose_tasks" ? parsedTasks?.tasks ?? null : null;
   const createTasksNow = functionCall.name === "create_tasks_now" ? parsedTasks : null;
   const arrangeOrgChart = functionCall.name === "arrange_org_chart" ? parseOrgChart(functionCall) : null;
+  const curateTestimonials = functionCall.name === "curate_testimonials";
 
   let followUpOutput = "Done.";
   if (functionCall.name === "create_tasks_now") {
@@ -367,6 +396,8 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
     followUpOutput = todaysSchedule?.length
       ? JSON.stringify(todaysSchedule)
       : "No one is scheduled to work today.";
+  } else if (functionCall.name === "curate_testimonials") {
+    followUpOutput = "Feedback is being analyzed now — drafted testimonials will need your approval before they go live.";
   }
 
   // The API rejects the *next* previous_response_id-chained call if a
@@ -396,6 +427,7 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
     proposedTasks,
     createTasksNow,
     arrangeOrgChart,
+    curateTestimonials,
     usage: sumUsage(response, followUp),
   };
 }

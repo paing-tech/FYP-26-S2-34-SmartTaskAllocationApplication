@@ -11,7 +11,10 @@ export async function GET() {
     const { data: testimonials, error } = await supabase
       .from("testimonial")
       .select("testimonial_id, user_id, rating, testimonial_message, is_featured, created_at")
-      .neq("status", "Rejected")
+      // Only explicitly Platform Admin-approved testimonials are public —
+      // AI-drafted ones land as "Pending" and must never show here until
+      // reviewed (see the curation endpoint).
+      .eq("status", "Approved")
       .order("is_featured", { ascending: false })
       .order("created_at", { ascending: false });
 

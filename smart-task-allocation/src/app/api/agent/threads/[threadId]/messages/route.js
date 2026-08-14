@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/serverAuth";
+import { getAuthenticatedUser, isPlatformAdminRole } from "@/lib/serverAuth";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendMessageAndGetReply } from "@/lib/foundryAgent";
 import { matchTaskGroupByName } from "@/lib/taskGroups";
 import { arrangeOrgChart } from "@/lib/orgChartAutomation";
 import { getAccountsWithProfiles } from "@/app/api/my-organization/route";
 import { getTodaysScheduleSummary } from "@/app/api/useradmin/workforce-schedule/route";
+import { curateTestimonialsFromFeedback } from "@/lib/testimonialCuration";
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -34,6 +35,21 @@ async function isUserAdminAgent(supabase, agent) {
 async function getTodaysSchedule(supabase, agent) {
   if (!(await isUserAdminAgent(supabase, agent))) return null;
   return getTodaysScheduleSummary(supabase, agent.organization_id, todayDateStr());
+}
+
+// Gate for the curate_testimonials tool — Platform Admin only, same shape
+// as isUserAdminAgent above but reusing serverAuth's role-name normalizer
+// since Platform Admin accounts have no organization_id to key off of.
+async function isPlatformAdminAgent(supabase, agent) {
+  const { data: account } = await supabase
+    .from("user_account")
+    .select("role_id")
+    .eq("user_id", agent.user_id)
+    .maybeSingle();
+  if (!account?.role_id) return false;
+
+  const { data: role } = await supabase.from("role").select("role_name").eq("role_id", account.role_id).maybeSingle();
+  return isPlatformAdminRole(role?.role_name);
 }
 
 async function getMyThread(supabase, user, threadId) {
@@ -139,6 +155,7 @@ export async function POST(request, { params }) {
 
     const orgChartRoster = await getOrgChartRoster(supabase, agent);
     const todaysSchedule = await getTodaysSchedule(supabase, agent);
+    const allowTestimonialCuration = await isPlatformAdminAgent(supabase, agent);
     const images = thread.last_response_id ? [] : await getKnowledgeImages(supabase, agent.agent_id);
     const taskGroups = await getTaskGroups(supabase, agent.organization_id);
 
@@ -147,6 +164,7 @@ export async function POST(request, { params }) {
       reply: modelReply,
       proposedTasks,
       arrangeOrgChart: orgChartArgs,
+      curateTestimonials,
       usage,
     } = await sendMessageAndGetReply({
       instructions: agent.instructions,
@@ -156,6 +174,7 @@ export async function POST(request, { params }) {
       orgChartRoster,
       taskGroups: taskGroups.map((group) => group.group_name),
       todaysSchedule,
+      allowTestimonialCuration,
       images,
     });
 
@@ -190,6 +209,16 @@ export async function POST(request, { params }) {
         result.unmatchedNames.length ? ` Couldn't match: ${result.unmatchedNames.join(", ")}.` : ""
       }`;
       reply = reply ? `${reply}\n\n${summary}` : summary;
+    }
+
+    if (curateTestimonials) {
+      try {
+        const result = await curateTestimonialsFromFeedback(supabase);
+        reply = reply ? `${reply}\n\n${result.message}` : result.message;
+      } catch (curationError) {
+        const summary = `Couldn't curate testimonials: ${curationError.message}`;
+        reply = reply ? `${reply}\n\n${summary}` : summary;
+      }
     }
 
     const updates = {
