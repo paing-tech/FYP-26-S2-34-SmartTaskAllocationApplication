@@ -17,19 +17,23 @@ function todayDateStr() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-// Shared gate for the two tools offered only to a User Admin's agent
-// (org-chart setup and today's schedule lookup) — everyone else's agent
-// never even sees them as options.
-async function isUserAdminAgent(supabase, agent) {
+// Shared role lookup backing every per-role tool gate below (org-chart +
+// today's schedule for User Admin, curate_testimonials for Platform Admin,
+// get_my_day for Employee) — one query shape instead of a copy per role.
+async function getAgentRoleName(supabase, agent) {
   const { data: account } = await supabase
     .from("user_account")
     .select("role_id")
     .eq("user_id", agent.user_id)
     .maybeSingle();
-  if (!account?.role_id) return false;
+  if (!account?.role_id) return null;
 
   const { data: role } = await supabase.from("role").select("role_name").eq("role_id", account.role_id).maybeSingle();
-  return (role?.role_name ?? "").trim().toLowerCase() === "user admin";
+  return (role?.role_name ?? "").trim().toLowerCase() || null;
+}
+
+async function isUserAdminAgent(supabase, agent) {
+  return (await getAgentRoleName(supabase, agent)) === "user admin";
 }
 
 async function getTodaysSchedule(supabase, agent) {
@@ -37,19 +41,73 @@ async function getTodaysSchedule(supabase, agent) {
   return getTodaysScheduleSummary(supabase, agent.organization_id, todayDateStr());
 }
 
-// Gate for the curate_testimonials tool — Platform Admin only, same shape
-// as isUserAdminAgent above but reusing serverAuth's role-name normalizer
-// since Platform Admin accounts have no organization_id to key off of.
+// Gate for the curate_testimonials tool — Platform Admin only. Uses
+// serverAuth's role-name normalizer (handles "platformadmin"/"Platform
+// Admin" spelling variants) rather than the plain string compare the other
+// gates use, since Platform Admin accounts have no organization_id to key
+// off of and this one's worth being extra defensive about.
 async function isPlatformAdminAgent(supabase, agent) {
-  const { data: account } = await supabase
-    .from("user_account")
-    .select("role_id")
-    .eq("user_id", agent.user_id)
-    .maybeSingle();
-  if (!account?.role_id) return false;
+  return isPlatformAdminRole(await getAgentRoleName(supabase, agent));
+}
 
-  const { data: role } = await supabase.from("role").select("role_name").eq("role_id", account.role_id).maybeSingle();
-  return isPlatformAdminRole(role?.role_name);
+// Gate for the get_my_day tool — Employee only.
+async function isEmployeeAgent(supabase, agent) {
+  return (await getAgentRoleName(supabase, agent)) === "employee";
+}
+
+// One employee's own schedule + own active tasks for today, in one shot —
+// deliberately scoped to just this one user_id (never other employees'
+// schedules, see get_todays_schedule which is the org-wide, User-Admin-only
+// equivalent) so an employee can ask "what's on my plate today" without
+// opening every task card individually. Full descriptions are passed
+// through as-is; the model is instructed to summarize them concisely in
+// its reply rather than this doing any server-side condensing itself.
+async function getMyDayAgenda(supabase, agent, dateStr) {
+  if (!(await isEmployeeAgent(supabase, agent))) return null;
+
+  const [{ data: scheduleRow }, { data: attendanceRow }, { data: assigneeRows }] = await Promise.all([
+    supabase
+      .from("attendance_schedule")
+      .select("start_time, end_time")
+      .eq("user_id", agent.user_id)
+      .eq("work_date", dateStr)
+      .maybeSingle(),
+    supabase
+      .from("attendance")
+      .select("clock_in_at, clock_out_at")
+      .eq("user_id", agent.user_id)
+      .eq("work_date", dateStr)
+      .maybeSingle(),
+    supabase.from("task_assignee").select("task_id").eq("user_id", agent.user_id),
+  ]);
+
+  const taskIds = new Set((assigneeRows ?? []).map((row) => row.task_id));
+
+  const { data: orgTasks } = await supabase
+    .from("task")
+    .select("task_id, title, description, start_datetime, end_datetime, priority, status, assigned_to")
+    .eq("organization_id", agent.organization_id);
+
+  const myTasks = (orgTasks ?? [])
+    .filter((task) => task.assigned_to === agent.user_id || taskIds.has(task.task_id))
+    .filter((task) => !["completed", "cancelled", "archived"].includes(String(task.status || "").toLowerCase()))
+    .map((task) => ({
+      title: task.title,
+      description: task.description,
+      startDatetime: task.start_datetime,
+      endDatetime: task.end_datetime,
+      priority: task.priority,
+    }));
+
+  return {
+    schedule: scheduleRow
+      ? { scheduledStart: scheduleRow.start_time, scheduledEnd: scheduleRow.end_time }
+      : { scheduledStart: null, scheduledEnd: null },
+    clockedIn: Boolean(attendanceRow?.clock_in_at),
+    clockInTime: attendanceRow?.clock_in_at ?? null,
+    clockedOut: Boolean(attendanceRow?.clock_out_at),
+    tasks: myTasks,
+  };
 }
 
 async function getMyThread(supabase, user, threadId) {
@@ -156,6 +214,7 @@ export async function POST(request, { params }) {
     const orgChartRoster = await getOrgChartRoster(supabase, agent);
     const todaysSchedule = await getTodaysSchedule(supabase, agent);
     const allowTestimonialCuration = await isPlatformAdminAgent(supabase, agent);
+    const myDayAgenda = await getMyDayAgenda(supabase, agent, todayDateStr());
     const images = thread.last_response_id ? [] : await getKnowledgeImages(supabase, agent.agent_id);
     const taskGroups = await getTaskGroups(supabase, agent.organization_id);
 
@@ -175,6 +234,7 @@ export async function POST(request, { params }) {
       taskGroups: taskGroups.map((group) => group.group_name),
       todaysSchedule,
       allowTestimonialCuration,
+      myDayAgenda,
       images,
     });
 

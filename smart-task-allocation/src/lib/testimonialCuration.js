@@ -5,7 +5,7 @@
 
 // Bounds prompt size/cost per run — remaining unprocessed feedback just
 // waits for the next run rather than trying to fit everything in one call.
-const MAX_CANDIDATES_PER_RUN = 20;
+const MAX_CANDIDATES_PER_RUN = 40;
 
 export async function curateTestimonialsFromFeedback(supabase) {
   const { data: alreadyUsed } = await supabase

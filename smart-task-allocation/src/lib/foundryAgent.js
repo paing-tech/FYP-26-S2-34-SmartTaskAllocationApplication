@@ -237,12 +237,27 @@ const CURATE_TESTIMONIALS_TOOL = {
   parameters: { type: "object", properties: {}, required: [] },
 };
 
+// Only offered to an Employee's agent (see the messages route), scoped to
+// that one employee's own schedule and own active tasks only — never
+// anyone else's (that's what get_todays_schedule is for, and it's User
+// Admin-only). A data tool like get_todays_schedule: the messages route
+// prefetches the real numbers and feeds them back in the follow-up call
+// below, so the model summarizes real data instead of guessing.
+const MY_DAY_TOOL = {
+  type: "function",
+  name: "get_my_day",
+  description:
+    "Look up the current user's own schedule and active tasks for today — their scheduled hours, whether they've clocked in, and a summary of each task assigned to them (title, description, start/end time, priority) so they don't have to open every task individually. Always the current user's own data only, never a coworker's. Call this whenever they ask what's on their plate today, their schedule, or for a summary of their tasks.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+
 const TOOL_NAMES = [
   "propose_tasks",
   "create_tasks_now",
   "arrange_org_chart",
   "get_todays_schedule",
   "curate_testimonials",
+  "get_my_day",
 ];
 
 function findToolCall(response) {
@@ -310,6 +325,7 @@ export async function sendMessageAndGetReply({
   taskGroups,
   todaysSchedule,
   allowTestimonialCuration,
+  myDayAgenda,
   images,
 }) {
   const { deployment } = getFoundryConfig();
@@ -334,6 +350,9 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   if (allowTestimonialCuration) {
     augmentedInstructions += " You can also analyze recent user feedback and draft candidate public testimonials with the curate_testimonials tool — the drafts always need Platform Admin approval before they go live, so never claim they're already published.";
   }
+  if (myDayAgenda) {
+    augmentedInstructions += " You can also look up the user's own real schedule and active tasks for today with the get_my_day tool — their scheduled hours, clock-in status, and a summary of each task assigned to them. This is always their own data only, never a coworker's.";
+  }
   augmentedInstructions = augmentedInstructions.trim();
 
   const tools = [PROPOSE_TASKS_TOOL];
@@ -341,6 +360,7 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
   if (orgChartRoster?.length) tools.push(ARRANGE_ORG_CHART_TOOL);
   if (todaysSchedule) tools.push(TODAYS_SCHEDULE_TOOL);
   if (allowTestimonialCuration) tools.push(CURATE_TESTIMONIALS_TOOL);
+  if (myDayAgenda) tools.push(MY_DAY_TOOL);
   if (vectorStoreId) tools.push({ type: "file_search", vector_store_ids: [vectorStoreId] });
 
   async function callResponses(prevId) {
@@ -398,6 +418,8 @@ You can propose actionable work tasks using the propose_tasks tool whenever the 
       : "No one is scheduled to work today.";
   } else if (functionCall.name === "curate_testimonials") {
     followUpOutput = "Feedback is being analyzed now — drafted testimonials will need your approval before they go live.";
+  } else if (functionCall.name === "get_my_day") {
+    followUpOutput = myDayAgenda ? JSON.stringify(myDayAgenda) : "No schedule or task data available.";
   }
 
   // The API rejects the *next* previous_response_id-chained call if a
