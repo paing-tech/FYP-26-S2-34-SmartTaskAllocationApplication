@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useSiteContent } from "@/lib/useSiteContent";
+import DeveloperContactModal from "@/components/DeveloperContactModal";
 
 const SOCIAL_ICON_PATHS = {
   github:
@@ -43,6 +45,7 @@ export function SocialIcon({ name }) {
 
 export default function LandingFooter() {
   const footer = useSiteContent("footer");
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   if (footer.hidden) {
     return null;
@@ -53,29 +56,18 @@ export default function LandingFooter() {
       <div className="relative mx-auto flex max-w-7xl flex-col items-center gap-6 lg:flex-row lg:justify-between">
         <p className="order-3 text-sm text-white/45 lg:order-1">{footer.copyrightText}</p>
 
-        {/* Socials centered within the footer */}
-        <div className="order-2 flex items-center gap-5 lg:absolute lg:left-1/2 lg:-translate-x-1/2">
-          {(footer.socialLinks ?? []).map((social) => (
-            <a
-              key={social.name}
-              href={social.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={social.name}
-              className="text-white/45 transition hover:text-white"
-            >
-              <SocialIcon name={social.name} />
-            </a>
-          ))}
-        </div>
-
-        <div className="group relative order-1 lg:order-3">
-          <span className="cursor-default text-sm text-white/45 transition group-hover:text-white">
+        <div className="relative order-1 lg:order-3">
+          <button
+            type="button"
+            onClick={() => setIsAboutOpen(true)}
+            className="text-sm text-white/45"
+          >
             {footer.aboutLabel}
-          </span>
-          <span className="pointer-events-none absolute bottom-full -right-16 mb-3 hidden whitespace-nowrap rounded-lg border border-white/15 bg-[#111] px-3 py-2 text-xs font-medium text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.5)] group-hover:block">
-            {footer.aboutTooltip}
-          </span>
+          </button>
+
+          {isAboutOpen ? (
+            <DeveloperContactModal hideHeading anchored onClose={() => setIsAboutOpen(false)} />
+          ) : null}
         </div>
       </div>
     </footer>

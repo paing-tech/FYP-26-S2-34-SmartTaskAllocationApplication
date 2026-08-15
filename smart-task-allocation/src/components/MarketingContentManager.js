@@ -250,7 +250,16 @@ function HeroPreview({ draft, onChange }) {
   );
 }
 
-const FEATURE_ICON_OPTIONS = ["allocation", "team", "workspace", "schedule", "ai", "analytics"];
+const FEATURE_ICON_OPTIONS = [
+  "allocation",
+  "team",
+  "workspace",
+  "schedule",
+  "ai",
+  "analytics",
+  "automation",
+  "inventory",
+];
 
 function FeaturesPreview({ draft, onChange }) {
   const items = draft.items ?? [];
@@ -270,7 +279,7 @@ function FeaturesPreview({ draft, onChange }) {
   function addItem() {
     onChange({
       ...draft,
-      items: [...items, { title: "New feature", description: "Description", icon: "workspace", videoId: "" }],
+      items: [...items, { title: "New feature", icon: "workspace", image: "" }],
     });
   }
 
@@ -310,18 +319,19 @@ function FeaturesPreview({ draft, onChange }) {
               className="mt-2 block text-base font-bold"
             />
             <EditableTextarea
-              value={feature.description}
+              value={feature.description ?? ""}
               onChange={(value) => updateItem(index, "description", value)}
               tone="dark"
               rows={2}
               className="mt-1 text-xs leading-relaxed text-[#0D1E4C]/70"
+              placeholder="Description (optional)"
             />
             <EditableInput
-              value={feature.videoId}
-              onChange={(value) => updateItem(index, "videoId", value)}
+              value={feature.image ?? ""}
+              onChange={(value) => updateItem(index, "image", value)}
               tone="dark"
               className="mt-2 block text-[10px] text-[#0D1E4C]/40"
-              placeholder="video-file-name"
+              placeholder="/feature-preview.gif"
             />
           </div>
         ))}

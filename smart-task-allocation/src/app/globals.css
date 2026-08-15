@@ -37,6 +37,22 @@ body {
   }
 }
 
+/* Gentle up/down drift for feature preview screenshots so they don't sit
+   dead-still on the page. */
+@keyframes float-rectangle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+.animate-float-rectangle {
+  animation: float-rectangle 5s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;
