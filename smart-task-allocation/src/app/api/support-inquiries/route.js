@@ -127,7 +127,7 @@ async function getSingleInquiry(request, supabase, inquiryId) {
   const { data: inquiry, error } = await supabase
     .from("support_inquiry")
     .select(
-      "inquiry_id, ticket_number, user_id, organization_id, subject, message, status, attachment_url, created_at, resolved_at",
+      "inquiry_id, ticket_number, user_id, organization_id, subject, message, status, attachment_url, created_at, resolved_at, guest_name, guest_email",
     )
     .eq("inquiry_id", inquiryId)
     .maybeSingle();
@@ -200,6 +200,8 @@ async function getSingleInquiry(request, supabase, inquiryId) {
       jobTitle: profile?.job_title || null,
       username: account?.username ?? null,
       email: account?.email ?? null,
+      guestName: inquiry.guest_name ?? null,
+      guestEmail: inquiry.guest_email ?? null,
       organizationName: organization?.organization_name ?? null,
       isOwner,
       replies,
@@ -219,7 +221,7 @@ export async function GET(request) {
     const { data: inquiries, error } = await supabase
       .from("support_inquiry")
       .select(
-        "inquiry_id, ticket_number, user_id, organization_id, subject, message, status, attachment_url, created_at, resolved_at",
+        "inquiry_id, ticket_number, user_id, organization_id, subject, message, status, attachment_url, created_at, resolved_at, guest_name, guest_email",
       )
       .order("created_at", { ascending: false });
 
@@ -263,6 +265,8 @@ export async function GET(request) {
         jobTitle: profileByUserId.get(inquiry.user_id)?.job_title || null,
         username: account?.username ?? null,
         email: account?.email ?? null,
+        guestName: inquiry.guest_name ?? null,
+        guestEmail: inquiry.guest_email ?? null,
         organizationName: organizationById.get(inquiry.organization_id)?.organization_name ?? null,
       };
     });

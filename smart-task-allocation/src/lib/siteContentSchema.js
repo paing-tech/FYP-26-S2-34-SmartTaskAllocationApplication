@@ -7,10 +7,10 @@ export const SITE_CONTENT_DEFAULTS = {
     brand: "OPTIMA",
     logoUrl: "/optimalogowhite.png",
     navItems: [
-      { label: "Products", href: "/#products" },
-      { label: "Resources", href: "/#resources" },
-      { label: "Community", href: "/#community" },
+      { label: "Features", href: "/features" },
       { label: "Pricing", href: "/pricing" },
+      { label: "Demo", href: "/democorner" },
+      { label: "Contact Us", href: "/contact" },
     ],
     signInLabel: "Sign in",
     ctaLabel: "Experience",

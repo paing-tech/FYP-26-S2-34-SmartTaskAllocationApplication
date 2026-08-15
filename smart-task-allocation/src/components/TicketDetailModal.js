@@ -142,10 +142,17 @@ export default function TicketDetailModal({ inquiryId, variant = "admin", onClos
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                     <>
                       <div className="flex items-center justify-between gap-3">
-                        <p className="min-w-0 truncate text-sm font-bold text-[#0D1E4C]">{ticket.email}</p>
-                        <p className="shrink-0 text-xs font-medium text-[#64748B]">{ticket.jobTitle || "—"}</p>
+                        <p className="min-w-0 truncate text-sm font-bold text-[#0D1E4C]">
+                          {ticket.fullName || ticket.username || ticket.guestName || ticket.email || ticket.guestEmail}
+                        </p>
+                        <p className="shrink-0 text-xs font-medium text-[#64748B]">
+                          {ticket.jobTitle || (ticket.guestName ? "Guest" : "—")}
+                        </p>
                       </div>
-                      <p className="mt-0.5 text-xs font-medium text-[#64748B]">{ticket.organizationName || "—"}</p>
+                      <p className="mt-0.5 text-xs font-medium text-[#64748B]">
+                        {ticket.email || ticket.guestEmail || "—"}
+                        {ticket.organizationName ? ` · ${ticket.organizationName}` : ""}
+                      </p>
                     </>
                   </div>
                 </div>

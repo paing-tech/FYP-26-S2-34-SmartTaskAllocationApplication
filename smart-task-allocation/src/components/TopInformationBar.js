@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { sideMenuNavigation } from "@/lib/sideMenuNavigation";
 import ProfileDetailCard from "@/components/ProfileDetailCard";
 import ContactSupportModal from "@/components/ContactSupportModal";
+import AnnouncementModal from "@/components/AnnouncementModal";
 import TicketDetailModal from "@/components/TicketDetailModal";
 import { usePlanGate } from "@/components/PlanProvider";
 import {
@@ -176,6 +177,7 @@ export default function TopInformationBar({ actor }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileCardOpen, setIsProfileCardOpen] = useState(false);
   const [isContactSupportOpen, setIsContactSupportOpen] = useState(false);
+  const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(false);
   const [isDeveloperContactOpen, setIsDeveloperContactOpen] = useState(false);
   const [detailInquiryId, setDetailInquiryId] = useState(null);
   const [announcements, setAnnouncements] = useState([]);
@@ -595,6 +597,21 @@ export default function TopInformationBar({ actor }) {
       <div className="min-w-0 flex-1" />
 
       <div className="flex shrink-0 items-center justify-end gap-3">
+        {isPlatformAdmin ? (
+          <button
+            type="button"
+            onClick={() => {
+              setIsAnnouncementOpen(true);
+              setIsNotificationsOpen(false);
+              setIsProfileOpen(false);
+            }}
+            className="flex h-11 w-11 items-center justify-center rounded-full text-[#07183b] transition hover:bg-white/70"
+            aria-label="Create announcement"
+            title="Create announcement"
+          >
+            <span className="material-symbols-outlined text-2xl" aria-hidden="true">campaign</span>
+          </button>
+        ) : null}
         <div className="relative">
         <button
           type="button"
@@ -973,6 +990,12 @@ export default function TopInformationBar({ actor }) {
 
       {isProfileCardOpen ? <ProfileDetailCard onClose={() => setIsProfileCardOpen(false)} /> : null}
       {isContactSupportOpen ? <ContactSupportModal onClose={() => setIsContactSupportOpen(false)} /> : null}
+      {isAnnouncementOpen ? (
+        <AnnouncementModal
+          onClose={() => setIsAnnouncementOpen(false)}
+          onSent={loadAnnouncements}
+        />
+      ) : null}
       {isDeveloperContactOpen ? <DeveloperContactModal onClose={() => setIsDeveloperContactOpen(false)} /> : null}
       {detailInquiryId ? (
         <TicketDetailModal
